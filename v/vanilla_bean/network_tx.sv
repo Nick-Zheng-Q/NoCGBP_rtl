@@ -15,9 +15,6 @@ module network_tx
     , `BSG_INV_PARAM(y_cord_width_p)
     , `BSG_INV_PARAM(pod_x_cord_width_p)
     , `BSG_INV_PARAM(pod_y_cord_width_p)
-    , `BSG_INV_PARAM(vcache_size_p) // vcache capacity in words
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p)
-    , `BSG_INV_PARAM(vcache_sets_p)
     , `BSG_INV_PARAM(ipoly_hashing_p)
  
     , `BSG_INV_PARAM(num_tiles_x_p)
@@ -25,16 +22,6 @@ module network_tx
     , localparam x_subcord_width_lp=`BSG_SAFE_CLOG2(num_tiles_x_p)
     , y_subcord_width_lp=`BSG_SAFE_CLOG2(num_tiles_y_p)
   
-    , parameter `BSG_INV_PARAM(icache_entries_p)
-    , `BSG_INV_PARAM(icache_tag_width_p)
-
-    , localparam vcache_addr_width_lp=`BSG_SAFE_CLOG2(vcache_size_p)
-
-    , vcache_word_offset_width_lp = `BSG_SAFE_CLOG2(vcache_block_size_in_words_p)
-
-    , icache_addr_width_lp=`BSG_SAFE_CLOG2(icache_entries_p)
-    , pc_width_lp=(icache_tag_width_p+icache_addr_width_lp)
-
     , reg_addr_width_lp=RV32_reg_addr_width_gp
 
     , packet_width_lp=
@@ -73,9 +60,6 @@ module network_tx
     , input remote_req_v_i
     , output logic remote_req_credit_o
 
-    , output logic ifetch_v_o
-    , output logic [data_width_p-1:0] ifetch_instr_o
-   
     , output logic [reg_addr_width_lp-1:0] float_remote_load_resp_rd_o
     , output logic [data_width_p-1:0] float_remote_load_resp_data_o
     , output logic float_remote_load_resp_v_o
@@ -114,7 +98,7 @@ module network_tx
 
   wire proxy_is_in_the_south = src_y_cord[y_subcord_width_lp-1];
 
-  // Uncached requests will be sent to the nearest vcache
+  // Uncached requests are sent to the nearest proxy
   wire [x_cord_width_p-1:0] proxy_x_cord_lo = (x_cord_width_p)'(src_x_cord);
   wire [y_cord_width_p-1:0] proxy_y_cord_lo = proxy_is_in_the_south
     ? {(pod_y_cord_width_p)'(pod_y_i + 1'b1), {y_subcord_width_lp{1'b0}}}
@@ -133,9 +117,6 @@ module network_tx
     ,.y_cord_width_p(y_cord_width_p)
     ,.num_tiles_x_p(num_tiles_x_p)
     ,.num_tiles_y_p(num_tiles_y_p)
-    ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-    ,.vcache_size_p(vcache_size_p)
-    ,.vcache_sets_p(vcache_sets_p)
     ,.pod_x_cord_width_p(pod_x_cord_width_p)
     ,.pod_y_cord_width_p(pod_y_cord_width_p)
     ,.ipoly_hashing_p(ipoly_hashing_p)
@@ -150,9 +131,8 @@ module network_tx
 
     ,.is_invalid_addr_o(is_invalid_eva)
 
-    // the pod rehoming stuff should not affect instruction cache fetches	     
-    ,.pod_x_i(remote_req_i.load_info.icache_fetch ? pod_x_i : cfg_pod_x_i)
-    ,.pod_y_i(remote_req_i.load_info.icache_fetch ? pod_y_i : cfg_pod_y_i)
+    ,.pod_x_i(cfg_pod_x_i)
+    ,.pod_y_i(cfg_pod_y_i)
   );
 
 
@@ -218,28 +198,21 @@ module network_tx
 
   // handling response packets
   //
-  assign ifetch_instr_o = returned_data_i;
   assign int_remote_load_resp_data_o = returned_data_i;
   assign int_remote_load_resp_rd_o = returned_reg_id_i;
   assign float_remote_load_resp_data_o = returned_data_i;
   assign float_remote_load_resp_rd_o = returned_reg_id_i;
 
   always_comb begin
-    ifetch_v_o = 1'b0;
     int_remote_load_resp_v_o = 1'b0;
     int_remote_load_resp_force_o = 1'b0;
     float_remote_load_resp_v_o = 1'b0;
     float_remote_load_resp_force_o = 1'b0;
     returned_yumi_o = 1'b0;
 
-    // vanilla_core must accept ifetch right away.
     // vanilla_core must accept writeback return if the fifo full is valid, as indicated by the force signal.
     // The force signal being high implies that there is a valid return pkt (non-credit)
     unique casez (returned_pkt_type_i)
-      e_return_ifetch: begin
-        ifetch_v_o = returned_v_i;
-        returned_yumi_o = returned_v_i;
-      end
       e_return_float_wb: begin
         float_remote_load_resp_v_o = returned_v_i;
         float_remote_load_resp_force_o = returned_v_i  & returned_fifo_full_i;

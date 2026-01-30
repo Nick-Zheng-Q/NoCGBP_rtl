@@ -9,10 +9,6 @@ module bsg_manycore_tile_compute_ruche
   import bsg_noc_pkg::*; // { P=0, W,E,N,S }
   import bsg_manycore_pkg::*;
   #(`BSG_INV_PARAM(dmem_size_p )
-    , `BSG_INV_PARAM(vcache_size_p )
-    , `BSG_INV_PARAM(icache_entries_p )
-    , `BSG_INV_PARAM(icache_tag_width_p )
-    , `BSG_INV_PARAM(icache_block_size_in_words_p)
     , `BSG_INV_PARAM(x_cord_width_p )
     , `BSG_INV_PARAM(y_cord_width_p )
     , `BSG_INV_PARAM(pod_x_cord_width_p )
@@ -30,8 +26,6 @@ module bsg_manycore_tile_compute_ruche
     , `BSG_INV_PARAM(ruche_factor_X_p)
     , `BSG_INV_PARAM(barrier_ruche_factor_X_p)
 
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p)
-    , `BSG_INV_PARAM(vcache_sets_p)
     , `BSG_INV_PARAM(ipoly_hashing_p)
   
     , parameter dims_p = 3
@@ -193,15 +187,9 @@ module bsg_manycore_tile_compute_ruche
     ,.data_width_p(data_width_p)
     ,.addr_width_p(addr_width_p)
     ,.dmem_size_p(dmem_size_p)
-    ,.vcache_size_p(vcache_size_p)
-    ,.icache_entries_p(icache_entries_p)
-    ,.icache_tag_width_p(icache_tag_width_p)
-    ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
     ,.hetero_type_p(hetero_type_p)
     ,.num_tiles_x_p(num_tiles_x_p)
     ,.num_tiles_y_p(num_tiles_y_p)
-    ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-    ,.vcache_sets_p(vcache_sets_p)
     ,.fwd_fifo_els_p(fwd_fifo_els_lp[0])
     ,.rev_fifo_els_p(rev_fifo_els_lp[0])
     ,.barrier_dirs_p(barrier_dirs_p)

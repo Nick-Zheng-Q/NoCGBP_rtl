@@ -16,9 +16,6 @@ module vanilla_core
   #(`BSG_INV_PARAM(data_width_p)
     , `BSG_INV_PARAM(dmem_size_p)
     
-    , `BSG_INV_PARAM(icache_entries_p)
-    , `BSG_INV_PARAM(icache_tag_width_p)
-
     , `BSG_INV_PARAM(x_cord_width_p)
     , `BSG_INV_PARAM(y_cord_width_p)
 
@@ -26,8 +23,6 @@ module vanilla_core
     , `BSG_INV_PARAM(pod_y_cord_width_p)
     , `BSG_INV_PARAM(barrier_dirs_p)
 
-    , `BSG_INV_PARAM(icache_block_size_in_words_p)
-   
     , localparam barrier_lg_dirs_lp=`BSG_SAFE_CLOG2(barrier_dirs_p+1)
     , parameter credit_counter_width_p=`BSG_WIDTH(32)
 
@@ -38,7 +33,7 @@ module vanilla_core
     , localparam lg_fwd_fifo_els_lp=`BSG_WIDTH(fwd_fifo_els_p)
 
     , dmem_addr_width_lp=`BSG_SAFE_CLOG2(dmem_size_p)
-    , pc_width_lp=(icache_tag_width_p+`BSG_SAFE_CLOG2(icache_entries_p))
+    , pc_width_lp=data_width_p
     , reg_addr_width_lp = RV32_reg_addr_width_gp
     , data_mask_width_lp=(data_width_p>>3)
 
@@ -46,8 +41,6 @@ module vanilla_core
   )
   (
     input clk_i
-    // network_reset_i used in icache to reset the icache write counter 
-    // so that icache can be written by remote packets while the tile is still in freeze reset.
     , input network_reset_i
     , input reset_i
 
@@ -59,11 +52,6 @@ module vanilla_core
     , input remote_req_credit_i
 
     // from network
-    , input icache_v_i
-    , input [pc_width_lp-1:0] icache_pc_i
-    , input [data_width_p-1:0] icache_instr_i
-    , output logic icache_yumi_o
-    
     , input ifetch_v_i
     , input [data_width_p-1:0] ifetch_instr_i
   
@@ -141,67 +129,34 @@ module vanilla_core
   flw_wb_ctrl_signals_s flw_wb_ctrl_n, flw_wb_ctrl_r;
   flw_wb_data_signals_s flw_wb_data_n, flw_wb_data_r;
 
-  // icache
-  //
-  localparam lg_icache_block_size_in_words_lp = `BSG_SAFE_CLOG2(icache_block_size_in_words_p);
-  logic icache_v_li;
-  logic icache_w_li;
-  logic icache_read_pc_plus4_li;
-
-  logic [pc_width_lp-1:0] icache_w_pc;
-  logic [data_width_p-1:0] icache_winstr;
-
   logic [pc_width_lp-1:0] pc_n, pc_r;
   instruction_s instruction;
-  logic icache_miss;
-  logic icache_flush;
-  logic icache_flush_r_lo;
-  logic icache_branch_predicted_taken_lo;
+  instruction_s instruction_r;
 
   logic [pc_width_lp-1:0] jalr_prediction; 
   logic [pc_width_lp-1:0] pred_or_jump_addr; 
  
  
-  icache #(
-    .icache_tag_width_p(icache_tag_width_p)
-    ,.icache_entries_p(icache_entries_p)
-    ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
-  ) icache0 (
-    .clk_i(clk_i)
-    ,.network_reset_i(network_reset_i)
-    ,.reset_i(reset_i)
-   
-    ,.v_i(icache_v_li)
-    ,.w_i(icache_w_li)
-    ,.flush_i(icache_flush)
-    ,.read_pc_plus4_i(icache_read_pc_plus4_li)
-
-    ,.w_pc_i(icache_w_pc)
-    ,.w_instr_i(icache_winstr)
-
-    ,.pc_i(pc_n)
-    ,.jalr_prediction_i(jalr_prediction)
-
-    ,.instr_o(instruction)
-    ,.pred_or_jump_addr_o(pred_or_jump_addr)
-    ,.pc_r_o(pc_r)
-    ,.icache_miss_o(icache_miss)
-    ,.icache_flush_r_o(icache_flush_r_lo)
-    ,.branch_predicted_taken_o(icache_branch_predicted_taken_lo)
-  );
+  assign instruction = instruction_r;
+  assign pred_or_jump_addr = pc_plus4;
 
   wire [pc_width_lp-1:0] pc_plus4 = pc_r + 1'b1;
 
-  // ifetch counter
-  logic [lg_icache_block_size_in_words_lp-1:0] ifetch_count_r;
   always_ff @ (posedge clk_i) begin
     if (reset_i) begin
-      ifetch_count_r <= '0;
+      instruction_r <= '0;
     end
-    else begin
-      if (ifetch_v_i) begin
-        ifetch_count_r <= ifetch_count_r + 1'b1;
-      end
+    else if (ifetch_v_i & ~stall_all) begin
+      instruction_r <= ifetch_instr_i;
+    end
+  end
+
+  always_ff @ (posedge clk_i) begin
+    if (reset_i) begin
+      pc_r <= pc_init_val_i;
+    end
+    else if (~stall_all) begin
+      pc_r <= pc_n;
     end
   end
 
@@ -468,13 +423,11 @@ module vanilla_core
 
   assign remote_interrupt_pending_bit_o = mip_r.remote; // make it accessible by remote packet.
 
-  // Interrupt can be taken when mstatus.mie=1 and enable and pending bits are both on for an interrupt source,
-  // When icache miss is not already in progress (e.g. no icache bubble in EXE, MEM or WB)
+  // Interrupt can be taken when mstatus.mie=1 and enable and pending bits are both on for an interrupt source.
   wire remote_interrupt_ready = mip_r.remote & mie_r.remote;
   wire trace_interrupt_ready = mip_r.trace & mie_r.trace;
   wire interrupt_ready = mstatus_r.mie
-                       & (remote_interrupt_ready | trace_interrupt_ready)
-                       & ~(exe_r.icache_miss | mem_ctrl_r.icache_miss | wb_ctrl_r.icache_miss);
+                       & (remote_interrupt_ready | trace_interrupt_ready);
 
 
 
@@ -726,8 +679,6 @@ module vanilla_core
     ,.exe_rs2_i(exe_r.rs2_val)
     ,.exe_rd_i(exe_r.instruction.rd)
     ,.mem_offset_i(exe_r.mem_addr_op2)
-    ,.pc_plus4_i(exe_r.pc_plus4)
-    ,.icache_miss_i(exe_r.icache_miss)
 
     ,.remote_req_o(remote_req_o)
     ,.remote_req_v_o(lsu_remote_req_v_lo)
@@ -1112,9 +1063,6 @@ module vanilla_core
   //                          //
   //////////////////////////////
 
-  // IF stall signals
-  logic stall_icache_store;
-
   // ID stall signals
   logic stall_depend_long_op;
   logic stall_depend_local_load;
@@ -1133,7 +1081,6 @@ module vanilla_core
 
   // MEM stall signals
   logic stall_remote_ld_wb;
-  logic stall_ifetch_wait;
   
   // FP_WB stall signals
   logic stall_remote_flw_wb;
@@ -1153,9 +1100,7 @@ module vanilla_core
     | stall_fcsr
     | stall_barrier;
 
-  wire stall_all = stall_icache_store
-    | stall_remote_ld_wb
-    | stall_ifetch_wait
+  wire stall_all = stall_remote_ld_wb
     | stall_remote_flw_wb;
 
 
@@ -1164,20 +1109,14 @@ module vanilla_core
   // 2) mret in EXE
   // 3) interrupt taken
   wire flush = (branch_mispredict | jalr_mispredict) | (exe_r.decode.is_mret_op) | interrupt_ready;
-  wire icache_miss_in_pipe = id_r.icache_miss | exe_r.icache_miss | mem_ctrl_r.icache_miss | wb_ctrl_r.icache_miss;
-
   // ID stage is not stalled and not flushed.
   wire id_issue = ~stall_id & ~stall_all & ~flush;
 
 
   // Next PC logic
   always_comb begin
-    icache_read_pc_plus4_li = 1'b0;
     if (reset_down) begin
       pc_n = pc_init_val_i;
-    end
-    else if (wb_ctrl_r.icache_miss) begin
-      pc_n = pc_r;
     end
     else if (interrupt_ready) begin
       if (remote_interrupt_ready) begin
@@ -1198,14 +1137,10 @@ module vanilla_core
     else if (jalr_mispredict) begin
       pc_n = alu_jalr_addr;
     end
-    else if (decode.is_branch_op & icache_branch_predicted_taken_lo) begin
-      pc_n = pred_or_jump_addr;
-    end
     else if (decode.is_jal_op | decode.is_jalr_op) begin
       pc_n = pred_or_jump_addr;
     end
     else begin
-      icache_read_pc_plus4_li = 1'b1;
       pc_n = pc_plus4;
     end
   end
@@ -1242,31 +1177,6 @@ module vanilla_core
 
 
 
-  // icache logic
-  wire read_icache = (icache_miss_in_pipe & ~flush)
-    ? wb_ctrl_r.icache_miss
-    : (~icache_miss | flush | reset_down);
-
-  assign icache_v_li = icache_v_i | ifetch_v_i
-    | (read_icache & ~reset_i & ~stall_all & ~(stall_id & ~flush));
-
-  assign icache_w_li = icache_v_i | ifetch_v_i;
-
-  assign icache_w_pc = ifetch_v_i
-    ? {pc_r[pc_width_lp-1:lg_icache_block_size_in_words_lp], ifetch_count_r}
-    : icache_pc_i;
-
-  assign icache_winstr = ifetch_v_i
-    ? ifetch_instr_i
-    : icache_instr_i;
-
-  assign icache_yumi_o = icache_v_i & ~ifetch_v_i;
-
-  assign icache_flush = flush | icache_miss_in_pipe;
-  
-  assign stall_icache_store = icache_v_i & icache_yumi_o;
-
-
   // IF -> ID
   always_comb begin
     // common case
@@ -1276,9 +1186,8 @@ module vanilla_core
       instruction: instruction,
       decode: decode,
       fp_decode: fp_decode,
-      icache_miss: 1'b0,
       valid: 1'b1,
-      branch_predicted_taken:  icache_branch_predicted_taken_lo
+      branch_predicted_taken: 1'b0
     };
 
     if (stall_all) begin
@@ -1291,24 +1200,6 @@ module vanilla_core
       end    
       else if (stall_id) begin
         id_en = 1'b0;
-      end
-      // When stall_id is high, icache miss should not be flushing ID.
-      else if (icache_miss_in_pipe | icache_flush_r_lo) begin
-        id_en = 1'b1;
-        id_n = '0;
-      end
-      else if (icache_miss) begin
-        id_en = 1'b1;
-        id_n = '{
-          pc_plus4: {{(data_width_p-pc_width_lp-2){1'b0}}, pc_plus4, 2'b0},
-          pred_or_jump_addr: '0,
-          instruction: '0,
-          decode: '0,
-          fp_decode: '0,
-          icache_miss: 1'b1,
-          valid: 1'b0,
-          branch_predicted_taken: 1'b0
-        };
       end
       else begin
         // common case
@@ -1432,7 +1323,7 @@ module vanilla_core
   // stall_remote_req
   logic [lg_fwd_fifo_els_lp-1:0] remote_req_counter_r;
   wire local_mem_op_restore = (lsu_dmem_v_lo & ~exe_r.decode.is_lr_op & ~exe_r.decode.is_lr_aq_op) & ~stall_all;
-  wire id_remote_req_op = (id_r.decode.is_load_op | id_r.decode.is_store_op | id_r.decode.is_amo_op | id_r.icache_miss);
+  wire id_remote_req_op = (id_r.decode.is_load_op | id_r.decode.is_store_op | id_r.decode.is_amo_op);
   wire memory_op_issued = id_remote_req_op & id_issue;
   wire [lg_fwd_fifo_els_lp-1:0] remote_req_available =
     remote_req_counter_r +
@@ -1453,7 +1344,7 @@ module vanilla_core
   logic credit_cout;
   logic [credit_counter_width_p-1:0] credit_sum;
   assign {credit_cout, credit_sum} = out_credits_used_i + (remote_req_in_exe
-                                                          ? (exe_r.icache_miss ? icache_block_size_in_words_p : 1)
+                                                          ? credit_counter_width_p'(1)
                                                           : '0);
   assign stall_remote_credit = id_remote_req_op & ((credit_sum >= credit_limit_r) | credit_cout);
 
@@ -1582,7 +1473,6 @@ module vanilla_core
                       : mcsr_data_lo)
                     : rs2_val_to_exe),
       mem_addr_op2: mem_addr_op2,
-      icache_miss: id_r.icache_miss,
       branch_predicted_taken: id_r.branch_predicted_taken
     };
 
@@ -1609,7 +1499,6 @@ module vanilla_core
           rs1_val: '0,
           rs2_val: '0,
           mem_addr_op2: '0,
-          icache_miss: 1'b0,
           branch_predicted_taken: 1'b0
         };
       end
@@ -1697,8 +1586,7 @@ module vanilla_core
       is_hex_op: exe_r.decode.is_hex_op,
       is_load_unsigned: exe_r.decode.is_load_unsigned,
       local_load: local_load_in_exe,
-      byte_sel: lsu_byte_sel_lo,
-      icache_miss: exe_r.icache_miss
+      byte_sel: lsu_byte_sel_lo
     };
     mem_data_n = '{
       exe_result: alu_or_csr_result
@@ -1711,7 +1599,7 @@ module vanilla_core
       mem_ctrl_en = 1'b0;
       mem_data_en = 1'b0;
     end
-    else if (exe_r.decode.is_idiv_op | (remote_req_in_exe & ~exe_r.icache_miss)) begin
+    else if (exe_r.decode.is_idiv_op | remote_req_in_exe) begin
       mem_ctrl_en = 1'b1;
       mem_data_en = 1'b1;
       mem_ctrl_n = '0;
@@ -1729,8 +1617,7 @@ module vanilla_core
         is_hex_op: 1'b0,
         is_load_unsigned: 1'b0,
         local_load: 1'b0,
-        byte_sel: '0,
-        icache_miss: 1'b0
+        byte_sel: '0
       };      
       mem_data_n = '{
         exe_result: fpu_int_result_lo
@@ -1783,11 +1670,6 @@ module vanilla_core
   assign make_reserve = lsu_reserve_lo & ~stall_all;
   assign break_reserve = reserved_r & (reserved_addr_r == dmem_addr_li) & dmem_v_li & dmem_w_li;
 
-  // stall_ifetch_wait
-
-  assign stall_ifetch_wait = mem_ctrl_r.icache_miss &
-    ~((ifetch_count_r == lg_icache_block_size_in_words_lp'(icache_block_size_in_words_p-1)) & ifetch_v_i);
-
   // mem_result
   assign mem_result = imul_v_lo
     ? imul_result_lo
@@ -1803,23 +1685,18 @@ module vanilla_core
     wb_ctrl_n.write_rd = 1'b0;
     wb_ctrl_n.rd_addr = '0;
     wb_data_n.rf_data = '0;
-    wb_ctrl_n.icache_miss = 1'b0;
     wb_ctrl_n.clear_sb = 1'b0;
     int_remote_load_resp_yumi_o = 1'b0;
     idiv_yumi_li = 1'b0;
     stall_remote_ld_wb = 1'b0;
 
-    // int remote_load_resp and icache response are mutually exclusive events.
     if (int_remote_load_resp_force_i) begin
       wb_ctrl_n.write_rd = 1'b1;
       wb_ctrl_n.rd_addr = int_remote_load_resp_rd_i;
       wb_data_n.rf_data = int_remote_load_resp_data_i;
       wb_ctrl_n.clear_sb = 1'b1;
-      stall_remote_ld_wb = mem_result_valid | mem_ctrl_r.icache_miss;
+      stall_remote_ld_wb = mem_result_valid;
       int_remote_load_resp_yumi_o = 1'b1;
-    end
-    else if (mem_ctrl_r.icache_miss & ifetch_v_i) begin
-      wb_ctrl_n.icache_miss = 1'b1;
     end
     else begin
       if (imul_v_lo) begin

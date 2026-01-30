@@ -27,25 +27,7 @@ module bsg_manycore_pod_mesh_array
     , num_subarray_y_p=1
 
     , `BSG_INV_PARAM(dmem_size_p)
-    , `BSG_INV_PARAM(icache_entries_p)
-    , `BSG_INV_PARAM(icache_tag_width_p)
-    , `BSG_INV_PARAM(icache_block_size_in_words_p)
-
-    , `BSG_INV_PARAM(vcache_addr_width_p)
-    , `BSG_INV_PARAM(vcache_data_width_p)
-    , `BSG_INV_PARAM(vcache_ways_p)
-    , `BSG_INV_PARAM(vcache_sets_p)
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p)
-    , `BSG_INV_PARAM(vcache_size_p)
-    , `BSG_INV_PARAM(vcache_dma_data_width_p)
-    , `BSG_INV_PARAM(vcache_word_tracking_p)
     , `BSG_INV_PARAM(ipoly_hashing_p) 
-   
-    , wh_ruche_factor_p=2 // only support 2 for now
-    , `BSG_INV_PARAM(wh_cid_width_p)
-    , `BSG_INV_PARAM(wh_flit_width_p)
-    , `BSG_INV_PARAM(wh_cord_width_p)
-    , `BSG_INV_PARAM(wh_len_width_p)
 
     // number of pods to instantiate
     , `BSG_INV_PARAM(num_pods_y_p)
@@ -59,8 +41,6 @@ module bsg_manycore_pod_mesh_array
 
     , manycore_link_sif_width_lp =
       `bsg_manycore_link_sif_width(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p)
-    , wh_link_sif_width_lp = 
-      `bsg_ready_and_link_sif_width(wh_flit_width_p)
 
     // This is used to define heterogeneous arrays. Each index defines
     // the type of an X/Y coordinate in the array. This is a vector of
@@ -77,10 +57,6 @@ module bsg_manycore_pod_mesh_array
     , input  [S:N][num_pods_x_p-1:0][num_tiles_x_p-1:0][manycore_link_sif_width_lp-1:0] ver_link_sif_i
     , output [S:N][num_pods_x_p-1:0][num_tiles_x_p-1:0][manycore_link_sif_width_lp-1:0] ver_link_sif_o
 
-    // vcache wormhole links
-    , input  [E:W][num_pods_y_p-1:0][S:N][wh_ruche_factor_p-1:0][wh_link_sif_width_lp-1:0] wh_link_sif_i
-    , output [E:W][num_pods_y_p-1:0][S:N][wh_ruche_factor_p-1:0][wh_link_sif_width_lp-1:0] wh_link_sif_o
-
     // horizontal local links
     , input  [E:W][num_pods_y_p-1:0][num_tiles_y_p-1:0][manycore_link_sif_width_lp-1:0] hor_link_sif_i
     , output [E:W][num_pods_y_p-1:0][num_tiles_y_p-1:0][manycore_link_sif_width_lp-1:0] hor_link_sif_o
@@ -93,15 +69,11 @@ module bsg_manycore_pod_mesh_array
 
 
   `declare_bsg_manycore_link_sif_s(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p);
-  `declare_bsg_ready_and_link_sif_s(wh_flit_width_p, wh_link_sif_s);
 
   bsg_manycore_link_sif_s [num_pods_y_p-1:0][E:W][num_tiles_y_p-1:0] hor_link_sif_li;
   bsg_manycore_link_sif_s [num_pods_y_p-1:0][E:W][num_tiles_y_p-1:0] hor_link_sif_lo;
   bsg_manycore_link_sif_s [num_pods_y_p-1:0][S:N][num_pods_x_p-1:0][num_tiles_x_p-1:0] ver_link_sif_li;
   bsg_manycore_link_sif_s [num_pods_y_p-1:0][S:N][num_pods_x_p-1:0][num_tiles_x_p-1:0] ver_link_sif_lo;
-
-  wh_link_sif_s [num_pods_y_p-1:0][E:W][S:N][wh_ruche_factor_p-1:0] wh_link_sif_li;
-  wh_link_sif_s [num_pods_y_p-1:0][E:W][S:N][wh_ruche_factor_p-1:0] wh_link_sif_lo;
 
   logic [num_pods_y_p-1:0][(num_pods_x_p*num_tiles_x_p)-1:0][x_cord_width_p-1:0] global_x_li;
   logic [num_pods_y_p-1:0][(num_pods_x_p*num_tiles_x_p)-1:0][y_cord_width_p-1:0] global_y_li;
@@ -147,25 +119,7 @@ module bsg_manycore_pod_mesh_array
       ,.num_subarray_y_p(num_subarray_y_p)
 
       ,.dmem_size_p(dmem_size_p)
-      ,.icache_entries_p(icache_entries_p)
-      ,.icache_tag_width_p(icache_tag_width_p)
-      ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
-
-      ,.vcache_addr_width_p(vcache_addr_width_p)
-      ,.vcache_data_width_p(vcache_data_width_p)
-      ,.vcache_ways_p(vcache_ways_p)
-      ,.vcache_sets_p(vcache_sets_p)
-      ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-      ,.vcache_size_p(vcache_size_p)
-      ,.vcache_dma_data_width_p(vcache_dma_data_width_p)
-      ,.vcache_word_tracking_p(vcache_word_tracking_p)
       ,.ipoly_hashing_p(ipoly_hashing_p)      
-
-      ,.wh_ruche_factor_p(wh_ruche_factor_p)
-      ,.wh_cid_width_p(wh_cid_width_p)
-      ,.wh_flit_width_p(wh_flit_width_p)
-      ,.wh_cord_width_p(wh_cord_width_p)
-      ,.wh_len_width_p(wh_len_width_p)
 
       `ifndef SYNTHESIS
       ,.hetero_type_vec_p(hetero_type_vec_p)
@@ -178,9 +132,6 @@ module bsg_manycore_pod_mesh_array
       ,.hor_link_sif_o(hor_link_sif_lo[y])
       ,.ver_link_sif_i(ver_link_sif_li[y])
       ,.ver_link_sif_o(ver_link_sif_lo[y])
-
-      ,.wh_link_sif_i(wh_link_sif_li[y])
-      ,.wh_link_sif_o(wh_link_sif_lo[y])
 
       ,.global_x_i(global_x_li[y])
       ,.global_y_i(global_y_li[y])
@@ -221,17 +172,6 @@ module bsg_manycore_pod_mesh_array
     assign hor_link_sif_o[E][y] = hor_link_sif_lo[y][E];
     assign hor_link_sif_li[y][E] = hor_link_sif_i[E][y];
 
-    // connect wh to the west
-    assign wh_link_sif_o[W][y][N] = wh_link_sif_lo[y][W][N];
-    assign wh_link_sif_li[y][W][N] = wh_link_sif_i[W][y][N];
-    assign wh_link_sif_o[W][y][S] = wh_link_sif_lo[y][W][S];
-    assign wh_link_sif_li[y][W][S] = wh_link_sif_i[W][y][S];
-
-    // connect wh to the east
-    assign wh_link_sif_o[E][y][N] = wh_link_sif_lo[y][E][N];
-    assign wh_link_sif_li[y][E][N] = wh_link_sif_i[E][y][N];
-    assign wh_link_sif_o[E][y][S] = wh_link_sif_lo[y][E][S];
-    assign wh_link_sif_li[y][E][S] = wh_link_sif_i[E][y][S];
   end
 
 

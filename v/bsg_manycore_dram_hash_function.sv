@@ -5,8 +5,6 @@
  */
 
   // DRAM hash function
-  // DRAM space is striped across vcaches at a cache line granularity.
-  // Striping starts from the north vcaches, and alternates between north and south from inner layers to outer layers.
 
   // ungroup this module for synthesis.
 
@@ -24,8 +22,6 @@ module bsg_manycore_dram_hash_function
     , `BSG_INV_PARAM(x_subcord_width_p)
     , `BSG_INV_PARAM(y_subcord_width_p)
 
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p)
-
     , `BSG_INV_PARAM(ipoly_hashing_p)
   )
   (
@@ -38,13 +34,12 @@ module bsg_manycore_dram_hash_function
     , output logic [y_cord_width_p-1:0] y_cord_o
   );
 
-  localparam vcache_word_offset_width_lp = `BSG_SAFE_CLOG2(vcache_block_size_in_words_p);
-  localparam dram_index_width_lp = data_width_p-1-2-vcache_word_offset_width_lp-x_subcord_width_p-1;
+  localparam dram_index_width_lp = data_width_p-1-2-x_subcord_width_p-1;
 
   logic [dram_index_width_lp-1:0] dram_index;
   logic temp_y, new_y;
   logic [x_subcord_width_p-1:0] temp_x, new_x;
-  assign {dram_index, temp_y, temp_x} = eva_i[2+vcache_word_offset_width_lp+:x_subcord_width_p+1+dram_index_width_lp];
+  assign {dram_index, temp_y, temp_x} = eva_i[2+:x_subcord_width_p+1+dram_index_width_lp];
 
 
   if (ipoly_hashing_p) begin: ipoly
@@ -77,9 +72,8 @@ module bsg_manycore_dram_hash_function
   assign x_cord_o = {pod_x_i, dram_x_subcord};
   assign epa_o = {
     1'b0,
-    {(addr_width_p-1-dram_index_width_lp-vcache_word_offset_width_lp){1'b0}},
-    dram_index,
-    eva_i[2+:vcache_word_offset_width_lp]
+    {(addr_width_p-1-dram_index_width_lp){1'b0}},
+    dram_index
   };
 
 

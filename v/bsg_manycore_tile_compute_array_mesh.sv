@@ -9,13 +9,6 @@ module bsg_manycore_tile_compute_array_mesh
   import bsg_manycore_pkg::*;
   import bsg_noc_pkg::*; // {P=0, W,E,N,S }
   #(`BSG_INV_PARAM(dmem_size_p ) // number of words in DMEM
-    , `BSG_INV_PARAM(icache_entries_p ) // in words
-    , `BSG_INV_PARAM(icache_tag_width_p )
-    , `BSG_INV_PARAM(icache_block_size_in_words_p )
-
-    , `BSG_INV_PARAM(vcache_size_p ) // capacity per vcache in words
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p )
-    , `BSG_INV_PARAM(vcache_sets_p )
     , `BSG_INV_PARAM(ipoly_hashing_p) 
 
     // number of tiles in an entire pod
@@ -127,10 +120,6 @@ module bsg_manycore_tile_compute_array_mesh
     for (genvar c = 0; c < subarray_num_tiles_x_p; c++) begin: x
       bsg_manycore_tile_compute_mesh #(
         .dmem_size_p     (dmem_size_p)
-        ,.vcache_size_p (vcache_size_p)
-        ,.icache_entries_p(icache_entries_p)
-        ,.icache_tag_width_p(icache_tag_width_p)
-        ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
         ,.x_cord_width_p(x_cord_width_p)
         ,.y_cord_width_p(y_cord_width_p)
         ,.pod_x_cord_width_p(pod_x_cord_width_p)
@@ -141,8 +130,6 @@ module bsg_manycore_tile_compute_array_mesh
         ,.debug_p(debug_p)
         ,.num_tiles_x_p(num_tiles_x_p)
         ,.num_tiles_y_p(num_tiles_y_p)
-        ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-        ,.vcache_sets_p(vcache_sets_p)
         ,.barrier_ruche_factor_X_p(barrier_ruche_factor_X_p)
         ,.ipoly_hashing_p(ipoly_hashing_p)      
       ) tile (

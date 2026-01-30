@@ -40,19 +40,10 @@ module bsg_manycore_gather_scatter
     , `BSG_INV_PARAM(data_width_p )
     , `BSG_INV_PARAM(addr_width_p )
 
-    , `BSG_INV_PARAM(icache_entries_p )
-    , `BSG_INV_PARAM(icache_tag_width_p )
-
     , `BSG_INV_PARAM(dmem_size_p ) 
-    , `BSG_INV_PARAM(num_vcache_rows_p )
-    , `BSG_INV_PARAM(vcache_size_p )
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p )
-    , `BSG_INV_PARAM(vcache_sets_p )
 
     , `BSG_INV_PARAM(num_tiles_x_p )
     , `BSG_INV_PARAM(num_tiles_y_p )
-
-    , `BSG_INV_PARAM(icache_block_size_in_words_p)
 
     , `BSG_INV_PARAM(ipoly_hashing_p)
     , localparam x_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_x_p)
@@ -65,9 +56,7 @@ module bsg_manycore_gather_scatter
     , parameter proc_fifo_els_p = 4
     , debug_p = 1
 
-    , localparam icache_addr_width_lp = `BSG_SAFE_CLOG2(icache_entries_p)
     , dmem_addr_width_lp = `BSG_SAFE_CLOG2(dmem_size_p)
-    , pc_width_lp=(icache_addr_width_lp+icache_tag_width_p)
     , data_mask_width_lp = (data_width_p>>3)
     , reg_addr_width_lp=RV32_reg_addr_width_gp
 
@@ -326,9 +315,6 @@ module bsg_manycore_gather_scatter
     ,.num_tiles_x_p(num_tiles_x_p)
     ,.num_tiles_y_p(num_tiles_y_p)
 
-    ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-    ,.vcache_size_p(vcache_size_p)
-    ,.vcache_sets_p(vcache_sets_p)
     ,.ipoly_hashing_p(ipoly_hashing_p)
   ) eva2npa (
     .eva_i(eva_li)

@@ -12,8 +12,6 @@ module network_rx
   #(`BSG_INV_PARAM(data_width_p)
     , `BSG_INV_PARAM(addr_width_p)
     , `BSG_INV_PARAM(dmem_size_p)
-    , `BSG_INV_PARAM(icache_tag_width_p)
-    , `BSG_INV_PARAM(icache_entries_p)
     , `BSG_INV_PARAM(x_cord_width_p)
     , `BSG_INV_PARAM(y_cord_width_p)
 
@@ -27,8 +25,7 @@ module network_rx
 
     , localparam data_mask_width_lp=(data_width_p>>3)
     , localparam dmem_addr_width_lp=`BSG_SAFE_CLOG2(dmem_size_p)
-    , localparam icache_addr_width_lp=`BSG_SAFE_CLOG2(icache_entries_p)
-    , localparam pc_width_lp=(icache_tag_width_p+icache_addr_width_lp)
+    , localparam pc_width_lp=addr_width_p
   )
   (
     input clk_i
@@ -57,11 +54,6 @@ module network_rx
     , input [data_width_p-1:0] remote_dmem_data_i
     , input remote_dmem_yumi_i
 
-    , output logic icache_v_o
-    , output logic [pc_width_lp-1:0] icache_pc_o
-    , output logic [data_width_p-1:0] icache_instr_o
-    , input icache_yumi_i
-
     , output logic freeze_o
     , output logic [x_subcord_width_p-1:0] tgo_x_o
     , output logic [y_subcord_width_p-1:0] tgo_y_o 
@@ -85,10 +77,6 @@ module network_rx
   // address decoding
   // dmem addr space starts from EPA = 0
   wire is_dmem_addr = (addr_i[addr_width_p-1:dmem_addr_width_lp] == '0);
-  // icache addr space (1024-entry, 12-bit tag):
-  // EPA = 0000_01tt_tttt_tttt_tt??_????_???? (word addr)
-  wire is_icache_addr = addr_i[pc_width_lp] & (addr_i[addr_width_p-1:pc_width_lp+1] == '0);
-
   wire is_csr_addr = addr_i[epa_word_addr_width_gp-1]
     & (addr_i[addr_width_p-1:epa_word_addr_width_gp] == '0);
   wire is_freeze_addr = is_csr_addr & (addr_i[epa_word_addr_width_gp-2:0] == 'd0);
@@ -193,10 +181,6 @@ module network_rx
 
     load_info_n = load_info_r;
 
-    icache_v_o = 1'b0;
-    icache_pc_o = addr_i[0+:pc_width_lp];
-    icache_instr_o = data_i;
-    
     remote_interrupt_clear_o = 1'b0;
     remote_interrupt_set_o = 1'b0;
     send_remote_interrupt_n = 1'b0;
@@ -214,11 +198,6 @@ module network_rx
           remote_dmem_w_o = 1'b1;
           yumi_o = remote_dmem_yumi_i;
           send_zero_n = remote_dmem_yumi_i;
-        end
-        else if (is_icache_addr) begin
-          icache_v_o = 1'b1;
-          yumi_o = icache_yumi_i;
-          send_zero_n = icache_yumi_i;
         end
         else if (is_freeze_addr) begin
           freeze_n = data_i[0];
@@ -381,7 +360,7 @@ module network_rx
 
   assign is_valid_csr_addr = is_csr_addr & 
     (is_freeze_addr | is_tgo_x_addr | is_tgo_y_addr | is_pc_init_val_addr);
-  assign is_invalid_addr = ~(is_dmem_addr | is_icache_addr | is_valid_csr_addr | is_remote_interrupt_addr);
+  assign is_invalid_addr = ~(is_dmem_addr | is_valid_csr_addr | is_remote_interrupt_addr);
 
   always_ff @ (negedge clk_i) begin
     if (~reset_i & v_i & is_invalid_addr) begin

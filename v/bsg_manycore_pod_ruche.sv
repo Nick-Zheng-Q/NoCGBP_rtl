@@ -33,30 +33,12 @@ module bsg_manycore_pod_ruche
     , y_subcord_width_lp=`BSG_SAFE_CLOG2(num_tiles_y_p)
   
     , parameter `BSG_INV_PARAM(dmem_size_p)
-    , `BSG_INV_PARAM(icache_entries_p)
-    , `BSG_INV_PARAM(icache_tag_width_p)
-    , `BSG_INV_PARAM(icache_block_size_in_words_p)
-
-    , `BSG_INV_PARAM(vcache_addr_width_p) 
-    , `BSG_INV_PARAM(vcache_data_width_p) 
-    , `BSG_INV_PARAM(vcache_ways_p)
-    , `BSG_INV_PARAM(vcache_sets_p)
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p)
-    , `BSG_INV_PARAM(vcache_size_p)
-    , `BSG_INV_PARAM(vcache_dma_data_width_p)
-    , `BSG_INV_PARAM(vcache_word_tracking_p)
     , `BSG_INV_PARAM(ipoly_hashing_p)
 
     , `BSG_INV_PARAM(ruche_factor_X_p)
     , `BSG_INV_PARAM(barrier_ruche_factor_X_p)
   
-    , `BSG_INV_PARAM(wh_ruche_factor_p)
-    , `BSG_INV_PARAM(wh_cid_width_p)
-    , `BSG_INV_PARAM(wh_flit_width_p)
-    , `BSG_INV_PARAM(wh_cord_width_p)
-    , `BSG_INV_PARAM(wh_len_width_p)
-    
-    // number of clock ports on vcache/tile subarray
+    // number of clock ports on tile subarray
     , num_clk_ports_p=1
 
     , localparam manycore_link_sif_width_lp =
@@ -64,9 +46,6 @@ module bsg_manycore_pod_ruche
 
     , manycore_ruche_link_sif_width_lp =
       `bsg_manycore_ruche_x_link_sif_width(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p)
-
-    , wh_link_sif_width_lp = 
-      `bsg_ready_and_link_sif_width(wh_flit_width_p)
 
     // This is used to define heterogeneous arrays. Each index defines
     // the type of an X/Y coordinate in the array. This is a vector of
@@ -96,14 +75,6 @@ module bsg_manycore_pod_ruche
     , input  [E:W][num_tiles_y_p-1:0][barrier_ruche_factor_X_p-1:0] barrier_ruche_link_i
     , output [E:W][num_tiles_y_p-1:0][barrier_ruche_factor_X_p-1:0] barrier_ruche_link_o
 
-    // vcache
-    , input  [E:W][wh_ruche_factor_p-1:0][wh_link_sif_width_lp-1:0] north_wh_link_sif_i
-    , output [E:W][wh_ruche_factor_p-1:0][wh_link_sif_width_lp-1:0] north_wh_link_sif_o
-
-    , input  [E:W][wh_ruche_factor_p-1:0][wh_link_sif_width_lp-1:0] south_wh_link_sif_i
-    , output [E:W][wh_ruche_factor_p-1:0][wh_link_sif_width_lp-1:0] south_wh_link_sif_o
-
-
     // pod cord (should be all same value for all columns)
     , input [num_tiles_x_p-1:0][x_cord_width_p-1:0] global_x_i
     , input [num_tiles_x_p-1:0][y_cord_width_p-1:0] global_y_i
@@ -112,99 +83,6 @@ module bsg_manycore_pod_ruche
 
   `declare_bsg_manycore_link_sif_s(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p);
   `declare_bsg_manycore_ruche_x_link_sif_s(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p);
-  `declare_bsg_ready_and_link_sif_s(wh_flit_width_p, wh_link_sif_s);
-
-
-  // vcache row (north)
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0] north_vc_reset_lo;
-  wh_link_sif_s [num_subarray_x_p-1:0][E:W][wh_ruche_factor_p-1:0] north_vc_wh_link_sif_li;
-  wh_link_sif_s [num_subarray_x_p-1:0][E:W][wh_ruche_factor_p-1:0] north_vc_wh_link_sif_lo;
-  bsg_manycore_link_sif_s [num_subarray_x_p-1:0][S:N][subarray_num_tiles_x_lp-1:0] north_vc_ver_link_sif_li;
-  bsg_manycore_link_sif_s [num_subarray_x_p-1:0][S:N][subarray_num_tiles_x_lp-1:0] north_vc_ver_link_sif_lo;
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0][x_cord_width_p-1:0] north_vc_global_x_li;
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0][y_cord_width_p-1:0] north_vc_global_y_li;
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0][x_cord_width_p-1:0] north_vc_global_x_lo;
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0][y_cord_width_p-1:0] north_vc_global_y_lo;
-
-  for (genvar x = 0; x < num_subarray_x_p; x++) begin: north_vc_x
-    bsg_manycore_tile_vcache_array #(
-      .addr_width_p(addr_width_p)
-      ,.data_width_p(data_width_p)
-      ,.x_cord_width_p(x_cord_width_p)
-      ,.y_cord_width_p(y_cord_width_p)
-      ,.pod_x_cord_width_p(pod_x_cord_width_p)
-      ,.pod_y_cord_width_p(pod_y_cord_width_p)
-
-      ,.num_tiles_x_p(num_tiles_x_p)
-      ,.num_tiles_y_p(num_tiles_y_p)
-
-      ,.subarray_num_tiles_x_p(subarray_num_tiles_x_lp)
-      ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
-
-      ,.vcache_addr_width_p(vcache_addr_width_p)
-      ,.vcache_data_width_p(vcache_data_width_p)
-      ,.vcache_ways_p(vcache_ways_p)
-      ,.vcache_sets_p(vcache_sets_p)
-      ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-      ,.vcache_dma_data_width_p(vcache_dma_data_width_p)
-      ,.vcache_word_tracking_p(vcache_word_tracking_p)
-
-      ,.wh_ruche_factor_p(wh_ruche_factor_p)
-      ,.wh_cid_width_p(wh_cid_width_p)
-      ,.wh_flit_width_p(wh_flit_width_p)
-      ,.wh_len_width_p(wh_len_width_p)
-      ,.wh_cord_width_p(wh_cord_width_p)
-
-      ,.num_clk_ports_p(num_clk_ports_p)
-    ) north_vc_row (
-      .clk_i({num_clk_ports_p{clk_i}})
-
-      ,.reset_i(reset_i[(subarray_num_tiles_x_lp*x)+:subarray_num_tiles_x_lp])
-      ,.reset_o(north_vc_reset_lo[x])
-
-      ,.wh_link_sif_i(north_vc_wh_link_sif_li[x])
-      ,.wh_link_sif_o(north_vc_wh_link_sif_lo[x])
-    
-      ,.ver_link_sif_i(north_vc_ver_link_sif_li[x])
-      ,.ver_link_sif_o(north_vc_ver_link_sif_lo[x])
-
-      ,.global_x_i(north_vc_global_x_li[x])
-      ,.global_y_i(north_vc_global_y_li[x])
-      ,.global_x_o(north_vc_global_x_lo[x])
-      ,.global_y_o(north_vc_global_y_lo[x])
-    );
-
-
-    // connect coordinates
-    assign north_vc_global_x_li[x] = global_x_i[x*subarray_num_tiles_x_lp+:subarray_num_tiles_x_lp];
-    assign north_vc_global_y_li[x] = global_y_i[x*subarray_num_tiles_x_lp+:subarray_num_tiles_x_lp];
-
-    // connect north ver link
-    assign ver_link_sif_o[N][(x*subarray_num_tiles_x_lp)+:subarray_num_tiles_x_lp] = north_vc_ver_link_sif_lo[x][N];
-    assign north_vc_ver_link_sif_li[x][N] = ver_link_sif_i[N][(x*subarray_num_tiles_x_lp)+:subarray_num_tiles_x_lp]; 
-
-    // connect wh link to west
-    if (x == 0) begin
-      assign north_wh_link_sif_o[W] = north_vc_wh_link_sif_lo[x][W];
-      assign north_vc_wh_link_sif_li[x][W] = north_wh_link_sif_i[W];
-    end
-
-    // connect wh link to east
-    if (x == num_subarray_x_p-1) begin
-      assign north_wh_link_sif_o[E] = north_vc_wh_link_sif_lo[x][E];
-      assign north_vc_wh_link_sif_li[x][E] = north_wh_link_sif_i[E];
-    end
-   
-    // connect wh links between vc arrays
-    if (x < num_subarray_x_p-1) begin
-      assign north_vc_wh_link_sif_li[x+1][W] = north_vc_wh_link_sif_lo[x][E];
-      assign north_vc_wh_link_sif_li[x][E] = north_vc_wh_link_sif_lo[x+1][W];
-    end
-
-  end
-
-
-
   // manycore subarray
   bsg_manycore_link_sif_s [num_subarray_y_p-1:0][num_subarray_x_p-1:0][E:W][subarray_num_tiles_y_lp-1:0] mc_hor_link_sif_li;
   bsg_manycore_link_sif_s [num_subarray_y_p-1:0][num_subarray_x_p-1:0][E:W][subarray_num_tiles_y_lp-1:0] mc_hor_link_sif_lo;
@@ -243,18 +121,11 @@ module bsg_manycore_pod_ruche
     for (genvar x = 0; x < num_subarray_x_p; x++) begin: mc_x
       bsg_manycore_tile_compute_array_ruche #(
         .dmem_size_p(dmem_size_p)
-        ,.icache_entries_p(icache_entries_p)
-        ,.icache_tag_width_p(icache_tag_width_p)
-
-        ,.vcache_size_p(vcache_size_p)
-        ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-        ,.vcache_sets_p(vcache_sets_p)
         ,.num_tiles_x_p(num_tiles_x_p)
         ,.num_tiles_y_p(num_tiles_y_p)
 
         ,.subarray_num_tiles_x_p(subarray_num_tiles_x_lp)
         ,.subarray_num_tiles_y_p(subarray_num_tiles_y_lp)
-        ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
         ,.ipoly_hashing_p(ipoly_hashing_p)
 
         ,.pod_x_cord_width_p(pod_x_cord_width_p)
@@ -297,16 +168,16 @@ module bsg_manycore_pod_ruche
         ,.global_y_o(mc_global_y_lo[y][x])
       );
 
-      // connect to north vcache
+      // connect to north
       if (y == 0) begin
         // ver link
-        assign north_vc_ver_link_sif_li[x][S] = mc_ver_link_sif_lo[y][x][N];
-        assign mc_ver_link_sif_li[y][x][N] = north_vc_ver_link_sif_lo[x][S];
+        assign mc_ver_link_sif_li[y][x][N] = ver_link_sif_i[N][(x*subarray_num_tiles_x_lp)+:subarray_num_tiles_x_lp];
+        assign ver_link_sif_o[N][(x*subarray_num_tiles_x_lp)+:subarray_num_tiles_x_lp] = mc_ver_link_sif_lo[y][x][N];
         // coordinates
-        assign mc_global_x_li[y][x] = north_vc_global_x_lo[x];
-        assign mc_global_y_li[y][x] = north_vc_global_y_lo[x];
+        assign mc_global_x_li[y][x] = global_x_i[x*subarray_num_tiles_x_lp+:subarray_num_tiles_x_lp];
+        assign mc_global_y_li[y][x] = global_y_i[x*subarray_num_tiles_x_lp+:subarray_num_tiles_x_lp];
         // reset
-        assign mc_reset_li[y][x] = north_vc_reset_lo[x];
+        assign mc_reset_li[y][x] = reset_i[(subarray_num_tiles_x_lp*x)+:subarray_num_tiles_x_lp];
         // tieoff ver barrier
         assign mc_ver_barrier_link_li[y][x][N] = '0;
       end
@@ -328,6 +199,9 @@ module bsg_manycore_pod_ruche
     
       // last row
       if (y == num_subarray_y_p-1) begin
+        // connect to south
+        assign ver_link_sif_o[S][(x*subarray_num_tiles_x_lp)+:subarray_num_tiles_x_lp] = mc_ver_link_sif_lo[y][x][S];
+        assign mc_ver_link_sif_li[y][x][S] = ver_link_sif_i[S][(x*subarray_num_tiles_x_lp)+:subarray_num_tiles_x_lp];
         // tieoff ver barrier
         assign mc_ver_barrier_link_li[y][x][S] = '0;
       end
@@ -382,98 +256,6 @@ module bsg_manycore_pod_ruche
 
     end
   end
-
-  // vcache row (south)
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0] south_vc_reset_li;
-  wh_link_sif_s [num_subarray_x_p-1:0][E:W][wh_ruche_factor_p-1:0] south_vc_wh_link_sif_li;
-  wh_link_sif_s [num_subarray_x_p-1:0][E:W][wh_ruche_factor_p-1:0] south_vc_wh_link_sif_lo;
-  bsg_manycore_link_sif_s [num_subarray_x_p-1:0][S:N][subarray_num_tiles_x_lp-1:0] south_vc_ver_link_sif_li;
-  bsg_manycore_link_sif_s [num_subarray_x_p-1:0][S:N][subarray_num_tiles_x_lp-1:0] south_vc_ver_link_sif_lo;
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0][x_cord_width_p-1:0] south_vc_global_x_li;
-  logic [num_subarray_x_p-1:0][subarray_num_tiles_x_lp-1:0][y_cord_width_p-1:0] south_vc_global_y_li;
-  
-  for (genvar x = 0; x < num_subarray_x_p; x++) begin: south_vc_x
-    bsg_manycore_tile_vcache_array #(
-      .addr_width_p(addr_width_p)
-      ,.data_width_p(data_width_p)
-      ,.x_cord_width_p(x_cord_width_p)
-      ,.y_cord_width_p(y_cord_width_p)
-      ,.pod_x_cord_width_p(pod_x_cord_width_p)
-      ,.pod_y_cord_width_p(pod_y_cord_width_p)
-
-      ,.num_tiles_x_p(num_tiles_x_p)
-      ,.num_tiles_y_p(num_tiles_y_p)
-
-      ,.subarray_num_tiles_x_p(subarray_num_tiles_x_lp)
-      ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
-
-      ,.vcache_addr_width_p(vcache_addr_width_p)
-      ,.vcache_data_width_p(vcache_data_width_p)
-      ,.vcache_ways_p(vcache_ways_p)
-      ,.vcache_sets_p(vcache_sets_p)
-      ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-      ,.vcache_dma_data_width_p(vcache_dma_data_width_p)
-      ,.vcache_word_tracking_p(vcache_word_tracking_p)
-
-      ,.wh_ruche_factor_p(wh_ruche_factor_p)
-      ,.wh_cid_width_p(wh_cid_width_p)
-      ,.wh_flit_width_p(wh_flit_width_p)
-      ,.wh_len_width_p(wh_len_width_p)
-      ,.wh_cord_width_p(wh_cord_width_p)
-
-      ,.num_clk_ports_p(num_clk_ports_p)
-    ) south_vc_row (
-      .clk_i({num_clk_ports_p{clk_i}})
-      ,.reset_i(south_vc_reset_li[x])
-      ,.reset_o()
-    
-      ,.wh_link_sif_i(south_vc_wh_link_sif_li[x])
-      ,.wh_link_sif_o(south_vc_wh_link_sif_lo[x])
-    
-      ,.ver_link_sif_i(south_vc_ver_link_sif_li[x])
-      ,.ver_link_sif_o(south_vc_ver_link_sif_lo[x])
-
-      ,.global_x_i(south_vc_global_x_li[x])
-      ,.global_y_i(south_vc_global_y_li[x])
-      ,.global_x_o()
-      ,.global_y_o()
-    );
-
-    // connect reset
-    assign south_vc_reset_li[x] = mc_reset_lo[num_subarray_y_p-1][x];
-
-    // connect ver link to manycore
-    assign south_vc_ver_link_sif_li[x][N] = mc_ver_link_sif_lo[num_subarray_y_p-1][x][S];
-    assign mc_ver_link_sif_li[num_subarray_y_p-1][x][S] = south_vc_ver_link_sif_lo[x][N];
- 
-    // connect ver link to south
-    assign ver_link_sif_o[S][x*subarray_num_tiles_x_lp+:subarray_num_tiles_x_lp] = south_vc_ver_link_sif_lo[x][S];
-    assign south_vc_ver_link_sif_li[x][S] = ver_link_sif_i[S][x*subarray_num_tiles_x_lp+:subarray_num_tiles_x_lp];
-   
-    // coordinate
-    assign south_vc_global_x_li[x] = mc_global_x_lo[num_subarray_y_p-1][x];
-    assign south_vc_global_y_li[x] = mc_global_y_lo[num_subarray_y_p-1][x];
-
-    // connect wh link to west
-    if (x == 0) begin
-      assign south_wh_link_sif_o[W] = south_vc_wh_link_sif_lo[x][W];
-      assign south_vc_wh_link_sif_li[x][W] = south_wh_link_sif_i[W];
-    end
-
-    // connect wh link to east
-    if (x == num_subarray_x_p-1) begin
-      assign south_wh_link_sif_o[E] = south_vc_wh_link_sif_lo[x][E];
-      assign south_vc_wh_link_sif_li[x][E] = south_wh_link_sif_i[E];
-    end
-   
-    // connect wh links between vc arrays
-    if (x < num_subarray_x_p-1) begin
-      assign south_vc_wh_link_sif_li[x+1][W] = south_vc_wh_link_sif_lo[x][E];
-      assign south_vc_wh_link_sif_li[x][E] = south_vc_wh_link_sif_lo[x+1][W];
-    end
-
-  end
-
 
 endmodule
 

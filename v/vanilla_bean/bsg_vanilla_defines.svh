@@ -11,17 +11,6 @@
 
 `include "bsg_defines.sv"
 
-`define declare_icache_format_s(tag_width_mp, block_size_in_words_mp) \
-  typedef struct packed { \
-    logic [block_size_in_words_mp-1:0] lower_cout; \
-    logic [block_size_in_words_mp-1:0] lower_sign; \
-    logic [tag_width_mp-1:0] tag; \
-    instruction_s [block_size_in_words_mp-1:0] instr; \
-  } icache_format_s
-
-`define icache_format_width(tag_width_mp, block_size_in_words_mp) \
-   ((2*block_size_in_words_mp)+tag_width_mp+(block_size_in_words_mp*$bits(instruction_s)))
-
 // FPU recoded Constants
 `define FPU_RECODED_ONE   33'h080000000
 `define FPU_RECODED_ZERO  33'h0
@@ -38,7 +27,6 @@
 `define RV32_STORE    7'b0100011
 
 // we have branch instructions ignore the low bit so that we can place the prediction bit there.
-// RISC-V by default has the low bits set to 11 in the icache, so we can use those creatively.
 // note this relies on all code using ==? and casez.
 `define RV32_BRANCH   7'b110001?
 
@@ -247,4 +235,3 @@
 `define RV32_FSQRT_S  {7'b0101100, 5'b00000, 5'b?????, 3'b???, 5'b?????, 7'b1010011}
 
 `endif
-

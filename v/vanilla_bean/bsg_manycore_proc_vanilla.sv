@@ -15,18 +15,11 @@ module bsg_manycore_proc_vanilla
     , `BSG_INV_PARAM(data_width_p )
     , `BSG_INV_PARAM(addr_width_p )
 
-    , `BSG_INV_PARAM(icache_tag_width_p )
-    , `BSG_INV_PARAM(icache_entries_p )
-
     , `BSG_INV_PARAM(dmem_size_p )
-    , `BSG_INV_PARAM(vcache_size_p )
-    , `BSG_INV_PARAM(vcache_block_size_in_words_p)
-    , `BSG_INV_PARAM(vcache_sets_p )
 
     , `BSG_INV_PARAM(num_tiles_x_p)
     , `BSG_INV_PARAM(num_tiles_y_p)
 
-    , `BSG_INV_PARAM(icache_block_size_in_words_p)
     , `BSG_INV_PARAM(ipoly_hashing_p)
 
     , localparam x_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_x_p)
@@ -39,9 +32,8 @@ module bsg_manycore_proc_vanilla
     , proc_fifo_els_p = 4
     , debug_p = 1
 
-    , localparam icache_addr_width_lp = `BSG_SAFE_CLOG2(icache_entries_p)
     , dmem_addr_width_lp = `BSG_SAFE_CLOG2(dmem_size_p)
-    , pc_width_lp=(icache_addr_width_lp+icache_tag_width_p)
+    , pc_width_lp=addr_width_p
     , data_mask_width_lp=(data_width_p>>3)
     , reg_addr_width_lp=RV32_reg_addr_width_gp
 
@@ -109,7 +101,6 @@ module bsg_manycore_proc_vanilla
     ,.y_cord_width_p(y_cord_width_p)
     ,.data_width_p(data_width_p)
     ,.addr_width_p(addr_width_p)
-    ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
     ,.fifo_els_p(proc_fifo_els_p)
 
     ,.credit_counter_width_p(credit_counter_width_p)
@@ -169,11 +160,6 @@ module bsg_manycore_proc_vanilla
   logic [data_width_p-1:0] remote_dmem_data_li;
   logic remote_dmem_yumi_li;
 
-  logic icache_v_lo;
-  logic [pc_width_lp-1:0] icache_pc_lo;
-  logic [data_width_p-1:0] icache_instr_lo;
-  logic icache_yumi_li;
-
   logic freeze;
   logic [x_subcord_width_lp-1:0] tgo_x;
   logic [y_subcord_width_lp-1:0] tgo_y;
@@ -187,8 +173,6 @@ module bsg_manycore_proc_vanilla
     .addr_width_p(addr_width_p)
     ,.data_width_p(data_width_p)
     ,.dmem_size_p(dmem_size_p)
-    ,.icache_tag_width_p(icache_tag_width_p)
-    ,.icache_entries_p(icache_entries_p)
     ,.x_cord_width_p(x_cord_width_p)
     ,.y_cord_width_p(y_cord_width_p)
     ,.x_subcord_width_p(x_subcord_width_lp)
@@ -218,11 +202,6 @@ module bsg_manycore_proc_vanilla
     ,.remote_dmem_data_i(remote_dmem_data_li)
     ,.remote_dmem_yumi_i(remote_dmem_yumi_li)
 
-    ,.icache_v_o(icache_v_lo)
-    ,.icache_pc_o(icache_pc_lo)
-    ,.icache_instr_o(icache_instr_lo)
-    ,.icache_yumi_i(icache_yumi_li)
-
     ,.freeze_o(freeze)
     ,.tgo_x_o(tgo_x)
     ,.tgo_y_o(tgo_y)
@@ -246,9 +225,6 @@ module bsg_manycore_proc_vanilla
   logic remote_req_v;
   logic remote_req_credit;
 
-  logic ifetch_v_lo;
-  logic [data_width_p-1:0] ifetch_instr_lo;
-
   logic [reg_addr_width_lp-1:0] float_remote_load_resp_rd_lo;
   logic [data_width_p-1:0] float_remote_load_resp_data_lo;
   logic float_remote_load_resp_v_lo;
@@ -270,14 +246,7 @@ module bsg_manycore_proc_vanilla
     ,.y_cord_width_p(y_cord_width_p)
     ,.pod_x_cord_width_p(pod_x_cord_width_p)
     ,.pod_y_cord_width_p(pod_y_cord_width_p)
-    ,.vcache_size_p(vcache_size_p)
-    ,.vcache_block_size_in_words_p(vcache_block_size_in_words_p)
-    ,.vcache_sets_p(vcache_sets_p)
     ,.ipoly_hashing_p(ipoly_hashing_p)
-
-    ,.icache_entries_p(icache_entries_p)
-    ,.icache_tag_width_p(icache_tag_width_p)
-
     ,.num_tiles_x_p(num_tiles_x_p)
     ,.num_tiles_y_p(num_tiles_y_p)
   ) tx (
@@ -311,9 +280,6 @@ module bsg_manycore_proc_vanilla
     ,.remote_req_v_i(remote_req_v)
     ,.remote_req_credit_o(remote_req_credit)
 
-    ,.ifetch_v_o(ifetch_v_lo)
-    ,.ifetch_instr_o(ifetch_instr_lo)
-
     ,.float_remote_load_resp_rd_o(float_remote_load_resp_rd_lo)
     ,.float_remote_load_resp_data_o(float_remote_load_resp_data_lo)
     ,.float_remote_load_resp_v_o(float_remote_load_resp_v_lo)
@@ -334,9 +300,6 @@ module bsg_manycore_proc_vanilla
   vanilla_core #(
     .data_width_p(data_width_p)
     ,.dmem_size_p(dmem_size_p)
-    ,.icache_entries_p(icache_entries_p)
-    ,.icache_tag_width_p(icache_tag_width_p)
-    ,.icache_block_size_in_words_p(icache_block_size_in_words_p)
     ,.x_cord_width_p(x_cord_width_p)
     ,.y_cord_width_p(y_cord_width_p)
     ,.credit_counter_width_p(credit_counter_width_p)
@@ -354,14 +317,6 @@ module bsg_manycore_proc_vanilla
     ,.remote_req_o(remote_req)
     ,.remote_req_v_o(remote_req_v)
     ,.remote_req_credit_i(remote_req_credit)
-
-    ,.icache_v_i(icache_v_lo)
-    ,.icache_pc_i(icache_pc_lo)
-    ,.icache_instr_i(icache_instr_lo)
-    ,.icache_yumi_o(icache_yumi_li)
-
-    ,.ifetch_v_i(ifetch_v_lo)
-    ,.ifetch_instr_i(ifetch_instr_lo)
 
     ,.remote_dmem_v_i(remote_dmem_v_lo)
     ,.remote_dmem_w_i(remote_dmem_w_lo)

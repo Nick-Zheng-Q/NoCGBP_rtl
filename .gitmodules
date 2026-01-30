@@ -15,3 +15,6 @@
 [submodule "imports/HardFloat"]
 	path = imports/HardFloat
 	url = https://github.com/bsg-external/HardFloat
+[submodule "basejump_stl"]
+	path = basejump_stl
+	url = https://github.com/bespoke-silicon-group/basejump_stl.git

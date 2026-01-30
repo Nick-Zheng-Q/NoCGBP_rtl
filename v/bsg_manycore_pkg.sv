@@ -41,16 +41,14 @@ package bsg_manycore_pkg;
   //  return packet type
   //
   //  For e_remote_load,
-  //  1) if icache_fetch=1 in load_info, e_return_ifetch should be returned.
-  //  2) if float_wb=1 in load_info, e_return_float_wb should be returned.
-  //  3) otherwise, e_return_int_wb is returned.
+  //  1) if float_wb=1 in load_info, e_return_float_wb should be returned.
+  //  2) otherwise, e_return_int_wb is returned.
   //  For e_remote_store or e_cache_op, e_return_credit should be returned.
   //  For e_remote_amo, e_return_int_wb should be returned. 
   typedef enum logic [1:0] {
     e_return_credit
     , e_return_int_wb
     , e_return_float_wb
-    , e_return_ifetch
   } bsg_manycore_return_packet_type_e;
 
 
@@ -59,7 +57,6 @@ package bsg_manycore_pkg;
   // byte-selection for int_wb load should be done at the destination of request packet.
   typedef struct packed {
     logic float_wb;
-    logic icache_fetch;
     logic is_unsigned_op;
     logic is_byte_op;
     logic is_hex_op;  // this is a "half" op.

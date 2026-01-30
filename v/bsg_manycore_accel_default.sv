@@ -11,20 +11,11 @@ module bsg_manycore_accel_default
      , `BSG_INV_PARAM(data_width_p   )
      , `BSG_INV_PARAM(addr_width_p   )
 
-     , `BSG_INV_PARAM(icache_entries_p )
-     , `BSG_INV_PARAM(icache_tag_width_p )
-
      , `BSG_INV_PARAM(dmem_size_p ) 
-     , `BSG_INV_PARAM(num_vcache_rows_p )
-     , `BSG_INV_PARAM(vcache_size_p )
-     , `BSG_INV_PARAM(vcache_block_size_in_words_p )
-     , `BSG_INV_PARAM(vcache_sets_p )
      , `BSG_INV_PARAM(ipoly_hashing_p)
 
      , `BSG_INV_PARAM(num_tiles_x_p )
      , `BSG_INV_PARAM(num_tiles_y_p )
-
-     , `BSG_INV_PARAM(icache_block_size_in_words_p)
 
      , `BSG_INV_PARAM(rev_fifo_els_p) // for FIFO credit counting.
      , `BSG_INV_PARAM(fwd_fifo_els_p) // for FIFO credit counting.
@@ -36,9 +27,7 @@ module bsg_manycore_accel_default
      , parameter proc_fifo_els_p = 4
      , debug_p = 1
 
-     , localparam icache_addr_width_lp = `BSG_SAFE_CLOG2(icache_entries_p)
      , dmem_addr_width_lp = `BSG_SAFE_CLOG2(dmem_size_p)
-     , pc_width_lp=(icache_addr_width_lp+icache_tag_width_p)
      , data_mask_width_lp=(data_width_p>>3)
      , reg_addr_width_lp=RV32_reg_addr_width_gp
 

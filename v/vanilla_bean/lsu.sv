@@ -35,9 +35,6 @@ module lsu
     , input [data_width_p-1:0] exe_rs2_i
     , input [reg_addr_width_lp-1:0] exe_rd_i
     , input [RV32_Iimm_width_gp-1:0] mem_offset_i
-    , input [data_width_p-1:0] pc_plus4_i
-    , input icache_miss_i
-
     // to network TX
     , output remote_req_s remote_req_o
     , output logic remote_req_v_o
@@ -57,10 +54,7 @@ module lsu
 
 
   logic [data_width_p-1:0] mem_addr;
-  logic [data_width_p-1:0] miss_addr;
-
   assign mem_addr = exe_rs1_i + `BSG_SIGN_EXTEND(mem_offset_i, data_width_p);
-  assign miss_addr = (pc_plus4_i - 'h4) | bsg_dram_npa_prefix_gp;
 
   // store data mask
   //
@@ -107,34 +101,20 @@ module lsu
   assign byte_sel_o = mem_addr[1:0];
 
   // remote request
-  // 1) icache fetch
-  // 2) remote store
-  // 3) remote load
-  // 4) atomic
+  // 1) remote store
+  // 2) remote load
+  // 3) atomic
   bsg_manycore_load_info_s load_info;
   
   always_comb begin
     // load info
-    if (icache_miss_i) begin
-      load_info = '{
-        float_wb: 1'b0,
-        icache_fetch: 1'b1,
-        is_unsigned_op: 1'b0,
-        is_byte_op: 1'b0,
-        is_hex_op: 1'b0,
-        part_sel: 2'b00
-      };
-    end
-    else begin
-      load_info = '{
-        float_wb: exe_decode_i.write_frd,
-        icache_fetch: 1'b0,
-        is_unsigned_op: exe_decode_i.is_load_unsigned,
-        is_byte_op: exe_decode_i.is_byte_op,
-        is_hex_op: exe_decode_i.is_hex_op,
-        part_sel: exe_decode_i.is_uncached_op ? 2'b00 : mem_addr[1:0]
-      };
-    end
+    load_info = '{
+      float_wb: exe_decode_i.write_frd,
+      is_unsigned_op: exe_decode_i.is_load_unsigned,
+      is_byte_op: exe_decode_i.is_byte_op,
+      is_hex_op: exe_decode_i.is_hex_op,
+      part_sel: exe_decode_i.is_uncached_op ? 2'b00 : mem_addr[1:0]
+    };
 
     remote_req_o = '{
       write_not_read : (exe_decode_i.is_store_op),
@@ -145,14 +125,14 @@ module lsu
       load_info : load_info,
       reg_id : exe_rd_i,
       data : store_data,
-      addr : (icache_miss_i ? miss_addr : mem_addr)
+      addr : mem_addr
     }; 
 
   end
 
 
-  assign remote_req_v_o = icache_miss_i |
-    ((exe_decode_i.is_load_op | exe_decode_i.is_store_op | exe_decode_i.is_amo_op) & ~is_local_dmem_addr);
+  assign remote_req_v_o =
+    (exe_decode_i.is_load_op | exe_decode_i.is_store_op | exe_decode_i.is_amo_op) & ~is_local_dmem_addr;
 
   // reserve
   // only valid on local DMEM
