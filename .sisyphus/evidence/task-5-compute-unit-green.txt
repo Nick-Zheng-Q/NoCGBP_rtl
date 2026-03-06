@@ -1,0 +1,15 @@
+COMMAND: make -C nocbp_verilator run LEVEL=unit TEST=compute_unit_top
+make: 进入目录“/home/nick/Workspace/bsg_manycore/nocbp_verilator”
+mkdir -p build/unit/compute_unit_top/obj_dir
+python3 common/update_clangd_includes.py .clangd /home/nick/Workspace/bsg_manycore/nocbp_verilator/build/unit/compute_unit_top/obj_dir
+verilator --cc --exe --build -O2 -Wall -Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-UNOPTFLAT --top-module compute_unit_top --Mdir build/unit/compute_unit_top/obj_dir -f /home/nick/Workspace/bsg_manycore/nocbp_verilator/tests/unit/gbp_pe_fpu.f /home/nick/Workspace/bsg_manycore/v/gbp_pe/gbp_pkg.sv /home/nick/Workspace/bsg_manycore/v/gbp_pe/interfaces.sv /home/nick/Workspace/bsg_manycore/v/gbp_pe/compute_unit.sv /home/nick/Workspace/bsg_manycore/nocbp_verilator/tops/unit/compute_unit_top.sv /home/nick/Workspace/bsg_manycore/nocbp_verilator/tests/unit/compute_unit_top.cc /home/nick/Workspace/bsg_manycore/nocbp_verilator/common/sim_main.cc -I/home/nick/Workspace/bsg_manycore/v -I/home/nick/Workspace/bsg_manycore/v/gbp_pe -I/home/nick/Workspace/bsg_manycore/basejump_stl/bsg_misc -I/home/nick/Workspace/bsg_manycore/basejump_stl/bsg_fpu -I/home/nick/Workspace/bsg_manycore/imports/HardFloat/source -I/home/nick/Workspace/bsg_manycore/imports/HardFloat/source/RISCV 
+make[1]: 进入目录“/home/nick/Workspace/bsg_manycore/nocbp_verilator/build/unit/compute_unit_top/obj_dir”
+ccache g++  -I.  -MMD -I/home/nick/Workspace/tools/verilator/include -I/home/nick/Workspace/tools/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow       -Os -c -o compute_unit_top.o /home/nick/Workspace/bsg_manycore/nocbp_verilator/tests/unit/compute_unit_top.cc
+g++    sim_main.o compute_unit_top.o verilated.o verilated_threads.o Vcompute_unit_top__ALL.a    -pthread -lpthread -latomic   -o Vcompute_unit_top
+make[1]: 离开目录“/home/nick/Workspace/bsg_manycore/nocbp_verilator/build/unit/compute_unit_top/obj_dir”
+build/unit/compute_unit_top/obj_dir/Vcompute_unit_top
+OP_MATRIX_PASS_MARKER: add/sub/mul/div matrix clean
+compute_unit_top: op-matrix executed add/sub/mul/div
+compute_unit_top: failures=0
+make: 离开目录“/home/nick/Workspace/bsg_manycore/nocbp_verilator”
+EXIT_CODE: 0
