@@ -1,0 +1,38 @@
+dataset:
+  type: "synthetic_line"
+  line_nodes: 16
+  spacing: 1.0
+  seed: 12345
+  anchor_std: 0.001
+  init_noise_std: 1.0
+
+logging:
+  path: "nocbp_verilator/tests/oracle/generated/synthetic_line.log"
+
+simulation:
+  max_cycles: 5000
+  are_stop_threshold: 1.5
+  print_interval: 1000
+
+gbp:
+  precision: "fp64"
+  eta_damping: 0.4
+  beta: 0.01
+  num_undamped_iters: 6
+  min_linear_iters: 8
+  gauss_noise_std: 2.0
+  loss: "HUBER"
+  mahalanobis_threshold: 3.0
+
+noc_config:
+  mem_node_type: "MemNode2"
+  vn_num: 4
+  vc_per_vn: 4
+  vc_priority_per_vn: 0
+  inport_flit_buffer_size: 4
+  outport_flit_buffer_size: 4
+  flit_length: 64
+  ni_max_send_per_cycle: 2
+  rinport_max_send_per_cycle: 4
+  link_time: 1
+  frequency: 2

@@ -1,0 +1,182 @@
+{
+  "artifact_type": "oracle_task4",
+  "checksum": {
+    "algorithm": "sha256",
+    "scope": "artifact_without_checksum_field",
+    "value": "dd5f17635635e08c5561e9bce55a81ce12c65046ec2b935ca17ebdc0a302dc9b"
+  },
+  "compare_contract": {
+    "pass_rule": "all_metrics_within_thresholds",
+    "thresholds": {
+      "final_are": {
+        "abs_tol": 0.001,
+        "rel_tol": 0.01
+      },
+      "final_energy": {
+        "abs_tol": 0.001,
+        "rel_tol": 0.01
+      },
+      "iters": {
+        "abs_tol": 0.0,
+        "rel_tol": 0.0
+      }
+    }
+  },
+  "function_oracle": {
+    "deterministic_seed": 24680,
+    "runtime_hookup": "pending",
+    "sections": {
+      "compute_factor_node": {
+        "anchor": {
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "a29ba2195d7f5d402a4bf8dece19ba79ca16297697273475724a7a4731dc1621"
+          },
+          "line": 833,
+          "span_lines": 8
+        },
+        "cases": [
+          {
+            "expected": {
+              "belief_eta_0": 1.97303025,
+              "belief_lam_00": 3.87271888,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                0,
+                1
+              ],
+              "stale_mask": [
+                0,
+                1,
+                0
+              ],
+              "vector_id": 0
+            },
+            "scenario": "compute_factor_node_staged_case_0"
+          },
+          {
+            "expected": {
+              "belief_eta_0": 1.9418576,
+              "belief_lam_00": 3.4028365,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                1,
+                0
+              ],
+              "stale_mask": [
+                1,
+                1,
+                0
+              ],
+              "vector_id": 1
+            },
+            "scenario": "compute_factor_node_staged_case_1"
+          }
+        ],
+        "mode": "staged_placeholder_v1"
+      },
+      "compute_variable_node": {
+        "anchor": {
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "f5669a554cae45e5233856d18a692261405afd3a186c3d09705ae3272bf0b5fa"
+          },
+          "line": 805,
+          "span_lines": 8
+        },
+        "cases": [
+          {
+            "expected": {
+              "belief_eta_0": -1.69341962,
+              "belief_lam_00": 1.47105986,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                0,
+                1
+              ],
+              "stale_mask": [
+                0,
+                1,
+                0
+              ],
+              "vector_id": 0
+            },
+            "scenario": "compute_variable_node_staged_case_0"
+          },
+          {
+            "expected": {
+              "belief_eta_0": -0.54419592,
+              "belief_lam_00": 2.85406311,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                1,
+                0
+              ],
+              "stale_mask": [
+                1,
+                1,
+                0
+              ],
+              "vector_id": 1
+            },
+            "scenario": "compute_variable_node_staged_case_1"
+          }
+        ],
+        "mode": "staged_placeholder_v1"
+      }
+    },
+    "source": "nocbp_simulator/pe/ProcessingElement.cpp"
+  },
+  "metadata": {
+    "determinism": {
+      "max_cycles": 5000,
+      "max_iters": 50,
+      "seed": 24680,
+      "workloads": [
+        "synthetic_line",
+        "synthetic_lattice"
+      ]
+    },
+    "generated_at_utc": "seed-0000024680",
+    "git_commit": "4cb16e62ce2780fec4d5a44b2216573d3806d958",
+    "run_id": "phase1-deterministic",
+    "tool_version": "generate_gbp_oracle_phase1.py+gbp_oracle_ref_main.cpp"
+  },
+  "schema_version": "1.0",
+  "workloads": {
+    "synthetic_lattice": {
+      "input_checksum": {
+        "algorithm": "sha256",
+        "value": "7aa347d65acc3ae8dd0aa2fe8ac031c7f1bc6b07d4ec987254cc9a3d268b3e47"
+      },
+      "metrics": {
+        "final_are": 0.0400275,
+        "final_energy": 0.00931343,
+        "iters": 50
+      }
+    },
+    "synthetic_line": {
+      "input_checksum": {
+        "algorithm": "sha256",
+        "value": "047a98fd0d0a594aa79a013258afb34b11c57ee50918481c2c431ca7f89fb22a"
+      },
+      "metrics": {
+        "final_are": 0.00395264,
+        "final_energy": 3.86547e-05,
+        "iters": 50
+      }
+    }
+  }
+}

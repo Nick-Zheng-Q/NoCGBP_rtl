@@ -1,0 +1,21 @@
+top: data_fifo
+
+incdirs:
+  - ../v
+  - ../v/gbp_pe
+  - ../basejump_stl
+  - ../basejump_stl/bsg_misc
+  - ../basejump_stl/bsg_mem
+
+rtl_sv:
+  - ../basejump_stl/bsg_misc/bsg_defines.sv
+  - ../v/gbp_pe/gbp_pkg.sv
+  - ../basejump_stl/bsg_dataflow/bsg_fifo_1r1w_large.sv
+  - ../basejump_stl/bsg_dataflow/bsg_serial_in_parallel_out.sv
+  - ../basejump_stl/bsg_dataflow/bsg_parallel_in_serial_out.sv
+  - ../basejump_stl/bsg_dataflow/bsg_two_fifo.sv
+  - ../basejump_stl/bsg_dataflow/bsg_round_robin_2_to_2.sv
+  - ../basejump_stl/bsg_dataflow/bsg_round_robin_n_to_1.sv
+  - ../basejump_stl/bsg_misc/bsg_thermometer_count.sv
+  - ../basejump_stl/bsg_dataflow/bsg_fifo_1rw_large.sv
+  - ../v/gbp_pe/data_fifo.sv

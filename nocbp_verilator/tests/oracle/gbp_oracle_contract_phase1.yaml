@@ -1,0 +1,25 @@
+contract_version: 1
+simulator_config_path: config.yml
+
+workload_a_name: synthetic_line
+workload_a_nodes: 16
+workload_a_spacing: 1.0
+workload_a_seed: 12345
+
+workload_b_name: synthetic_lattice
+workload_b_rows: 4
+workload_b_cols: 4
+workload_b_spacing: 1.0
+workload_b_seed: 12345
+
+max_iters: 50
+max_cycles: 5000
+
+threshold_state_message_abs_err: 1e-4
+threshold_state_message_rel_err: 1e-3
+threshold_are_energy_abs_err: 1e-3
+threshold_are_energy_rel_err: 1e-2
+
+nan_mismatch_fail: true
+inf_mismatch_fail: true
+signed_zero_equivalent: true

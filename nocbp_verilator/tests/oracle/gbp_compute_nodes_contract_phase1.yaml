@@ -1,0 +1,25 @@
+# Oracle contract for function-level parity (compute_variable_node / compute_factor_node)
+# Abs-only tolerance rule: abs_err <= abs_tol
+# Designed for control+compute layer semantic validation
+
+contract_version: 1
+contract_type: function_level_parity
+simulator_config_path: config.yml
+
+# Function-level semantic anchors from simulator
+# - compute_variable_node: ProcessingElement.cpp:805
+# - compute_factor_node: ProcessingElement.cpp:833
+# - can_compute_variable_node: ProcessingElement.cpp:949
+# - can_compute_factor_node: ProcessingElement.cpp:977
+# Tolerance policy: ABS-ONLY (not abs-or-rel)
+abs_tol: 1e-4
+abs_only: true
+
+# Floating-point policy
+nan_mismatch_fail: true
+inf_mismatch_fail: true
+signed_zero_equivalent: true
+
+# Metadata for deterministic generation
+generator_seed: 42
+function_count: 4

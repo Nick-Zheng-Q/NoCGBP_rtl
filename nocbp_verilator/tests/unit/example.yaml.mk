@@ -1,0 +1,2 @@
+INCDIRS := common
+DEFINES := EXAMPLE_DEFINE=1

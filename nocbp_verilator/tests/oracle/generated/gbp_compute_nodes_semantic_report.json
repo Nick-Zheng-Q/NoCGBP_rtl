@@ -1,0 +1,201 @@
+{
+  "metadata": {
+    "abs_tol": 0.0001,
+    "comparison": "abs_only",
+    "pass_rule": "abs_err<=abs_tol"
+  },
+  "compute_variable_node": {
+    "status": "FAIL",
+    "summary": {
+      "total_cases": 2,
+      "failed_cases": 1
+    },
+    "cases": [
+      {
+        "vector_id": 0,
+        "scenario": "compute_variable_node_staged_case_0",
+        "status": "FAIL",
+        "state_semantics_pass": true,
+        "fields": {
+          "belief_eta_0": {
+            "observed": -1.69232,
+            "expected": -1.69342,
+            "abs_err": 0.0011,
+            "abs_tol": 0.0001,
+            "status": "FAIL"
+          },
+          "belief_lam_00": {
+            "observed": 1.47106,
+            "expected": 1.47106,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "can_compute": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          }
+        }
+      },
+      {
+        "vector_id": 1,
+        "scenario": "compute_variable_node_staged_case_1",
+        "status": "PASS",
+        "state_semantics_pass": true,
+        "fields": {
+          "belief_eta_0": {
+            "observed": -0.544196,
+            "expected": -0.544196,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "belief_lam_00": {
+            "observed": 2.85406,
+            "expected": 2.85406,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "can_compute": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          }
+        }
+      }
+    ]
+  },
+  "compute_factor_node": {
+    "status": "FAIL",
+    "summary": {
+      "total_cases": 2,
+      "failed_cases": 1
+    },
+    "cases": [
+      {
+        "vector_id": 0,
+        "scenario": "compute_factor_node_staged_case_0",
+        "status": "PASS",
+        "prior_fallback": true,
+        "relin_gate_taken": true,
+        "damping_gate_taken": false,
+        "fields": {
+          "prior_fallback": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "robustify_called": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "relin_gate_taken": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "eta_damping_used": {
+            "observed": 0,
+            "expected": 0,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "belief_eta_0": {
+            "observed": 1.97303,
+            "expected": 1.97303,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "belief_lam_00": {
+            "observed": 3.87272,
+            "expected": 3.87272,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "can_compute": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          }
+        }
+      },
+      {
+        "vector_id": 1,
+        "scenario": "compute_factor_node_staged_case_1",
+        "status": "FAIL",
+        "prior_fallback": false,
+        "relin_gate_taken": false,
+        "damping_gate_taken": true,
+        "fields": {
+          "prior_fallback": {
+            "observed": 0,
+            "expected": 0,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "robustify_called": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "relin_gate_taken": {
+            "observed": 0,
+            "expected": 0,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "eta_damping_used": {
+            "observed": 0.25,
+            "expected": 0.25,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "belief_eta_0": {
+            "observed": 1.94186,
+            "expected": 1.94296,
+            "abs_err": 0.0011,
+            "abs_tol": 0.0001,
+            "status": "FAIL"
+          },
+          "belief_lam_00": {
+            "observed": 3.40284,
+            "expected": 3.40284,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          },
+          "can_compute": {
+            "observed": 1,
+            "expected": 1,
+            "abs_err": 0,
+            "abs_tol": 0.0001,
+            "status": "PASS"
+          }
+        }
+      }
+    ]
+  }
+}

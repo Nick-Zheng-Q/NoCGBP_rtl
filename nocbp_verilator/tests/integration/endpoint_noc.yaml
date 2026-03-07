@@ -1,0 +1,3 @@
+top: endpoint_noc_top
+top_sv: tops/integration/endpoint_noc_top.sv
+rtl_f: tests/integration/endpoint_noc.f

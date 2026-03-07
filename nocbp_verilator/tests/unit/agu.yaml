@@ -1,0 +1,11 @@
+top: agu_top
+top_sv: tops/unit/agu_top.sv
+
+incdirs:
+  - ../v
+  - ../v/gbp_pe
+
+rtl_sv:
+  - ../v/bsg_manycore_pkg.sv
+  - ../v/gbp_pe/gbp_pkg.sv
+  - ../v/gbp_pe/agu.sv

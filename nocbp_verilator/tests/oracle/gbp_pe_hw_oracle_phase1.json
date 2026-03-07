@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "gbp_pe_hw_oracle",
+  "scenario_a_expected_u32": "0x7f800000",
+  "scenario_b_expected_u32": "0x7f400000",
+  "abs_tol_u32": 0,
+  "rel_tol": 0.0
+}

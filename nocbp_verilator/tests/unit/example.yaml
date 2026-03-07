@@ -1,0 +1,6 @@
+# Example YAML config for unit test
+# This file is optional; used to validate YAML -> Makefile var path.
+incdirs:
+  - common
+defines:
+  - EXAMPLE_DEFINE=1

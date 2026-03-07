@@ -1,0 +1,65 @@
+{
+  "artifact_type": "oracle_task4",
+  "checksum": {
+    "algorithm": "sha256",
+    "scope": "artifact_without_checksum_field",
+    "value": "49ad58fb0e48083d2ccd972b2f9fbc901d67e6390e66415dc15b247d20d6fa93"
+  },
+  "compare_contract": {
+    "pass_rule": "all_metrics_within_thresholds",
+    "thresholds": {
+      "final_are": {
+        "abs_tol": 0.001,
+        "rel_tol": 0.01
+      },
+      "final_energy": {
+        "abs_tol": 0.001,
+        "rel_tol": 0.01
+      },
+      "iters": {
+        "abs_tol": 0.0,
+        "rel_tol": 0.0
+      }
+    }
+  },
+  "metadata": {
+    "determinism": {
+      "max_cycles": 5000,
+      "max_iters": 50,
+      "seed": 12345,
+      "workloads": [
+        "synthetic_line",
+        "synthetic_lattice"
+      ]
+    },
+    "generated_at_utc": "2026-03-05T15:39:51Z",
+    "git_commit": "e0384b3d683797143f91792caeb31ca65d764780",
+    "run_id": "phase1-deterministic",
+    "tool_version": "generate_gbp_oracle_phase1.py+gbp_oracle_ref_main.cpp"
+  },
+  "schema_version": "1.0",
+  "workloads": {
+    "synthetic_lattice": {
+      "input_checksum": {
+        "algorithm": "sha256",
+        "value": "7aa347d65acc3ae8dd0aa2fe8ac031c7f1bc6b07d4ec987254cc9a3d268b3e47"
+      },
+      "metrics": {
+        "final_are": 0.0217281,
+        "final_energy": 0.00274374,
+        "iters": 50
+      }
+    },
+    "synthetic_line": {
+      "input_checksum": {
+        "algorithm": "sha256",
+        "value": "047a98fd0d0a594aa79a013258afb34b11c57ee50918481c2c431ca7f89fb22a"
+      },
+      "metrics": {
+        "final_are": 0.00394527,
+        "final_energy": 3.79993e-05,
+        "iters": 50
+      }
+    }
+  }
+}

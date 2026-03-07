@@ -1,0 +1,83 @@
+{
+  "artifact_type": "nocbp_gbp_oracle_phase1",
+  "checksum": "ee7c3d0fe3ca8f7e8430e0e73be4d2e59e72f9350ea7ad3a14d721e56feafb5b",
+  "compare_contract": {
+    "floating_point_policy": {
+      "inf_mismatch_fail": true,
+      "nan_mismatch_fail": true,
+      "signed_zero_equivalent": true
+    },
+    "thresholds": {
+      "are_energy": {
+        "abs_err": 0.001,
+        "rel_err": 0.01
+      },
+      "state_message": {
+        "abs_err": 0.0001,
+        "rel_err": 0.001
+      }
+    }
+  },
+  "metadata": {
+    "contract_path": "nocbp_verilator/tests/oracle/gbp_oracle_contract_phase1.yaml",
+    "generator": "nocbp_verilator/tests/tools/generate_gbp_oracle.py",
+    "max_cycles": 5000,
+    "max_iters": 50,
+    "seed": 12345,
+    "simulator_binary": "/home/nick/Workspace/NoCBP/build/GBPSim",
+    "thresholds_hash": "b7a1fc417cfc595d6791a61533816cbede5260194ebc48e60b6c1cfaa4276766",
+    "workloads": [
+      "synthetic_line",
+      "synthetic_lattice"
+    ]
+  },
+  "schema_version": "1.0",
+  "workloads": {
+    "synthetic_lattice": {
+      "config_template": "nocbp_verilator/tests/oracle/synthetic_lattice_phase1.yml",
+      "dataset": {
+        "lattice_cols": 4,
+        "lattice_rows": 4,
+        "line_nodes": 0,
+        "seed": 12345,
+        "spacing": 1.0,
+        "type": "synthetic_lattice"
+      },
+      "log_path": "nocbp_verilator/tests/oracle/generated/synthetic_lattice.log",
+      "metrics": {
+        "reported_total_cycles": 1000,
+        "terminal_are": 0.114793,
+        "terminal_cycle": 1000,
+        "terminal_energy": 0.075992
+      },
+      "simulation": {
+        "gbp_precision": "fp64",
+        "max_cycles": 5000,
+        "print_interval": 1000
+      }
+    },
+    "synthetic_line": {
+      "config_template": "nocbp_verilator/tests/oracle/synthetic_line_phase1.yml",
+      "dataset": {
+        "lattice_cols": 0,
+        "lattice_rows": 0,
+        "line_nodes": 16,
+        "seed": 12345,
+        "spacing": 1.0,
+        "type": "synthetic_line"
+      },
+      "log_path": "nocbp_verilator/tests/oracle/generated/synthetic_line.log",
+      "metrics": {
+        "reported_total_cycles": 1000,
+        "terminal_are": 0.06972,
+        "terminal_cycle": 1000,
+        "terminal_energy": 0.044911
+      },
+      "simulation": {
+        "gbp_precision": "fp64",
+        "max_cycles": 5000,
+        "print_interval": 1000
+      }
+    }
+  }
+}
