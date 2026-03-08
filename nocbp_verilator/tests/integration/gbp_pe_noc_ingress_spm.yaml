@@ -1,0 +1,3 @@
+top: gbp_pe_noc_ingress_spm
+top_sv: tops/integration/gbp_pe_noc_ingress_spm.sv
+rtl_f: tests/integration/gbp_pe_noc_ingress_spm.f
