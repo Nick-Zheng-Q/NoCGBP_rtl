@@ -212,7 +212,7 @@ interface mic_spm_arbiter_if;
 
   logic spm_rd_req_valid;
   logic [SPM_ADDR_W-1:0] spm_rd_req_addr;
-  logic spm_rd_req_bytes;
+  logic [XFER_BYTES_W-1:0] spm_rd_req_bytes;
 
   logic spm_rd_rsp_valid;
   logic [BEAT_BITS-1:0] spm_rd_rsp_data;

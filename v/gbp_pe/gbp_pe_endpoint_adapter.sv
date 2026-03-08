@@ -20,14 +20,15 @@ module gbp_pe_endpoint_adapter
   import bsg_manycore_pkg::*;
   import gbp_pe_endpoint_adapter_pkg::*;
   #(
-    parameter int x_cord_width_p = "inv"
-    , parameter int y_cord_width_p = "inv"
-    , parameter int data_width_p = "inv"
-    , parameter int addr_width_p = "inv"
-    , parameter int fifo_els_p = 4
-    , parameter int rev_fifo_els_p = 4
-    , parameter int credit_counter_width_p = 32
-  )
+     parameter int x_cord_width_p = "inv"
+     , parameter int y_cord_width_p = "inv"
+     , parameter int data_width_p = "inv"
+     , parameter int addr_width_p = "inv"
+     , parameter int fifo_els_p = 4
+     , parameter int rev_fifo_els_p = 4
+     , parameter int credit_counter_width_p = 32
+     , parameter bit forward_local_writes_p = 1'b0
+   )
   (
     input  logic clk_i
     , input logic reset_i
@@ -187,7 +188,7 @@ module gbp_pe_endpoint_adapter
       end
     end
     else if (in_v_lo & in_we_lo) begin
-      if (~is_b0_w & ~is_payload_w) begin
+      if (forward_local_writes_p || (~is_b0_w & ~is_payload_w)) begin
         core_req_v_o = 1'b1;
       end
     end

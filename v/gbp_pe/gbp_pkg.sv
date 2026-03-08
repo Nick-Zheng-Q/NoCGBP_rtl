@@ -28,6 +28,31 @@ package gbp_pkg;
   ) : 1;
   localparam int unsigned WSTRB_W = BEAT_BYTES;  // byte mask width per beat
 
+  // ---- ingress/MMIO contract constants ----
+  localparam int unsigned GBP_INGRESS_BANK_W = 3;
+  localparam int unsigned GBP_INGRESS_ROW_BYTES_LG = BYTE_OFF_W + WORD_OFF_W;
+
+  // Ingress address classes used by gbp_pe endpoint bridge.
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_MMIO_BANK_B0 = 3'd0;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_FWD_BANK_B1 = 3'd1;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_FWD_BANK_B2 = 3'd2;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_FWD_BANK_B3 = 3'd3;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_PAYLOAD_BANK_B4 = 3'd4;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_PAYLOAD_BANK_B5 = 3'd5;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_PAYLOAD_BANK_B6 = 3'd6;
+  localparam logic [GBP_INGRESS_BANK_W-1:0] GBP_INGRESS_PAYLOAD_BANK_B7 = 3'd7;
+
+  // MMIO field map for bank B0 (addr[4:2]).
+  localparam logic [2:0] GBP_MMIO_FIELD_Q_BASE_ADDR = 3'd0;
+  localparam logic [2:0] GBP_MMIO_FIELD_Q_DEPTH = 3'd1;
+  localparam logic [2:0] GBP_MMIO_FIELD_Q_HEAD = 3'd2;
+  localparam logic [2:0] GBP_MMIO_FIELD_Q_TAIL = 3'd3;
+  localparam logic [2:0] GBP_MMIO_FIELD_Q_CREDIT = 3'd4;
+  localparam logic [2:0] GBP_MMIO_FIELD_Q_EPOCH_DOORBELL = 3'd5;
+
+  // Read request byte-count contract for full-beat SPM reads.
+  localparam logic [XFER_BYTES_W-1:0] SPM_RD_REQ_BYTES_FULL_BEAT = XFER_BYTES_W'(BEAT_BYTES);
+
   // ---- enums (可选，但强烈建议) ----
   typedef enum logic {
     OP_READ  = 1'b0,

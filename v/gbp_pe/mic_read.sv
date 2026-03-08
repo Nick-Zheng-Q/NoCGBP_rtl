@@ -42,8 +42,8 @@ module mic_read
   // - SPM arbiter is ready
   assign mic_to_spm_arbiter.spm_rd_req_valid = (state_r == IDLE) & valid_i;
   assign mic_to_spm_arbiter.spm_rd_req_addr = (state_r == IDLE) ? data_i[SPM_ADDR_W-1:0] : addr_r;
-  // Assume full beat transfer (32 bytes) - can be derived from data_i if needed
-  assign mic_to_spm_arbiter.spm_rd_req_bytes = 'd32;
+  // Full-beat request width is part of gbp_pkg ingress/SPM contract.
+  assign mic_to_spm_arbiter.spm_rd_req_bytes = SPM_RD_REQ_BYTES_FULL_BEAT;
 
   // Advance addr_fifo when we accept the address
   assign unqueue_o = (state_r == IDLE) & valid_i;

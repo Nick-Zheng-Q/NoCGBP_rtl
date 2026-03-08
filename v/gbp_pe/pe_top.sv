@@ -4,11 +4,26 @@ module pe_top
     input logic clk_i,
     input logic reset_i,
 
+    input logic cmd_valid_i,
+    input logic [1:0] cmd_kind_i,
+    input logic [TXN_ID_W-1:0] cmd_txn_id_i,
+    output logic cmd_ready_o,
+    output logic rsp_done_o,
+    output logic rsp_error_o,
+
+    input logic ingress_wr_valid_i,
+    input logic [SPM_ADDR_W-1:0] ingress_wr_addr_i,
+    input logic [BEAT_BITS-1:0] ingress_wr_data_i,
+    output logic ingress_wr_ready_o,
+
     output logic rd_req_valid_o,
     output logic [SPM_ADDR_W-1:0] rd_req_addr_o,
     output logic wr_req_valid_o,
     output logic [SPM_ADDR_W-1:0] wr_req_addr_o,
     output logic [31:0] wr_req_data_low_o,
+    output logic ingress_wr_req_valid_o,
+    output logic [SPM_ADDR_W-1:0] ingress_wr_req_addr_o,
+    output logic [31:0] ingress_wr_req_data_low_o,
     output logic compute_start_o,
     output logic compute_done_o,
     output logic [TXN_ID_W-1:0] wr_txn_id_o,
@@ -30,13 +45,38 @@ module pe_top
   mic_spm_arbiter_if rd_if[2*NB]();
   mic_spm_arbiter_wr_if wr_if[2*NB]();
 
+  logic ingress_addr_fifo_ready_lo;
+  logic ingress_addr_fifo_valid_lo;
+  logic [SPM_ADDR_W-1:0] ingress_addr_fifo_data_lo;
+  logic ingress_addr_fifo_unqueue_lo;
+
+  logic ingress_data_fifo_ready_lo;
+  logic ingress_data_fifo_valid_lo;
+  logic [BEAT_BYTES-1:0] ingress_data_fifo_data_lo;
+  logic ingress_data_fifo_unqueue_lo;
+  logic [7:0] ingress_data_fifo_occ_lo;
+  logic ingress_data_fifo_afull_lo;
+
+  logic [BEAT_BITS-1:0] ingress_data_to_mic_lo;
+  logic ingress_wr_enqueue_lo;
+
   logic wr_desc_pending_r, wr_desc_pending_n;
   logic [SPM_ADDR_W-1:0] wr_base_addr_r, wr_base_addr_n;
   logic [TXN_ID_W-1:0] wr_txn_id_r, wr_txn_id_n;
   logic cmd_accept_lo;
   logic compute_cmd_ready_lo;
   logic compute_rsp_done_lo;
+  logic compute_cmd_ready_masked_lo;
+  logic compute_rsp_done_masked_lo;
   logic compute_done_legacy_lo;
+  logic compute_cmd_valid_lo;
+  logic compute_cmd_kind_lo;
+  logic [TXN_ID_W-1:0] compute_cmd_txn_id_lo;
+  logic sideband_cmd_active_lo;
+  logic sideband_cmd_unsupported_lo;
+  logic sideband_inflight_r, sideband_inflight_n;
+  logic sideband_unsupported_rsp_r, sideband_unsupported_rsp_n;
+  logic sideband_unsupported_hold_r, sideband_unsupported_hold_n;
 
   logic compute_done_lo;
   logic [0:0][31:0] compute_data_a_lo;
@@ -82,6 +122,47 @@ module pe_top
       .mic_to_spm_arbiter(wr_if[0])
   );
 
+  assign ingress_wr_ready_o = ingress_addr_fifo_ready_lo & ingress_data_fifo_ready_lo;
+  assign ingress_wr_enqueue_lo = ingress_wr_valid_i & ingress_wr_ready_o;
+
+  addr_fifo u_ingress_addr_fifo (
+      .clk_i(clk_i),
+      .reset_i(reset_i),
+      .data_i(ingress_wr_addr_i),
+      .valid_i(ingress_wr_enqueue_lo),
+      .ready_o(ingress_addr_fifo_ready_lo),
+      .valid_o(ingress_addr_fifo_valid_lo),
+      .data_o(ingress_addr_fifo_data_lo),
+      .unqueue_i(ingress_addr_fifo_unqueue_lo)
+  );
+
+  data_fifo u_ingress_data_fifo (
+      .clk_i(clk_i),
+      .reset_i(reset_i),
+      .data_i(ingress_wr_data_i[BEAT_BYTES-1:0]),
+      .valid_i(ingress_wr_enqueue_lo),
+      .ready_o(ingress_data_fifo_ready_lo),
+      .valid_o(ingress_data_fifo_valid_lo),
+      .data_o(ingress_data_fifo_data_lo),
+      .unqueue_i(ingress_data_fifo_unqueue_lo),
+      .occ(ingress_data_fifo_occ_lo),
+      .afull(ingress_data_fifo_afull_lo)
+  );
+
+  assign ingress_data_to_mic_lo = {{(BEAT_BITS-BEAT_BYTES){1'b0}}, ingress_data_fifo_data_lo};
+
+  mic_write u_ingress_mic_write (
+      .clk_i(clk_i),
+      .reset_i(reset_i),
+      .addr_valid_i(ingress_addr_fifo_valid_lo),
+      .addr_data_i(ingress_addr_fifo_data_lo),
+      .addr_unqueue_o(ingress_addr_fifo_unqueue_lo),
+      .data_valid_i(ingress_data_fifo_valid_lo),
+      .data_data_i(ingress_data_to_mic_lo),
+      .data_unqueue_o(ingress_data_fifo_unqueue_lo),
+      .mic_to_spm_arbiter(wr_if[1])
+  );
+
   // Mapping contract: read payload bytes [7:0]/[15:8] feed compute lanes A/B; the
   // resulting 32-bit lane-0 value is forwarded as the write payload low word.
   assign compute_data_a_lo[0] = {24'h0, read_stream_if0.data[7:0]};
@@ -98,8 +179,8 @@ module pe_top
       ,.reset_i(reset_i)
       ,.if_stream_if_stream(read_stream_if0)
       ,.if_write_stream_if_stream(write_stream_if0)
-      ,.cmd_valid_i(control_compute_if0.cmd_valid)
-      ,.cmd_kind_i(control_compute_if0.cmd_kind)
+      ,.cmd_valid_i(compute_cmd_valid_lo)
+      ,.cmd_kind_i(compute_cmd_kind_lo)
       ,.cmd_ready_o(compute_cmd_ready_lo)
       ,.rsp_done_o(compute_rsp_done_lo)
       ,.data_a_i(compute_data_a_lo)
@@ -119,10 +200,13 @@ module pe_top
 
   genvar gi;
   generate
-    for (gi = 1; gi < 2*NB; gi++) begin : g_tie_unused_ports
+    for (gi = 1; gi < 2*NB; gi++) begin : g_tie_unused_rd_ports
       assign rd_if[gi].spm_rd_req_valid = 1'b0;
       assign rd_if[gi].spm_rd_req_addr = '0;
       assign rd_if[gi].spm_rd_req_bytes = 1'b0;
+    end
+
+    for (gi = 2; gi < 2*NB; gi++) begin : g_tie_unused_wr_ports
 
       assign wr_if[gi].spm_wr_req_valid = 1'b0;
       assign wr_if[gi].spm_wr_req_addr = '0;
@@ -136,10 +220,16 @@ module pe_top
       wr_desc_pending_r <= 1'b0;
       wr_base_addr_r <= '0;
       wr_txn_id_r <= '0;
+      sideband_inflight_r <= 1'b0;
+      sideband_unsupported_rsp_r <= 1'b0;
+      sideband_unsupported_hold_r <= 1'b0;
     end else begin
       wr_desc_pending_r <= wr_desc_pending_n;
       wr_base_addr_r <= wr_base_addr_n;
       wr_txn_id_r <= wr_txn_id_n;
+      sideband_inflight_r <= sideband_inflight_n;
+      sideband_unsupported_rsp_r <= sideband_unsupported_rsp_n;
+      sideband_unsupported_hold_r <= sideband_unsupported_hold_n;
     end
   end
 
@@ -147,13 +237,51 @@ module pe_top
     wr_desc_pending_n = wr_desc_pending_r;
     wr_base_addr_n = wr_base_addr_r;
     wr_txn_id_n = wr_txn_id_r;
+    sideband_inflight_n = sideband_inflight_r;
+    sideband_unsupported_rsp_n = sideband_unsupported_rsp_r;
+    sideband_unsupported_hold_n = sideband_unsupported_hold_r;
 
-    cmd_accept_lo = control_compute_if0.cmd_valid & control_compute_if0.cmd_ready;
+    sideband_cmd_active_lo = cmd_valid_i | sideband_inflight_r;
+    sideband_cmd_unsupported_lo = cmd_valid_i & cmd_kind_i[1];
+
+    if (cmd_valid_i) begin
+      compute_cmd_valid_lo = ~sideband_cmd_unsupported_lo;
+      compute_cmd_kind_lo = cmd_kind_i[0];
+      compute_cmd_txn_id_lo = cmd_txn_id_i;
+    end else begin
+      compute_cmd_valid_lo = control_compute_if0.cmd_valid;
+      compute_cmd_kind_lo = control_compute_if0.cmd_kind;
+      compute_cmd_txn_id_lo = control_compute_if0.cmd_txn_id;
+    end
+
+    cmd_ready_o = sideband_cmd_unsupported_lo ? 1'b1 : compute_cmd_ready_lo;
+    rsp_done_o = sideband_unsupported_rsp_r | (sideband_inflight_r & compute_rsp_done_lo);
+    rsp_error_o = sideband_unsupported_rsp_r;
+
+    if (cmd_valid_i && sideband_cmd_unsupported_lo && cmd_ready_o) begin
+      sideband_unsupported_rsp_n = 1'b1;
+      sideband_unsupported_hold_n = 1'b1;
+    end else if (sideband_unsupported_rsp_r && sideband_unsupported_hold_r) begin
+      sideband_unsupported_hold_n = 1'b0;
+    end else if (sideband_unsupported_rsp_r) begin
+      sideband_unsupported_rsp_n = 1'b0;
+    end
+
+    if (cmd_valid_i && ~sideband_cmd_unsupported_lo && compute_cmd_ready_lo) begin
+      sideband_inflight_n = 1'b1;
+    end else if (sideband_inflight_r && compute_rsp_done_lo) begin
+      sideband_inflight_n = 1'b0;
+    end
+
+    compute_cmd_ready_masked_lo = sideband_cmd_active_lo ? 1'b0 : compute_cmd_ready_lo;
+    compute_rsp_done_masked_lo = sideband_cmd_active_lo ? 1'b0 : compute_rsp_done_lo;
+
+    cmd_accept_lo = compute_cmd_valid_lo & compute_cmd_ready_lo;
 
     if (cmd_accept_lo) begin
       wr_desc_pending_n = 1'b1;
       wr_base_addr_n = MESSAGE_WRITE_BASE_LP;
-      wr_txn_id_n = control_compute_if0.cmd_txn_id;
+      wr_txn_id_n = compute_cmd_txn_id_lo;
     end
 
     if (wr_desc_pending_r && stream_dispatcher_if_write0.ready) begin
@@ -180,17 +308,20 @@ module pe_top
 
   assign compute_done_legacy_lo = compute_rsp_done_lo;
   assign control_compute_if0.done = compute_done_legacy_lo;
-  assign control_compute_if0.cmd_ready = compute_cmd_ready_lo;
-  assign control_compute_if0.rsp_done = compute_rsp_done_lo;
+  assign control_compute_if0.cmd_ready = compute_cmd_ready_masked_lo;
+  assign control_compute_if0.rsp_done = compute_rsp_done_masked_lo;
 
   assign rd_req_valid_o = rd_if[0].spm_rd_req_valid;
   assign rd_req_addr_o = rd_if[0].spm_rd_req_addr;
   assign wr_req_valid_o = wr_if[0].spm_wr_req_valid;
   assign wr_req_addr_o = wr_if[0].spm_wr_req_addr;
   assign wr_req_data_low_o = wr_if[0].spm_wr_req_data[31:0];
+  assign ingress_wr_req_valid_o = wr_if[1].spm_wr_req_valid;
+  assign ingress_wr_req_addr_o = wr_if[1].spm_wr_req_addr;
+  assign ingress_wr_req_data_low_o = wr_if[1].spm_wr_req_data[31:0];
   assign compute_start_o = control_compute_if0.start;
   assign compute_done_o = compute_done_legacy_lo;
   assign wr_txn_id_o = wr_txn_id_r;
-  assign cmd_txn_id_o = control_compute_if0.cmd_txn_id;
+  assign cmd_txn_id_o = compute_cmd_txn_id_lo;
 
  endmodule
