@@ -215,14 +215,66 @@ static void tick(Vpe_top_integration* dut) {
 
 static void reset_dut(Vpe_top_integration* dut) {
   dut->rst_n = 0;
+  dut->cmd_valid = 0;
+  dut->cmd_kind = 0;
+  dut->cmd_txn = 0;
   tick(dut);
   tick(dut);
   dut->rst_n = 1;
 }
 
+static int run_unsupported_cmd_negative_case(Vpe_top_integration* dut) {
+  reset_dut(dut);
+
+  dut->cmd_valid = 1;
+  dut->cmd_kind = 0x2u;
+  dut->cmd_txn = 0xA5u;
+
+  bool handshake_seen = false;
+  for (int cycle = 0; cycle < 32; ++cycle) {
+    tick(dut);
+    if (dut->cmd_ready) {
+      handshake_seen = true;
+      dut->cmd_valid = 0;
+      break;
+    }
+  }
+
+  if (!handshake_seen) {
+    std::fprintf(stderr,
+                 "pe_top integration: NEGATIVE_UNSUPPORTED_CMD_SETUP_FAIL sender_not_ready\n");
+    return 1;
+  }
+
+  for (int cycle = 0; cycle < 32; ++cycle) {
+    tick(dut);
+    if (dut->cmd_rsp_done && dut->cmd_rsp_error) {
+      std::fprintf(stderr,
+                   "pe_top integration: UNSUPPORTED_CMD_REJECTED kind=0x%x txn=0x%02x\n",
+                   static_cast<unsigned int>(0x2u),
+                   static_cast<unsigned int>(0xA5u));
+      return 2;
+    }
+  }
+
+  std::fprintf(stderr,
+               "pe_top integration: NEGATIVE_UNSUPPORTED_CMD_MISSING_RESPONSE kind=0x2 txn=0xA5\n");
+  return 1;
+}
+
 int run_test(int argc, char** argv) {
   Verilated::commandArgs(argc, argv);
   auto* dut = new Vpe_top_integration;
+
+  const char* negative_env = std::getenv("PE_TOP_NEGATIVE_UNSUPPORTED_CMD");
+  const bool negative_unsupported_cmd_mode =
+      (negative_env != nullptr) && (negative_env[0] != '\0') && (negative_env[0] != '0');
+
+  if (negative_unsupported_cmd_mode) {
+    const int rc = run_unsupported_cmd_negative_case(dut);
+    delete dut;
+    return rc;
+  }
 
   const char* expected_oracle_path = std::getenv("PE_TOP_ORACLE_PATH");
   if (expected_oracle_path == nullptr) {
@@ -299,7 +351,21 @@ int run_test(int argc, char** argv) {
   bool prev_wr_req_valid = false;
 
   for (int cycle = 0; cycle < kMaxCycles; ++cycle) {
+    dut->cmd_valid = 0;
+    dut->cmd_kind = 0;
+    dut->cmd_txn = 0;
+
     tick(dut);
+
+    if (dut->cmd_rsp_done || dut->cmd_rsp_error) {
+      std::fprintf(stderr,
+                   "FAIL: unexpected sideband response while cmd_valid=0 (done=%d err=%d cycle=%d)\n",
+                   dut->cmd_rsp_done ? 1 : 0,
+                   dut->cmd_rsp_error ? 1 : 0,
+                   cycle);
+      delete dut;
+      return 1;
+    }
 
     const bool new_rd_req =
         dut->rd_req_valid && (!prev_rd_req_valid || dut->rd_req_addr != prev_rd_req_addr);

@@ -11,6 +11,7 @@
 ../v/bsg_manycore_endpoint.sv
 ../v/bsg_manycore_endpoint_fc.sv
 ../v/bsg_manycore_endpoint_standard.sv
+../v/gbp_pe/gbp_pkg.sv
 ../v/gbp_pe/gbp_pe_endpoint_adapter.sv
 
 ../basejump_stl/bsg_misc/bsg_counter_up_down.sv

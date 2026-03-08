@@ -1,6 +1,6 @@
 `include "bsg_manycore_defines.svh"
 
-module endpoint_noc_top (
+module endpoint_noc (
   input  logic        clk,
   input  logic        rst_n,
   input  logic        send_v,
@@ -11,11 +11,16 @@ module endpoint_noc_top (
   output logic        recv_seen,
   output logic [15:0] recv_addr,
   output logic [31:0] recv_data,
-  output logic        recv_we
+  output logic        recv_we,
+  output logic        recv_via_core_req,
+  output logic        rx_core_req_v_observe,
+  output logic [15:0] contract_mmio_addr,
+  output logic [15:0] contract_invalid_class_addr
 );
 
   import bsg_manycore_pkg::*;
   import bsg_noc_pkg::*;
+  import gbp_pkg::*;
 
   localparam int x_cord_width_lp = 2;
   localparam int y_cord_width_lp = 2;
@@ -24,6 +29,10 @@ module endpoint_noc_top (
   localparam int credit_counter_width_lp = 8;
   localparam int dims_lp = 2;
   localparam int dirs_lp = (dims_lp*2)+1;
+  localparam logic [addr_width_lp-1:0] ingress_mmio_q0_base_addr_lp =
+      addr_width_lp'(GBP_INGRESS_MMIO_BANK_B0 << GBP_INGRESS_ROW_BYTES_LG);
+  localparam logic [addr_width_lp-1:0] ingress_invalid_class_addr_lp =
+      addr_width_lp'(GBP_INGRESS_FWD_BANK_B1 << GBP_INGRESS_ROW_BYTES_LG);
 
   localparam int packet_width_lp =
     `bsg_manycore_packet_width(addr_width_lp,data_width_lp,x_cord_width_lp,y_cord_width_lp);
@@ -217,6 +226,9 @@ module endpoint_noc_top (
   assign tx_out_v = send_v;
   assign send_ready = tx_out_ready;
   assign rx_core_req_yumi = rx_core_req_v;
+  assign rx_core_req_v_observe = rx_core_req_v;
+  assign contract_mmio_addr = ingress_mmio_q0_base_addr_lp;
+  assign contract_invalid_class_addr = ingress_invalid_class_addr_lp;
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -224,16 +236,22 @@ module endpoint_noc_top (
       recv_addr <= '0;
       recv_data <= '0;
       recv_we <= 1'b0;
-    end else if (rx_core_req_v || mesh1_w_link_in_s.fwd.v) begin
-      recv_seen <= 1'b1;
+      recv_via_core_req <= 1'b0;
+    end else begin
       if (rx_core_req_v) begin
-        recv_addr <= rx_core_req_addr;
-        recv_data <= rx_core_req_data;
-        recv_we <= rx_core_req_we;
-      end else begin
-        recv_addr <= send_addr;
-        recv_data <= send_data;
-        recv_we <= send_we;
+        recv_via_core_req <= 1'b1;
+      end
+      if (rx_core_req_v || mesh1_w_link_in_s.fwd.v) begin
+        recv_seen <= 1'b1;
+        if (rx_core_req_v) begin
+          recv_addr <= rx_core_req_addr;
+          recv_data <= rx_core_req_data;
+          recv_we <= rx_core_req_we;
+        end else begin
+          recv_addr <= send_addr;
+          recv_data <= send_data;
+          recv_we <= send_we;
+        end
       end
     end
   end
