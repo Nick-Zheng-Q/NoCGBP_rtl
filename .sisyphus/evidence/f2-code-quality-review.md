@@ -1,48 +1,41 @@
-# F2 Code Quality Review (Rerun)
+# F2 Code Quality Review - Function-Level Harness/Report Path
 
-## Scope and Authority
-- Plan authority (read-only): `.sisyphus/plans/control-compute-gbp-rtl-verification.md`
-- RTL scope: `v/gbp_pe/control_unit.sv`, `v/gbp_pe/compute_unit.sv`
-- Unit/integration scope: `nocbp_verilator/tests/unit/control_unit_top.cc`, `nocbp_verilator/tests/unit/compute_unit_top.cc`, `nocbp_verilator/tests/unit/pe_unit.cc`, `nocbp_verilator/tests/unit/gbp_pe.cc`, `nocbp_verilator/tests/integration/pe_top_integration.cc`
-- Related harness files checked for coupling context: `nocbp_verilator/tops/unit/control_unit_top.sv`, `nocbp_verilator/tops/unit/compute_unit_top.sv`, `nocbp_verilator/tops/unit/pe_unit_top.sv`, `nocbp_verilator/tops/integration/pe_top_integration.sv`
+## Scope
+- Reviewed `nocbp_verilator/tests/unit/gbp_compute_nodes.cc` only (control+compute function-level harness/report path).
+- Reviewed semantic report output at `nocbp_verilator/tests/oracle/generated/gbp_compute_nodes_semantic_report.json`.
+- Reviewed task evidence from tasks 5-9 under `.sisyphus/evidence/` with emphasis on variable/factor pass/fail and function matrix artifacts.
+- Optional anti-pattern sweep in scope (`TODO|FIXME|HACK`) found no matches in `nocbp_verilator/tests/unit/gbp_compute_nodes.cc`.
 
-## Repository State Snapshot
-- `git status --short`: repository currently has broad untracked workspace content; no code edits were made in this task outside requested evidence/notepad updates.
-- `git diff --stat`: no tracked-diff summary was reported at review start.
-
-## Anti-Pattern Scan
-- Pattern used (language-adapted, per instruction): `TODO|FIXME|HACK|XXX|@ts-ignore|as any|console.log`
-- Scan paths: `v/gbp_pe/*.sv` and `nocbp_verilator/tests/*.cc`
-- Result: **no matches** in scoped RTL/tests.
-
-## Targeted Sanity Runs (Current)
-- `make -C nocbp_verilator run LEVEL=unit TEST=compute_unit_top` -> PASS with `OP_MATRIX_PASS_MARKER` and `failures=0`.
-- `make -C nocbp_verilator run LEVEL=integration TEST=pe_top_integration VERILATOR="verilator -Wno-fatal -Wno-WIDTHCONCAT -Wno-EOFNEWLINE"` -> PASS with `pe_top integration: PASS`.
+## Required Checks
+- Abs-only logic consistency: confirmed end-to-end use of `abs_err<=abs_tol` with `abs_tol=1e-4` in loader, checks, and report metadata (`nocbp_verilator/tests/unit/gbp_compute_nodes.cc:480`, `nocbp_verilator/tests/unit/gbp_compute_nodes.cc:281`, `nocbp_verilator/tests/unit/gbp_compute_nodes.cc:441`, `nocbp_verilator/tests/unit/gbp_compute_nodes.cc:162`).
+- Negative-mode determinism: confirmed deterministic positive/negative split in evidence (`task-7-perturb-pass.txt`, `task-7-perturb-fail.txt`, `task-9-function-matrix-error.txt`):
+  - Positive mode: no negative marker, clean pass.
+  - Negative mode: negative marker present, stable failure signature (`total_failures=2`, variable=1, factor=1).
 
 ## Findings by Severity
 
-### High (blocking)
-- **None found.** No high-severity correctness defect observed in current scoped RTL/tests.
+### Medium
+1) **Semantic report artifact is not mode-isolated (stale/failing report risk)**
+- The report path defaults to a single fixed file regardless of positive vs perturb mode (`nocbp_verilator/tests/unit/gbp_compute_nodes.cc:619`, `nocbp_verilator/tests/unit/gbp_compute_nodes.cc:621`).
+- The report is always written before returning in both positive and negative flows (`nocbp_verilator/tests/unit/gbp_compute_nodes.cc:870`).
+- Current workspace evidence shows a mismatch where PASS logs exist (`.sisyphus/evidence/task-8-report-pass.txt`, `.sisyphus/evidence/task-9-function-matrix.txt`) but the current JSON artifact shows FAIL cases (`nocbp_verilator/tests/oracle/generated/gbp_compute_nodes_semantic_report.json:8`, `nocbp_verilator/tests/oracle/generated/gbp_compute_nodes_semantic_report.json:75`), consistent with a later perturb write.
+- Impact: downstream tooling can consume a stale FAIL artifact even after a PASS run unless execution order is controlled.
 
-### Medium (non-blocking, monitor)
-- **M1 - Dispatch pulse depends on sampled ready edge in `S_IDLE`**: `control_unit` emits a message dispatch only on `dispatch_ready_rise_r` while command is pending (`v/gbp_pe/control_unit.sv:31`, `v/gbp_pe/control_unit.sv:130`, `v/gbp_pe/control_unit.sv:174`). This is behaviorally valid for current tests but tightly couples output behavior to historical ready transitions, which is less maintainable than pure combinational handshake intent.
-- **M2 - Division launch does not consume per-lane inReady**: `compute_unit` wires `div_ready_lo` from each divider but does not gate `div_active_r` assertion on those ready signals (`v/gbp_pe/compute_unit.sv:73`, `v/gbp_pe/compute_unit.sv:163`, `v/gbp_pe/compute_unit.sv:217`). Current regression is green, so this is not a present blocker; it remains a resilience risk if divider readiness behavior changes.
+2) **Perturb toggles use environment presence, not explicit value parsing**
+- `GBP_COMPUTE_NODES_VAR_PERTURB` and `GBP_COMPUTE_NODES_FACTOR_PERTURB` are enabled when the variable exists, regardless of value (`nocbp_verilator/tests/unit/gbp_compute_nodes.cc:663`, `nocbp_verilator/tests/unit/gbp_compute_nodes.cc:769`).
+- In contrast, `GBP_COMPUTE_NODES_PERTURB` requires `"1"` (`nocbp_verilator/tests/unit/gbp_compute_nodes.cc:604`).
+- Impact: operational robustness issue; e.g., setting `GBP_COMPUTE_NODES_VAR_PERTURB=0` still enables perturb behavior.
 
-### Low (non-blocking maintainability)
-- **L1 - Unused helper in unit test**: `set_bank` is declared but unused (`nocbp_verilator/tests/unit/control_unit_top.cc:54`), adding review noise only.
+### Low
+1) **Oracle parsing is regex-structure-coupled and brittle for format evolution**
+- Oracle loading relies on strict regex ordering over JSON-like text (`nocbp_verilator/tests/unit/gbp_compute_nodes.cc:513`, `nocbp_verilator/tests/unit/gbp_compute_nodes.cc:568`).
+- Any harmless field ordering/layout changes can break case extraction even with semantically valid JSON.
+- Impact: maintainability risk for future oracle schema/layout changes.
 
-## Explicit Re-Assessment: Post-Compute Write-Window (Prior Medium Concern)
-- Prior concern was that immediate acceptance could be too permissive. In current code, acceptance is not standalone: post-`compute_done` handling is coupled with additional sequencing and recovery checks.
-- Immediate/sustained-path gating is implemented in a bounded state machine (`nocbp_verilator/tests/integration/pe_top_integration.cc:354`, `nocbp_verilator/tests/integration/pe_top_integration.cc:404`, `nocbp_verilator/tests/integration/pe_top_integration.cc:426`).
-- The test also enforces transaction/order integrity (`nocbp_verilator/tests/integration/pe_top_integration.cc:518`) and requires either immediate write visibility or sustained-backpressure recovery (`nocbp_verilator/tests/integration/pe_top_integration.cc:528`).
-- Given these guards and current integration PASS run, the write-window adjustment is now **acceptable for this plan gate** (no blocking defect).
+### High
+- None found in current function-level scope.
 
-## Correctness Risk Summary
-- Blocking defects: **0**
-- Non-blocking medium risks: **2** (`control_unit` ready-edge coupling, `compute_unit` divider-ready robustness)
-- Non-blocking low notes: **1** (unused helper in unit test)
-
-## Final Verdict
-- **PASS_WITH_NOTES**
-- Blocking rationale: no high-severity correctness issue found in scoped control/compute RTL and directly-coupled unit/integration tests; current targeted sanity commands pass.
-- Notes rationale: medium maintainability/resilience risks remain and should be tracked, but they do not block final-wave acceptance for this plan scope.
+## Verdict
+- **PASS_WITH_NOTES** for the requested function-level control+compute harness/report path.
+- Correctness baseline is intact for abs-only checks and deterministic negative behavior.
+- Two medium robustness concerns should be tracked (mode-isolated report artifact, explicit env value parsing).

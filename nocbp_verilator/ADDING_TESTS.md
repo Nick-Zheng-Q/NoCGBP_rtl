@@ -378,3 +378,42 @@ Full-PE verification is **only** allowed after satisfying ALL of:
 1. Positive test exits with code 0 and contains `GBP_COMPUTE_NODES_UNIT_PASS_MARKER`
 2. Negative test exits with non-zero code and contains `GBP_COMPUTE_NODES_NEGATIVE_MARKER`
 3. Semantic report JSON is valid (passes `python3 -m json.tool` validation)
+
+---
+
+## GBP PE NoC Message Path Runbook
+
+### Scope Boundary
+
+- Single `gbp_pe` endpoint path only
+- Includes NoC-to-SPM ingress, compute-complete egress, and deterministic negative cases
+- Excludes multi-PE routing, global reliability protocol, and software ABI redesign
+
+### End-to-End Commands
+
+```bash
+# 1. Run the full NoC message-path matrix
+python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix.py --output .sisyphus/evidence/task-9-regression-matrix.txt
+
+# 2. Verify evidence integrity
+python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .sisyphus/evidence/task-9-regression-matrix.txt
+```
+
+### Matrix Rows and Expected Polarity
+
+| Row | Command Shape | Expected Exit | Required Marker |
+|-----|---------------|---------------|-----------------|
+| endpoint baseline | `make -C nocbp_verilator run LEVEL=integration TEST=endpoint_noc` | 0 | `BASELINE_PASS endpoint_noc` |
+| pe_top regression | `make -C nocbp_verilator run LEVEL=integration TEST=pe_top_integration VERILATOR="verilator -Wno-fatal -Wno-WIDTHCONCAT -Wno-EOFNEWLINE"` | 0 | `pe_top integration: PASS` |
+| gbp_pe unit | `make -C nocbp_verilator run LEVEL=unit TEST=gbp_pe` | 0 | `gbp_pe: PASS` |
+| ingress real path | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm` | 0 | `ORDERED_WRITE_MARKER` |
+| ingress ordering negative | `GBP_PE_NOC_INGRESS_ORDER_NEGATIVE=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm` | non-zero (2) | `ORDERING_ERROR_MARKER` |
+| egress positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `gbp_pe_compute_done_egress: PASS txn_id=` |
+| egress stall recovery | `GBP_PE_EGRESS_FORCE_NOC_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `recovered_from_stall=1` |
+| egress mismatch negative | `GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | non-zero (2) | `PACKET_COUNT_MISMATCH_MARKER` |
+
+### Operational Notes
+
+- The matrix runner captures `COMMAND`, `EXPECTED_EXIT`, `EXIT_CODE`, marker presence, and raw output for every row.
+- The ingress real-path harness may print a Verilator counter-overflow message at time 0 while still meeting the required exit/marker contract; treat the matrix row status as authoritative for this phase.
+- If a single row is being debugged manually, rerun the exact command from the table above and compare its marker/exit with the matrix artifact.
