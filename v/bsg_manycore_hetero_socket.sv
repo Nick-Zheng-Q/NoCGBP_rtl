@@ -61,11 +61,11 @@ module bsg_manycore_hetero_socket
     , `BSG_INV_PARAM(num_tiles_x_p)
     , `BSG_INV_PARAM(num_tiles_y_p)
     , localparam x_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_x_p)
-    , y_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_y_p)
-    , `BSG_INV_PARAM(fwd_fifo_els_p )
-    , `BSG_INV_PARAM(rev_fifo_els_p )
-    , `BSG_INV_PARAM(barrier_dirs_p )
-    , `BSG_INV_PARAM(ipoly_hashing_p)
+    , localparam y_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_y_p)
+    , parameter `BSG_INV_PARAM(fwd_fifo_els_p )
+    , parameter `BSG_INV_PARAM(rev_fifo_els_p )
+    , parameter `BSG_INV_PARAM(barrier_dirs_p )
+    , parameter `BSG_INV_PARAM(ipoly_hashing_p)
     , localparam barrier_lg_dirs_lp=`BSG_SAFE_CLOG2(barrier_dirs_p+1)
 
     , bsg_manycore_link_sif_width_lp =
@@ -103,7 +103,7 @@ module bsg_manycore_hetero_socket
   `HETERO_TYPE_MACRO(5,bsg_manycore_accel_default) else
   `HETERO_TYPE_MACRO(6,bsg_manycore_accel_default) else
   `HETERO_TYPE_MACRO(7,bsg_manycore_accel_default) else
-  `HETERO_TYPE_MACRO(8,bsg_manycore_accel_default) else
+  `HETERO_TYPE_MACRO(8,gbp_pe) else
   begin : nh
   // synopsys translate_off
     initial begin
