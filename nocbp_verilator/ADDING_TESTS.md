@@ -385,18 +385,18 @@ Full-PE verification is **only** allowed after satisfying ALL of:
 
 ### Scope Boundary
 
-- Single `gbp_pe` endpoint path only
-- Includes NoC-to-SPM ingress, compute-complete egress, and deterministic negative cases
-- Excludes multi-PE routing, global reliability protocol, and software ABI redesign
+- Single-endpoint plus mesh integration paths (`gbp_pe_mesh_2pe`, `gbp_pe_mesh_2x2`)
+- Includes NoC-to-SPM ingress, mesh routing checks, compute-complete egress, and deterministic negative cases
+- Excludes global reliability protocol and software ABI redesign
 
 ### End-to-End Commands
 
 ```bash
 # 1. Run the full NoC message-path matrix
-python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix.py --output .sisyphus/evidence/task-9-regression-matrix.txt
+python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix.py --output .sisyphus/evidence/task-5-mesh-matrix.txt
 
 # 2. Verify evidence integrity
-python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .sisyphus/evidence/task-9-regression-matrix.txt
+python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .sisyphus/evidence/task-5-mesh-matrix.txt
 ```
 
 ### Matrix Rows and Expected Polarity
@@ -408,6 +408,11 @@ python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .si
 | gbp_pe unit | `make -C nocbp_verilator run LEVEL=unit TEST=gbp_pe` | 0 | `gbp_pe: PASS` |
 | ingress real path | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm` | 0 | `ORDERED_WRITE_MARKER` |
 | ingress ordering negative | `GBP_PE_NOC_INGRESS_ORDER_NEGATIVE=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm` | non-zero (2) | `ORDERING_ERROR_MARKER` |
+| mesh 2pe positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe` | 0 | `gbp_pe_mesh_2pe: PASS src=(0,0) dst=(1,0)` |
+| mesh 2pe ordering negative | `GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe` | non-zero (2) | `ORDERING_ERROR_MARKER` |
+| mesh 2x2 positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | 0 | `gbp_pe_mesh_2x2: PASS src=(0,0) dst=(1,1)` |
+| mesh 2x2 stall recovery | `GBP_PE_MESH_FORCE_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | 0 | `recovered_from_stall=1` |
+| mesh 2x2 ordering negative | `GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | non-zero (2) | `ORDERING_ERROR_MARKER` |
 | egress positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `gbp_pe_compute_done_egress: PASS txn_id=` |
 | egress stall recovery | `GBP_PE_EGRESS_FORCE_NOC_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `recovered_from_stall=1` |
 | egress mismatch negative | `GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | non-zero (2) | `PACKET_COUNT_MISMATCH_MARKER` |
@@ -416,4 +421,6 @@ python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .si
 
 - The matrix runner captures `COMMAND`, `EXPECTED_EXIT`, `EXIT_CODE`, marker presence, and raw output for every row.
 - The ingress real-path harness may print a Verilator counter-overflow message at time 0 while still meeting the required exit/marker contract; treat the matrix row status as authoritative for this phase.
+- The mesh positive-path harnesses (`gbp_pe_mesh_2pe`, `gbp_pe_mesh_2x2`) may also print the same known time-0 counter-overflow message; do not treat it as failure when the required marker and exit code pass.
+- Run matrix rows sequentially; parallel runs of multiple `gbp_pe_mesh_2x2` variants against the same build directory can cause flaky build/link/permission failures.
 - If a single row is being debugged manually, rerun the exact command from the table above and compare its marker/exit with the matrix artifact.
