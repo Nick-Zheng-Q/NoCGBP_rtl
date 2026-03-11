@@ -1,0 +1,14 @@
+{
+  "artifact_type": "gbp_pe_single_pe_gbp_state_message_baseline",
+  "schema_version": "1.0",
+  "workloads": {
+    "synthetic_line": {
+      "state_payload_word0": 285212721,
+      "message_word0": 49
+    },
+    "synthetic_lattice": {
+      "state_payload_word0": 570425393,
+      "message_word0": 49
+    }
+  }
+}
