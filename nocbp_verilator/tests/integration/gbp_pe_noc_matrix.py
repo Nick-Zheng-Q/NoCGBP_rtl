@@ -34,6 +34,30 @@ ROWS: Final[tuple[MatrixRow, ...]] = (
         "marker": "gbp_pe: PASS",
     },
     {
+        "name": "single_pe_gbp_line",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=synthetic_line",
+    },
+    {
+        "name": "single_pe_gbp_lattice",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_lattice SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=synthetic_lattice",
+    },
+    {
+        "name": "partition_export_line_scotch",
+        "command": "python3 nocbp_verilator/tests/tools/export_gbp_partition_map.py --workload synthetic_line --seed 12345 --pes 2 --mode scotch --output nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe.json",
+        "expected_exit": 0,
+        "marker": "mode: scotch",
+    },
+    {
+        "name": "partition_cross_edge_check_line",
+        "command": "python3 nocbp_verilator/tests/tools/check_gbp_partition_cross_edges.py --mapping nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe.json",
+        "expected_exit": 0,
+        "marker": "cross_pe_edges:",
+    },
+    {
         "name": "ingress_real_path",
         "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm",
         "expected_exit": 0,
@@ -56,6 +80,18 @@ ROWS: Final[tuple[MatrixRow, ...]] = (
         "command": "GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe",
         "expected_exit": 2,
         "marker": "ORDERING_ERROR_MARKER",
+    },
+    {
+        "name": "mesh_2pe_gbp_line",
+        "command": "PARTITION=tests/oracle/generated/synthetic_line_partition_2pe.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_gbp WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_gbp: PASS workload=synthetic_line",
+    },
+    {
+        "name": "mesh_2pe_superstep_line",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_superstep WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_superstep: PASS",
     },
     {
         "name": "mesh_2x2_positive",
@@ -92,6 +128,18 @@ ROWS: Final[tuple[MatrixRow, ...]] = (
         "command": "GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
         "expected_exit": 2,
         "marker": "PACKET_COUNT_MISMATCH_MARKER",
+    },
+    {
+        "name": "mesh_2pe_convergence_line",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_convergence: PASS workload=synthetic_line",
+    },
+    {
+        "name": "mesh_2pe_convergence_lattice",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_lattice SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_convergence: PASS workload=synthetic_lattice",
     },
 )
 

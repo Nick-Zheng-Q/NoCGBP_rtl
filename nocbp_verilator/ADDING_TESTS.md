@@ -392,6 +392,10 @@ Full-PE verification is **only** allowed after satisfying ALL of:
 ### End-to-End Commands
 
 ```bash
+# 0. Run explicit 2-PE convergence closure (fixed 50 supersteps)
+make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_line SEED=12345
+make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_lattice SEED=12345
+
 # 1. Run the full NoC message-path matrix
 python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix.py --output .sisyphus/evidence/task-5-mesh-matrix.txt
 
@@ -406,21 +410,31 @@ python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .si
 | endpoint baseline | `make -C nocbp_verilator run LEVEL=integration TEST=endpoint_noc` | 0 | `BASELINE_PASS endpoint_noc` |
 | pe_top regression | `make -C nocbp_verilator run LEVEL=integration TEST=pe_top_integration VERILATOR="verilator -Wno-fatal -Wno-WIDTHCONCAT -Wno-EOFNEWLINE"` | 0 | `pe_top integration: PASS` |
 | gbp_pe unit | `make -C nocbp_verilator run LEVEL=unit TEST=gbp_pe` | 0 | `gbp_pe: PASS` |
+| single-pe gbp (line) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_line SEED=12345` | 0 | `gbp_pe_single_pe_gbp: PASS workload=synthetic_line` |
+| single-pe gbp (lattice) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_lattice SEED=12345` | 0 | `gbp_pe_single_pe_gbp: PASS workload=synthetic_lattice` |
+| partition export (line/scotch) | `python3 nocbp_verilator/tests/tools/export_gbp_partition_map.py --workload synthetic_line --seed 12345 --pes 2 --mode scotch --output nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe.json` | 0 | `mode: scotch` |
+| partition cross-edge check (line) | `python3 nocbp_verilator/tests/tools/check_gbp_partition_cross_edges.py --mapping nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe.json` | 0 | `cross_pe_edges:` |
 | ingress real path | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm` | 0 | `ORDERED_WRITE_MARKER` |
 | ingress ordering negative | `GBP_PE_NOC_INGRESS_ORDER_NEGATIVE=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm` | non-zero (2) | `ORDERING_ERROR_MARKER` |
 | mesh 2pe positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe` | 0 | `gbp_pe_mesh_2pe: PASS src=(0,0) dst=(1,0)` |
 | mesh 2pe ordering negative | `GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe` | non-zero (2) | `ORDERING_ERROR_MARKER` |
+| mesh 2pe gbp (line) | `PARTITION=tests/oracle/generated/synthetic_line_partition_2pe.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_gbp WORKLOAD=synthetic_line SEED=12345` | 0 | `gbp_pe_mesh_2pe_gbp: PASS workload=synthetic_line` |
+| mesh 2pe superstep (line) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_superstep WORKLOAD=synthetic_line SEED=12345` | 0 | `gbp_pe_mesh_2pe_superstep: PASS` |
 | mesh 2x2 positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | 0 | `gbp_pe_mesh_2x2: PASS src=(0,0) dst=(1,1)` |
 | mesh 2x2 stall recovery | `GBP_PE_MESH_FORCE_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | 0 | `recovered_from_stall=1` |
 | mesh 2x2 ordering negative | `GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | non-zero (2) | `ORDERING_ERROR_MARKER` |
 | egress positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `gbp_pe_compute_done_egress: PASS txn_id=` |
 | egress stall recovery | `GBP_PE_EGRESS_FORCE_NOC_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `recovered_from_stall=1` |
 | egress mismatch negative | `GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | non-zero (2) | `PACKET_COUNT_MISMATCH_MARKER` |
+| 2pe convergence (line) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_line SEED=12345` | 0 | `gbp_pe_mesh_2pe_convergence: PASS workload=synthetic_line` |
+| 2pe convergence (lattice) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_lattice SEED=12345` | 0 | `gbp_pe_mesh_2pe_convergence: PASS workload=synthetic_lattice` |
 
 ### Operational Notes
 
 - The matrix runner captures `COMMAND`, `EXPECTED_EXIT`, `EXIT_CODE`, marker presence, and raw output for every row.
+- `gbp_pe_mesh_2pe_convergence` emits machine-readable convergence artifacts at `nocbp_verilator/build/integration/gbp_pe_mesh_2pe_convergence/<workload>_convergence_result.json` with `iterations=50`, per-superstep remote ingress/cmd counters, cross-edge ownership, and post-stop quiet checks.
 - The ingress real-path harness may print a Verilator counter-overflow message at time 0 while still meeting the required exit/marker contract; treat the matrix row status as authoritative for this phase.
 - The mesh positive-path harnesses (`gbp_pe_mesh_2pe`, `gbp_pe_mesh_2x2`) may also print the same known time-0 counter-overflow message; do not treat it as failure when the required marker and exit code pass.
+- The convergence harness (`gbp_pe_mesh_2pe_convergence`) may also print the same known time-0 counter-overflow message; do not treat it as failure when the required marker and exit code pass.
 - Run matrix rows sequentially; parallel runs of multiple `gbp_pe_mesh_2x2` variants against the same build directory can cause flaky build/link/permission failures.
 - If a single row is being debugged manually, rerun the exact command from the table above and compare its marker/exit with the matrix artifact.
