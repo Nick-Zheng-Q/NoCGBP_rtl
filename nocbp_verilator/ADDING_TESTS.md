@@ -242,7 +242,7 @@ Expected pass markers:
   - force negative mismatch: `GBP_PE_ORACLE_PERTURB=1`
 - `pe_top_integration` test:
   - expected oracle path: `PE_TOP_ORACLE_PATH` (default `tests/oracle/gbp_oracle_phase1.json`)
-  - observed metrics path: `GBP_TERMINAL_METRICS_ADAPTER_PATH` (default `tests/oracle/generated/gbp_oracle_phase1.json`)
+  - observed oracle path: `PE_TOP_OBS_ORACLE_PATH` (default `tests/oracle/generated/gbp_oracle_phase1.json`)
   - force negative mismatch: `PE_TOP_ORACLE_PERTURB=1`
 
 Negative examples:
@@ -336,7 +336,7 @@ PE_TOP_ORACLE_PERTURB=1 make -C nocbp_verilator run LEVEL=integration TEST=pe_to
 |-----------------|-------------|-------------------|
 | pe_unit (withheld) | `PE_UNIT_WITHHELD_DONE_MARKER` | non-zero (2) |
 | gbp_pe (perturb) | `gbp_pe: FAIL: oracle mismatch scenario=A observed=0x7f800000 expected=0x7f800001 abs_err=1 rel_err=4.6748741e-10 abs_tol=0 rel_tol=0 pass_rule=abs_err<=abs_tol||rel_err<=rel_tol` | non-zero (2) |
-| pe_top_integration (perturb) | `FAIL: are/energy mismatch workload=synthetic_line field=final_are expected=0.06972 observed=0.12072 abs_err=0.051 rel_err=0.731497418 abs_tol=0.001 rel_tol=0.01` | non-zero (2) |
+| pe_top_integration (perturb) | `FAIL: oracle mismatch workload=synthetic_line field=final_are expected=0.06972 observed=0.12072 abs_err=0.051 rel_err=0.731497418 abs_tol=0.001 rel_tol=0.01` | non-zero (2) |
 
 ---
 
