@@ -7,6 +7,7 @@ module pe_top
     input logic cmd_valid_i,
     input logic [1:0] cmd_kind_i,
     input logic [TXN_ID_W-1:0] cmd_txn_id_i,
+    input logic force_persistence_stall_i,
     output logic cmd_ready_o,
     output logic rsp_done_o,
     output logic rsp_error_o,
@@ -69,6 +70,7 @@ module pe_top
   logic compute_cmd_ready_masked_lo;
   logic compute_rsp_done_masked_lo;
   logic compute_done_legacy_lo;
+  logic compute_done_raw_lo;
   logic compute_cmd_valid_lo;
   logic compute_cmd_kind_lo;
   logic [TXN_ID_W-1:0] compute_cmd_txn_id_lo;
@@ -182,7 +184,9 @@ module pe_top
       ,.cmd_valid_i(compute_cmd_valid_lo)
       ,.cmd_kind_i(compute_cmd_kind_lo)
       ,.cmd_ready_o(compute_cmd_ready_lo)
+      ,.compute_done_o(compute_done_raw_lo)
       ,.rsp_done_o(compute_rsp_done_lo)
+      ,.force_persistence_stall_i(force_persistence_stall_i)
       ,.data_a_i(compute_data_a_lo)
       ,.data_b_i(compute_data_b_lo)
       ,.op_i(compute_op_lo)
@@ -307,7 +311,7 @@ module pe_top
   };
 
   assign compute_done_legacy_lo = compute_rsp_done_lo;
-  assign control_compute_if0.done = compute_done_legacy_lo;
+  assign control_compute_if0.done = compute_done_raw_lo;
   assign control_compute_if0.cmd_ready = compute_cmd_ready_masked_lo;
   assign control_compute_if0.rsp_done = compute_rsp_done_masked_lo;
 
@@ -320,7 +324,7 @@ module pe_top
   assign ingress_wr_req_addr_o = wr_if[1].spm_wr_req_addr;
   assign ingress_wr_req_data_low_o = wr_if[1].spm_wr_req_data[31:0];
   assign compute_start_o = control_compute_if0.start;
-  assign compute_done_o = compute_done_legacy_lo;
+  assign compute_done_o = compute_done_raw_lo;
   assign wr_txn_id_o = wr_txn_id_r;
   assign cmd_txn_id_o = compute_cmd_txn_id_lo;
 

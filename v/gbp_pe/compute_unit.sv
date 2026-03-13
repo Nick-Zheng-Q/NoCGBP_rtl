@@ -16,7 +16,9 @@ module compute_unit
     input logic cmd_valid_i,
     input logic cmd_kind_i,
     output logic cmd_ready_o,
+    output logic compute_done_o,
     output logic rsp_done_o,
+    input logic force_persistence_stall_i,
     read_stream_if.master if_stream_if_stream,
     write_stream_if.slave if_write_stream_if_stream,
     input logic [GBP_CORE_PER_PE-1:0][31:0] data_a_i,
@@ -57,9 +59,11 @@ module compute_unit
   logic valid_exec_i;
   logic valid_r;
   logic div_active_r;
+  logic write_ready_lo;
 
   assign cmd_ready_o = ~busy_r;
   assign valid_exec_i = valid_i & busy_r;
+  assign write_ready_lo = if_write_stream_if_stream.ready & ~force_persistence_stall_i;
 
   assign if_stream_if_stream.ready = 1'b1;
 
@@ -238,7 +242,7 @@ module compute_unit
         end
       end
 
-      if (wr_pending_r && if_write_stream_if_stream.ready) begin
+      if (wr_pending_r && write_ready_lo) begin
         wr_pending_r <= 1'b0;
         busy_r <= 1'b0;
         done_pulse_r <= 1'b1;
@@ -251,8 +255,9 @@ module compute_unit
     end
   end
 
-  assign if_write_stream_if_stream.valid = wr_pending_r;
+  assign if_write_stream_if_stream.valid = wr_pending_r & ~force_persistence_stall_i;
   assign if_write_stream_if_stream.data = wr_data_r;
+  assign compute_done_o = valid_r;
   assign rsp_done_o = done_pulse_r;
 
 endmodule

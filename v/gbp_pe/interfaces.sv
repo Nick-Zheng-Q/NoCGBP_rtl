@@ -122,11 +122,11 @@ interface control_compute_if;
   import gbp_pkg::*;
 
   // Inputs (to/from the interface)
-  // Operation complete signal (asserted when compute finishes)
+  // Raw compute complete pulse (independent of persistence acceptance)
   logic done;
   // Command ready: consumer is ready to accept command
   logic cmd_ready;
-  // Response done: transaction completion signal
+  // Persistence/response done: completion after writeback path accepts result
   logic rsp_done;
 
   // Outputs (from the interface)

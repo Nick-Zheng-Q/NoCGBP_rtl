@@ -89,6 +89,7 @@ module gbp_pe
   logic pe_compute_done_lo;
   logic [gbp_pkg::TXN_ID_W-1:0] pe_wr_txn_id_lo;
   logic [gbp_pkg::TXN_ID_W-1:0] pe_cmd_txn_id_lo;
+  logic force_persistence_stall_lo = 1'b0;
   logic pe_ingress_wr_ready_lo;
   logic pe_ingress_wr_req_valid_lo;
   logic [gbp_pkg::SPM_ADDR_W-1:0] pe_ingress_wr_req_addr_lo;
@@ -188,6 +189,7 @@ module gbp_pe
       ,.cmd_valid_i(sideband_cmd_valid_lo)
       ,.cmd_kind_i(sideband_cmd_kind_lo)
       ,.cmd_txn_id_i(sideband_cmd_txn_id_lo)
+      ,.force_persistence_stall_i(force_persistence_stall_lo)
       ,.cmd_ready_o(sideband_cmd_ready_lo)
       ,.rsp_done_o(sideband_rsp_done_lo)
       ,.rsp_error_o(sideband_rsp_error_lo)
@@ -214,8 +216,8 @@ module gbp_pe
   assign compute_done_packet_cast_lo = '{
     addr: '0
     , op_v2: bsg_manycore_pkg::e_remote_sw
-    , reg_id: bsg_manycore_reg_id_width_gp'(pe_cmd_txn_id_lo)
-    , payload: data_width_p'(pe_cmd_txn_id_lo)
+    , reg_id: bsg_manycore_reg_id_width_gp'(pe_wr_txn_id_lo)
+    , payload: data_width_p'(pe_wr_txn_id_lo)
     , src_y_cord: {pod_y_i, my_y_i}
     , src_x_cord: {pod_x_i, my_x_i}
     , y_cord: {pod_y_i, my_y_i}
@@ -257,7 +259,7 @@ module gbp_pe
 
   logic unused_pe_signals;
   assign unused_pe_signals = pe_rd_req_valid_lo | pe_wr_req_valid_lo | pe_compute_start_lo | pe_compute_done_lo
-    | (^pe_rd_req_addr_lo) | (^pe_wr_req_addr_lo) | (^pe_wr_req_data_low_lo) | (^pe_wr_txn_id_lo)
+    | (^pe_rd_req_addr_lo) | (^pe_wr_req_addr_lo) | (^pe_wr_req_data_low_lo) | (^pe_wr_txn_id_lo) | (^pe_cmd_txn_id_lo)
     | bridge_decode_error_lo | (^ingress_intent_bank_lo) | (^ingress_intent_qid_lo)
     | pe_ingress_wr_req_valid_lo | (^pe_ingress_wr_req_addr_lo) | (^pe_ingress_wr_req_data_low_lo);
 

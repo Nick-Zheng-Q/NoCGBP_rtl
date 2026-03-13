@@ -124,6 +124,12 @@ ROWS: Final[tuple[MatrixRow, ...]] = (
         "marker": "recovered_from_stall=1",
     },
     {
+        "name": "egress_spm_stall_direct_origin",
+        "command": "GBP_PE_EGRESS_FORCE_SPM_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
+        "expected_exit": 0,
+        "marker": "egress_precedes_persistence=1 persistence_secondary=1",
+    },
+    {
         "name": "egress_mismatch_negative",
         "command": "GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
         "expected_exit": 2,

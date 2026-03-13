@@ -15,6 +15,7 @@ static void tick(Vgbp_pe_compute_done_egress* dut) {
 static void reset_dut(Vgbp_pe_compute_done_egress* dut, bool stall_enabled) {
   dut->rst_n = 0;
   dut->noc_ready_i = stall_enabled ? 0 : 1;
+  dut->force_spm_stall_i = 0;
   tick(dut);
   tick(dut);
   dut->rst_n = 1;
@@ -30,8 +31,86 @@ int run_test(int argc, char** argv) {
   const char* mismatch_env = std::getenv("GBP_PE_EGRESS_EXPECT_MISMATCH");
   const bool expect_mismatch =
       (mismatch_env != nullptr) && (mismatch_env[0] != '\0') && (mismatch_env[0] != '0');
+  const char* spm_stall_env = std::getenv("GBP_PE_EGRESS_FORCE_SPM_STALL");
+  const bool force_spm_stall =
+      (spm_stall_env != nullptr) && (spm_stall_env[0] != '\0') && (spm_stall_env[0] != '0');
 
   reset_dut(dut, force_stall);
+  dut->force_spm_stall_i = force_spm_stall ? 1 : 0;
+
+  if (force_spm_stall) {
+    static constexpr int kMaxSpmStallCycles = 2000;
+    bool prev_compute_done = false;
+    bool compute_done_seen = false;
+    bool accepted_done_packet = false;
+    bool persistence_seen_before_egress = false;
+    bool persistence_done_at_accept = false;
+    uint32_t target_txn_id = 0;
+
+    for (int cycle = 0; cycle < kMaxSpmStallCycles; ++cycle) {
+      tick(dut);
+
+      const bool compute_done = static_cast<bool>(dut->compute_done_o);
+      const bool compute_done_pulse = compute_done && !prev_compute_done;
+      prev_compute_done = compute_done;
+
+      if (!compute_done_seen && compute_done_pulse) {
+        compute_done_seen = true;
+        target_txn_id = static_cast<uint32_t>(dut->compute_txn_id_o);
+      }
+
+      const bool accepted = static_cast<bool>(dut->egress_v_o) && static_cast<bool>(dut->noc_ready_i);
+      const bool persistence_done = static_cast<bool>(dut->persistence_done_o);
+      if (accepted && compute_done_seen) {
+        const uint32_t accepted_txn_id = static_cast<uint32_t>(dut->egress_txn_id_o);
+        if (accepted_txn_id == target_txn_id) {
+          persistence_done_at_accept = persistence_done;
+          accepted_done_packet = true;
+          break;
+        }
+      }
+
+      if (!accepted_done_packet && persistence_done) {
+        persistence_seen_before_egress = true;
+      }
+    }
+
+    if (!compute_done_seen) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: DIRECT_ORIGIN_RED_MARKER no_compute_done_under_spm_stall\n");
+      delete dut;
+      return 3;
+    }
+
+    if (!accepted_done_packet) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: DIRECT_ORIGIN_RED_MARKER no_egress_for_compute_done_under_spm_stall txn_id=0x%02x\n",
+                   static_cast<unsigned int>(target_txn_id));
+      delete dut;
+      return 3;
+    }
+
+    if (persistence_seen_before_egress) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: FAIL persistence_precedes_egress_under_spm_stall txn_id=0x%02x\n",
+                   static_cast<unsigned int>(target_txn_id));
+      delete dut;
+      return 1;
+    }
+
+    if (persistence_done_at_accept) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: FAIL egress_waited_for_persistence_under_spm_stall txn_id=0x%02x\n",
+                   static_cast<unsigned int>(target_txn_id));
+      delete dut;
+      return 1;
+    }
+
+    std::printf("gbp_pe_compute_done_egress: PASS txn_id=0x%02x packets=1 egress_precedes_persistence=1 persistence_secondary=1\n",
+                static_cast<unsigned int>(target_txn_id));
+    delete dut;
+    return 0;
+  }
 
   static constexpr int kMaxCycles = 2000;
   static constexpr int kStallHoldCyclesAfterDone = 8;

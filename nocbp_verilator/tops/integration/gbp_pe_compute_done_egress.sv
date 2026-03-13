@@ -5,8 +5,10 @@ module gbp_pe_compute_done_egress
 (
   input  logic clk,
   input  logic rst_n,
+  input  logic force_spm_stall_i,
   input  logic noc_ready_i,
   output logic compute_done_o,
+  output logic persistence_done_o,
   output logic [gbp_pkg::TXN_ID_W-1:0] compute_txn_id_o,
   output logic egress_v_o,
   output logic [bsg_manycore_reg_id_width_gp-1:0] egress_txn_id_o,
@@ -44,6 +46,7 @@ module gbp_pe_compute_done_egress
     link_sif_i_cast = '0;
     link_sif_i_cast.fwd.ready_and_rev = noc_ready_i;
     link_sif_i_cast.rev.ready_and_rev = 1'b1;
+    dut.force_persistence_stall_lo = force_spm_stall_i;
   end
 
   gbp_pe
@@ -78,7 +81,8 @@ module gbp_pe_compute_done_egress
     );
 
   assign compute_done_o = dut.pe_compute_done_lo;
-  assign compute_txn_id_o = dut.pe_cmd_txn_id_lo;
+  assign persistence_done_o = dut.pe.compute_rsp_done_lo;
+  assign compute_txn_id_o = dut.pe_wr_txn_id_lo;
   assign egress_v_o = link_sif_o_cast.fwd.v;
   assign egress_txn_id_o = egress_packet_s.reg_id;
   assign egress_pending_o = dut.egress_pending_r;

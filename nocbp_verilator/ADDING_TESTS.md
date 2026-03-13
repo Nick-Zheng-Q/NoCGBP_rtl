@@ -242,7 +242,7 @@ Expected pass markers:
   - force negative mismatch: `GBP_PE_ORACLE_PERTURB=1`
 - `pe_top_integration` test:
   - expected oracle path: `PE_TOP_ORACLE_PATH` (default `tests/oracle/gbp_oracle_phase1.json`)
-  - observed oracle path: `PE_TOP_OBS_ORACLE_PATH` (default `tests/oracle/generated/gbp_oracle_phase1.json`)
+  - observed metrics path: `GBP_TERMINAL_METRICS_ADAPTER_PATH` (default `tests/oracle/generated/gbp_oracle_phase1.json`)
   - force negative mismatch: `PE_TOP_ORACLE_PERTURB=1`
 
 Negative examples:
@@ -336,7 +336,7 @@ PE_TOP_ORACLE_PERTURB=1 make -C nocbp_verilator run LEVEL=integration TEST=pe_to
 |-----------------|-------------|-------------------|
 | pe_unit (withheld) | `PE_UNIT_WITHHELD_DONE_MARKER` | non-zero (2) |
 | gbp_pe (perturb) | `gbp_pe: FAIL: oracle mismatch scenario=A observed=0x7f800000 expected=0x7f800001 abs_err=1 rel_err=4.6748741e-10 abs_tol=0 rel_tol=0 pass_rule=abs_err<=abs_tol||rel_err<=rel_tol` | non-zero (2) |
-| pe_top_integration (perturb) | `FAIL: oracle mismatch workload=synthetic_line metric=final_are observed=0.12072 expected=0.06972 abs_err=0.051 rel_err=0.731497418 abs_tol=0.001 rel_tol=0.01` | non-zero (2) |
+| pe_top_integration (perturb) | `FAIL: are/energy mismatch workload=synthetic_line field=final_are expected=0.06972 observed=0.12072 abs_err=0.051 rel_err=0.731497418 abs_tol=0.001 rel_tol=0.01` | non-zero (2) |
 
 ---
 
@@ -425,6 +425,7 @@ python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .si
 | mesh 2x2 ordering negative | `GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2` | non-zero (2) | `ORDERING_ERROR_MARKER` |
 | egress positive | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `gbp_pe_compute_done_egress: PASS txn_id=` |
 | egress stall recovery | `GBP_PE_EGRESS_FORCE_NOC_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `recovered_from_stall=1` |
+| egress SPM-stall direct-origin | `GBP_PE_EGRESS_FORCE_SPM_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | 0 | `egress_precedes_persistence=1 persistence_secondary=1` |
 | egress mismatch negative | `GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress` | non-zero (2) | `PACKET_COUNT_MISMATCH_MARKER` |
 | 2pe convergence (line) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_line SEED=12345` | 0 | `gbp_pe_mesh_2pe_convergence: PASS workload=synthetic_line` |
 | 2pe convergence (lattice) | `make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_lattice SEED=12345` | 0 | `gbp_pe_mesh_2pe_convergence: PASS workload=synthetic_lattice` |
@@ -436,5 +437,6 @@ python3 nocbp_verilator/tests/integration/gbp_pe_noc_matrix_check.py --input .si
 - The ingress real-path harness may print a Verilator counter-overflow message at time 0 while still meeting the required exit/marker contract; treat the matrix row status as authoritative for this phase.
 - The mesh positive-path harnesses (`gbp_pe_mesh_2pe`, `gbp_pe_mesh_2x2`) may also print the same known time-0 counter-overflow message; do not treat it as failure when the required marker and exit code pass.
 - The convergence harness (`gbp_pe_mesh_2pe_convergence`) may also print the same known time-0 counter-overflow message; do not treat it as failure when the required marker and exit code pass.
+- The `egress SPM-stall direct-origin` row proves live egress is authoritative: completion egress must be accepted before persistence completion and reports `persistence_secondary=1`.
 - Run matrix rows sequentially; parallel runs of multiple `gbp_pe_mesh_2x2` variants against the same build directory can cause flaky build/link/permission failures.
 - If a single row is being debugged manually, rerun the exact command from the table above and compare its marker/exit with the matrix artifact.
