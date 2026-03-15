@@ -1,1 +1,13 @@
 -f tests/integration/gbp_pe_mesh_2pe_gbp.f
+-CFLAGS
+-I../../../../../nocbp_simulator
+-CFLAGS
+-I../../../../../nocbp_simulator/gbp
+-CFLAGS
+-I../../../../../nocbp_simulator/utils
+-CFLAGS
+-fpermissive
+-CFLAGS
+-DSPDLOG_HEADER_ONLY
+-CFLAGS
+-DFMT_HEADER_ONLY

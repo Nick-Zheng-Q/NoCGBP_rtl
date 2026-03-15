@@ -32,19 +32,39 @@ module gbp_pe_mesh_2pe_gbp
   output logic [31:0] pe0_state_b1_row0_word0_o,
   output logic [31:0] pe0_state_b2_row0_word0_o,
   output logic [31:0] pe0_state_b3_row0_word0_o,
+  output logic [255:0] pe0_state_b1_row0_words_o,
+  output logic [255:0] pe0_state_b2_row0_words_o,
+  output logic [255:0] pe0_state_b3_row0_words_o,
   output logic [31:0] pe1_state_b1_row0_word0_o,
   output logic [31:0] pe1_state_b2_row0_word0_o,
   output logic [31:0] pe1_state_b3_row0_word0_o,
+  output logic [255:0] pe1_state_b1_row0_words_o,
+  output logic [255:0] pe1_state_b2_row0_words_o,
+  output logic [255:0] pe1_state_b3_row0_words_o,
   output logic [31:0] pe0_message_b4_row0_word0_o,
   output logic [31:0] pe0_message_b5_row0_word0_o,
   output logic [31:0] pe0_message_b6_row0_word0_o,
   output logic [31:0] pe0_message_b7_row0_word0_o,
+  output logic [255:0] pe0_message_b4_row0_words_o,
+  output logic [255:0] pe0_message_b5_row0_words_o,
+  output logic [255:0] pe0_message_b6_row0_words_o,
+  output logic [255:0] pe0_message_b7_row0_words_o,
   output logic [31:0] pe1_message_b4_row0_word0_o,
   output logic [31:0] pe1_message_b5_row0_word0_o,
   output logic [31:0] pe1_message_b6_row0_word0_o,
   output logic [31:0] pe1_message_b7_row0_word0_o,
+  output logic [255:0] pe1_message_b4_row0_words_o,
+  output logic [255:0] pe1_message_b5_row0_words_o,
+  output logic [255:0] pe1_message_b6_row0_words_o,
+  output logic [255:0] pe1_message_b7_row0_words_o,
   output logic [31:0] pe0_adapter_payload_plane0_row0_o,
+  output logic [31:0] pe0_adapter_payload_plane1_row0_o,
+  output logic [31:0] pe0_adapter_payload_plane2_row0_o,
+  output logic [31:0] pe0_adapter_payload_plane3_row0_o,
   output logic [31:0] pe1_adapter_payload_plane0_row0_o,
+  output logic [31:0] pe1_adapter_payload_plane1_row0_o,
+  output logic [31:0] pe1_adapter_payload_plane2_row0_o,
+  output logic [31:0] pe1_adapter_payload_plane3_row0_o,
   output logic [7:0] pe0_adapter_credit_q0_o,
   output logic [7:0] pe1_adapter_credit_q0_o,
   output logic [7:0] pe0_adapter_tail_q0_o,
@@ -60,7 +80,15 @@ module gbp_pe_mesh_2pe_gbp
   output logic [31:0] pe0_ingress_wr_req_data_o,
   output logic pe1_ingress_wr_req_valid_o,
   output logic [15:0] pe1_ingress_wr_req_addr_o,
-  output logic [31:0] pe1_ingress_wr_req_data_o
+  output logic [31:0] pe1_ingress_wr_req_data_o,
+  output logic pe0_semantic_payload_seen_o,
+  output logic [2:0] pe0_semantic_payload_bank_o,
+  output logic [7:0] pe0_semantic_payload_row_o,
+  output logic [31:0] pe0_semantic_payload_first_word_o,
+  output logic pe1_semantic_payload_seen_o,
+  output logic [2:0] pe1_semantic_payload_bank_o,
+  output logic [7:0] pe1_semantic_payload_row_o,
+  output logic [31:0] pe1_semantic_payload_first_word_o
 );
 
   localparam int x_cord_width_lp = 2;
@@ -167,6 +195,14 @@ module gbp_pe_mesh_2pe_gbp
   logic [31:0] pe1_host_tx_count_r;
   logic [31:0] pe0_dut_tx_count_r;
   logic [31:0] pe1_dut_tx_count_r;
+  logic pe0_semantic_payload_seen_r;
+  logic pe1_semantic_payload_seen_r;
+  logic [2:0] pe0_semantic_payload_bank_r;
+  logic [2:0] pe1_semantic_payload_bank_r;
+  logic [7:0] pe0_semantic_payload_row_r;
+  logic [7:0] pe1_semantic_payload_row_r;
+  logic [31:0] pe0_semantic_payload_first_word_r;
+  logic [31:0] pe1_semantic_payload_first_word_r;
 
   always_comb begin
     tx0_host_pkt_s = '0;
@@ -466,6 +502,14 @@ module gbp_pe_mesh_2pe_gbp
       pe1_dut_data_r <= '0;
       pe0_dut_txn_id_r <= '0;
       pe1_dut_txn_id_r <= '0;
+      pe0_semantic_payload_seen_r <= 1'b0;
+      pe1_semantic_payload_seen_r <= 1'b0;
+      pe0_semantic_payload_bank_r <= '0;
+      pe1_semantic_payload_bank_r <= '0;
+      pe0_semantic_payload_row_r <= '0;
+      pe1_semantic_payload_row_r <= '0;
+      pe0_semantic_payload_first_word_r <= '0;
+      pe1_semantic_payload_first_word_r <= '0;
     end else begin
       link_activity_r <= link_activity_r
         | tx0_fire
@@ -513,9 +557,23 @@ module gbp_pe_mesh_2pe_gbp
 
       if (tile0.proc.h.z.pe_ingress_wr_req_valid_lo) begin
         pe0_ingress_wr_count_r <= pe0_ingress_wr_count_r + 1'b1;
+        if (!pe0_semantic_payload_seen_r
+            && (tile0.proc.h.z.pe_ingress_wr_req_addr_lo[7:5] >= 3'd4)) begin
+          pe0_semantic_payload_seen_r <= 1'b1;
+          pe0_semantic_payload_bank_r <= tile0.proc.h.z.pe_ingress_wr_req_addr_lo[7:5];
+          pe0_semantic_payload_row_r <= tile0.proc.h.z.pe_ingress_wr_req_addr_lo[15:8];
+          pe0_semantic_payload_first_word_r <= tile0.proc.h.z.pe_ingress_wr_req_data_low_lo;
+        end
       end
       if (tile1.proc.h.z.pe_ingress_wr_req_valid_lo) begin
         pe1_ingress_wr_count_r <= pe1_ingress_wr_count_r + 1'b1;
+        if (!pe1_semantic_payload_seen_r
+            && (tile1.proc.h.z.pe_ingress_wr_req_addr_lo[7:5] >= 3'd4)) begin
+          pe1_semantic_payload_seen_r <= 1'b1;
+          pe1_semantic_payload_bank_r <= tile1.proc.h.z.pe_ingress_wr_req_addr_lo[7:5];
+          pe1_semantic_payload_row_r <= tile1.proc.h.z.pe_ingress_wr_req_addr_lo[15:8];
+          pe1_semantic_payload_first_word_r <= tile1.proc.h.z.pe_ingress_wr_req_data_low_lo;
+        end
       end
 
       if (tile0.proc.h.z.sideband_cmd_valid_lo && tile0.proc.h.z.sideband_cmd_ready_lo) begin
@@ -544,12 +602,18 @@ module gbp_pe_mesh_2pe_gbp
     tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[2].u_spm_bank.mem_r[0][31:0];
   assign pe0_state_b3_row0_word0_o =
     tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[3].u_spm_bank.mem_r[0][31:0];
+  assign pe0_state_b1_row0_words_o = tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[1].u_spm_bank.mem_r[0];
+  assign pe0_state_b2_row0_words_o = tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[2].u_spm_bank.mem_r[0];
+  assign pe0_state_b3_row0_words_o = tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[3].u_spm_bank.mem_r[0];
   assign pe1_state_b1_row0_word0_o =
     tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[1].u_spm_bank.mem_r[0][31:0];
   assign pe1_state_b2_row0_word0_o =
     tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[2].u_spm_bank.mem_r[0][31:0];
   assign pe1_state_b3_row0_word0_o =
     tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[3].u_spm_bank.mem_r[0][31:0];
+  assign pe1_state_b1_row0_words_o = tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[1].u_spm_bank.mem_r[0];
+  assign pe1_state_b2_row0_words_o = tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[2].u_spm_bank.mem_r[0];
+  assign pe1_state_b3_row0_words_o = tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[3].u_spm_bank.mem_r[0];
 
   assign pe0_message_b4_row0_word0_o =
     tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[4].u_spm_bank.mem_r[0][31:0];
@@ -559,6 +623,14 @@ module gbp_pe_mesh_2pe_gbp
     tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[6].u_spm_bank.mem_r[0][31:0];
   assign pe0_message_b7_row0_word0_o =
     tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[7].u_spm_bank.mem_r[0][31:0];
+  assign pe0_message_b4_row0_words_o =
+    tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[4].u_spm_bank.mem_r[0];
+  assign pe0_message_b5_row0_words_o =
+    tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[5].u_spm_bank.mem_r[0];
+  assign pe0_message_b6_row0_words_o =
+    tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[6].u_spm_bank.mem_r[0];
+  assign pe0_message_b7_row0_words_o =
+    tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[7].u_spm_bank.mem_r[0];
   assign pe1_message_b4_row0_word0_o =
     tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[4].u_spm_bank.mem_r[0][31:0];
   assign pe1_message_b5_row0_word0_o =
@@ -567,9 +639,23 @@ module gbp_pe_mesh_2pe_gbp
     tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[6].u_spm_bank.mem_r[0][31:0];
   assign pe1_message_b7_row0_word0_o =
     tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[7].u_spm_bank.mem_r[0][31:0];
+  assign pe1_message_b4_row0_words_o =
+    tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[4].u_spm_bank.mem_r[0];
+  assign pe1_message_b5_row0_words_o =
+    tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[5].u_spm_bank.mem_r[0];
+  assign pe1_message_b6_row0_words_o =
+    tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[6].u_spm_bank.mem_r[0];
+  assign pe1_message_b7_row0_words_o =
+    tile1.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[7].u_spm_bank.mem_r[0];
 
   assign pe0_adapter_payload_plane0_row0_o = tile0.proc.h.z.adapter.payload_mem_r[0][0];
+  assign pe0_adapter_payload_plane1_row0_o = tile0.proc.h.z.adapter.payload_mem_r[1][0];
+  assign pe0_adapter_payload_plane2_row0_o = tile0.proc.h.z.adapter.payload_mem_r[2][0];
+  assign pe0_adapter_payload_plane3_row0_o = tile0.proc.h.z.adapter.payload_mem_r[3][0];
   assign pe1_adapter_payload_plane0_row0_o = tile1.proc.h.z.adapter.payload_mem_r[0][0];
+  assign pe1_adapter_payload_plane1_row0_o = tile1.proc.h.z.adapter.payload_mem_r[1][0];
+  assign pe1_adapter_payload_plane2_row0_o = tile1.proc.h.z.adapter.payload_mem_r[2][0];
+  assign pe1_adapter_payload_plane3_row0_o = tile1.proc.h.z.adapter.payload_mem_r[3][0];
   assign pe0_adapter_credit_q0_o = tile0.proc.h.z.adapter.q_credit_r[0];
   assign pe1_adapter_credit_q0_o = tile1.proc.h.z.adapter.q_credit_r[0];
   assign pe0_adapter_tail_q0_o = tile0.proc.h.z.adapter.q_tail_r[0];
@@ -587,6 +673,14 @@ module gbp_pe_mesh_2pe_gbp
   assign pe1_ingress_wr_req_valid_o = tile1.proc.h.z.pe_ingress_wr_req_valid_lo;
   assign pe1_ingress_wr_req_addr_o = tile1.proc.h.z.pe_ingress_wr_req_addr_lo;
   assign pe1_ingress_wr_req_data_o = tile1.proc.h.z.pe_ingress_wr_req_data_low_lo;
+  assign pe0_semantic_payload_seen_o = pe0_semantic_payload_seen_r;
+  assign pe0_semantic_payload_bank_o = pe0_semantic_payload_bank_r;
+  assign pe0_semantic_payload_row_o = pe0_semantic_payload_row_r;
+  assign pe0_semantic_payload_first_word_o = pe0_semantic_payload_first_word_r;
+  assign pe1_semantic_payload_seen_o = pe1_semantic_payload_seen_r;
+  assign pe1_semantic_payload_bank_o = pe1_semantic_payload_bank_r;
+  assign pe1_semantic_payload_row_o = pe1_semantic_payload_row_r;
+  assign pe1_semantic_payload_first_word_o = pe1_semantic_payload_first_word_r;
 
 endmodule
 
@@ -619,19 +713,39 @@ module gbp_pe_mesh_2pe_convergence
   output logic [31:0] pe0_state_b1_row0_word0_o,
   output logic [31:0] pe0_state_b2_row0_word0_o,
   output logic [31:0] pe0_state_b3_row0_word0_o,
+  output logic [255:0] pe0_state_b1_row0_words_o,
+  output logic [255:0] pe0_state_b2_row0_words_o,
+  output logic [255:0] pe0_state_b3_row0_words_o,
   output logic [31:0] pe1_state_b1_row0_word0_o,
   output logic [31:0] pe1_state_b2_row0_word0_o,
   output logic [31:0] pe1_state_b3_row0_word0_o,
+  output logic [255:0] pe1_state_b1_row0_words_o,
+  output logic [255:0] pe1_state_b2_row0_words_o,
+  output logic [255:0] pe1_state_b3_row0_words_o,
   output logic [31:0] pe0_message_b4_row0_word0_o,
   output logic [31:0] pe0_message_b5_row0_word0_o,
   output logic [31:0] pe0_message_b6_row0_word0_o,
   output logic [31:0] pe0_message_b7_row0_word0_o,
+  output logic [255:0] pe0_message_b4_row0_words_o,
+  output logic [255:0] pe0_message_b5_row0_words_o,
+  output logic [255:0] pe0_message_b6_row0_words_o,
+  output logic [255:0] pe0_message_b7_row0_words_o,
   output logic [31:0] pe1_message_b4_row0_word0_o,
   output logic [31:0] pe1_message_b5_row0_word0_o,
   output logic [31:0] pe1_message_b6_row0_word0_o,
   output logic [31:0] pe1_message_b7_row0_word0_o,
+  output logic [255:0] pe1_message_b4_row0_words_o,
+  output logic [255:0] pe1_message_b5_row0_words_o,
+  output logic [255:0] pe1_message_b6_row0_words_o,
+  output logic [255:0] pe1_message_b7_row0_words_o,
   output logic [31:0] pe0_adapter_payload_plane0_row0_o,
+  output logic [31:0] pe0_adapter_payload_plane1_row0_o,
+  output logic [31:0] pe0_adapter_payload_plane2_row0_o,
+  output logic [31:0] pe0_adapter_payload_plane3_row0_o,
   output logic [31:0] pe1_adapter_payload_plane0_row0_o,
+  output logic [31:0] pe1_adapter_payload_plane1_row0_o,
+  output logic [31:0] pe1_adapter_payload_plane2_row0_o,
+  output logic [31:0] pe1_adapter_payload_plane3_row0_o,
   output logic [7:0] pe0_adapter_credit_q0_o,
   output logic [7:0] pe1_adapter_credit_q0_o,
   output logic [7:0] pe0_adapter_tail_q0_o,
@@ -647,7 +761,15 @@ module gbp_pe_mesh_2pe_convergence
   output logic [31:0] pe0_ingress_wr_req_data_o,
   output logic pe1_ingress_wr_req_valid_o,
   output logic [15:0] pe1_ingress_wr_req_addr_o,
-  output logic [31:0] pe1_ingress_wr_req_data_o
+  output logic [31:0] pe1_ingress_wr_req_data_o,
+  output logic pe0_semantic_payload_seen_o,
+  output logic [2:0] pe0_semantic_payload_bank_o,
+  output logic [7:0] pe0_semantic_payload_row_o,
+  output logic [31:0] pe0_semantic_payload_first_word_o,
+  output logic pe1_semantic_payload_seen_o,
+  output logic [2:0] pe1_semantic_payload_bank_o,
+  output logic [7:0] pe1_semantic_payload_row_o,
+  output logic [31:0] pe1_semantic_payload_first_word_o
 );
 
   gbp_pe_mesh_2pe_gbp dut (
@@ -676,19 +798,39 @@ module gbp_pe_mesh_2pe_convergence
     .pe0_state_b1_row0_word0_o(pe0_state_b1_row0_word0_o),
     .pe0_state_b2_row0_word0_o(pe0_state_b2_row0_word0_o),
     .pe0_state_b3_row0_word0_o(pe0_state_b3_row0_word0_o),
+    .pe0_state_b1_row0_words_o(pe0_state_b1_row0_words_o),
+    .pe0_state_b2_row0_words_o(pe0_state_b2_row0_words_o),
+    .pe0_state_b3_row0_words_o(pe0_state_b3_row0_words_o),
     .pe1_state_b1_row0_word0_o(pe1_state_b1_row0_word0_o),
     .pe1_state_b2_row0_word0_o(pe1_state_b2_row0_word0_o),
     .pe1_state_b3_row0_word0_o(pe1_state_b3_row0_word0_o),
+    .pe1_state_b1_row0_words_o(pe1_state_b1_row0_words_o),
+    .pe1_state_b2_row0_words_o(pe1_state_b2_row0_words_o),
+    .pe1_state_b3_row0_words_o(pe1_state_b3_row0_words_o),
     .pe0_message_b4_row0_word0_o(pe0_message_b4_row0_word0_o),
     .pe0_message_b5_row0_word0_o(pe0_message_b5_row0_word0_o),
     .pe0_message_b6_row0_word0_o(pe0_message_b6_row0_word0_o),
     .pe0_message_b7_row0_word0_o(pe0_message_b7_row0_word0_o),
+    .pe0_message_b4_row0_words_o(pe0_message_b4_row0_words_o),
+    .pe0_message_b5_row0_words_o(pe0_message_b5_row0_words_o),
+    .pe0_message_b6_row0_words_o(pe0_message_b6_row0_words_o),
+    .pe0_message_b7_row0_words_o(pe0_message_b7_row0_words_o),
     .pe1_message_b4_row0_word0_o(pe1_message_b4_row0_word0_o),
     .pe1_message_b5_row0_word0_o(pe1_message_b5_row0_word0_o),
     .pe1_message_b6_row0_word0_o(pe1_message_b6_row0_word0_o),
     .pe1_message_b7_row0_word0_o(pe1_message_b7_row0_word0_o),
+    .pe1_message_b4_row0_words_o(pe1_message_b4_row0_words_o),
+    .pe1_message_b5_row0_words_o(pe1_message_b5_row0_words_o),
+    .pe1_message_b6_row0_words_o(pe1_message_b6_row0_words_o),
+    .pe1_message_b7_row0_words_o(pe1_message_b7_row0_words_o),
     .pe0_adapter_payload_plane0_row0_o(pe0_adapter_payload_plane0_row0_o),
+    .pe0_adapter_payload_plane1_row0_o(pe0_adapter_payload_plane1_row0_o),
+    .pe0_adapter_payload_plane2_row0_o(pe0_adapter_payload_plane2_row0_o),
+    .pe0_adapter_payload_plane3_row0_o(pe0_adapter_payload_plane3_row0_o),
     .pe1_adapter_payload_plane0_row0_o(pe1_adapter_payload_plane0_row0_o),
+    .pe1_adapter_payload_plane1_row0_o(pe1_adapter_payload_plane1_row0_o),
+    .pe1_adapter_payload_plane2_row0_o(pe1_adapter_payload_plane2_row0_o),
+    .pe1_adapter_payload_plane3_row0_o(pe1_adapter_payload_plane3_row0_o),
     .pe0_adapter_credit_q0_o(pe0_adapter_credit_q0_o),
     .pe1_adapter_credit_q0_o(pe1_adapter_credit_q0_o),
     .pe0_adapter_tail_q0_o(pe0_adapter_tail_q0_o),
@@ -704,7 +846,15 @@ module gbp_pe_mesh_2pe_convergence
     .pe0_ingress_wr_req_data_o(pe0_ingress_wr_req_data_o),
     .pe1_ingress_wr_req_valid_o(pe1_ingress_wr_req_valid_o),
     .pe1_ingress_wr_req_addr_o(pe1_ingress_wr_req_addr_o),
-    .pe1_ingress_wr_req_data_o(pe1_ingress_wr_req_data_o)
+    .pe1_ingress_wr_req_data_o(pe1_ingress_wr_req_data_o),
+    .pe0_semantic_payload_seen_o(pe0_semantic_payload_seen_o),
+    .pe0_semantic_payload_bank_o(pe0_semantic_payload_bank_o),
+    .pe0_semantic_payload_row_o(pe0_semantic_payload_row_o),
+    .pe0_semantic_payload_first_word_o(pe0_semantic_payload_first_word_o),
+    .pe1_semantic_payload_seen_o(pe1_semantic_payload_seen_o),
+    .pe1_semantic_payload_bank_o(pe1_semantic_payload_bank_o),
+    .pe1_semantic_payload_row_o(pe1_semantic_payload_row_o),
+    .pe1_semantic_payload_first_word_o(pe1_semantic_payload_first_word_o)
   );
 
 endmodule
