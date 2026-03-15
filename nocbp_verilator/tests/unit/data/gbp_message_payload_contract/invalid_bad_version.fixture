@@ -1,0 +1,16 @@
+case_id: invalid_bad_version
+expect_valid: false
+expected_error: bad_version
+schema_version: 2
+direction: factor_to_var
+transport_direction: factor_to_var
+bank: 4
+slot: 0
+dim: 2
+eta_len: 2
+lam_len: 3
+segment_payload_words: 5
+segment_word_data: 0x3fa00000,0xc0200000,0x40400000,0x3f000000,0x40000000
+expected_eta: 1.25,-2.5
+expected_lam: 3.0,0.5,2.0
+expected_remaining_words: 0

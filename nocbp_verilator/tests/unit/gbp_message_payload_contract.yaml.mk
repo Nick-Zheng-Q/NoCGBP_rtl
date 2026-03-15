@@ -1,0 +1,1 @@
+TOP_SV := tops/unit/gbp_message_payload_contract_top.sv

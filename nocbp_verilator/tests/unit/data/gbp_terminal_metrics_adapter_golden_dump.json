@@ -1,0 +1,94 @@
+{
+  "test": "gbp_terminal_metrics_adapter",
+  "workload": "synthetic_line",
+  "iterations": 50,
+  "snapshot_seq": 7,
+  "snapshot_cycle": 4096,
+  "graph": {
+    "node_count": 2,
+    "spacing": 1.0,
+    "init_noise_std": 0.0,
+    "seed": 12345,
+    "anchor_std": 0.001
+  },
+  "coverage_contract": {
+    "required_state_banks": [1, 2, 3],
+    "required_message_banks": [4, 5, 6, 7],
+    "required_row": 0,
+    "required_beats_per_row": 8
+  },
+  "terminal_dump": [
+    {
+      "pe": 0,
+      "required_rows": [
+        {"bank": 1, "class": "state", "row": 0, "address": 32, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 2, "class": "state", "row": 0, "address": 64, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 3, "class": "state", "row": 0, "address": 96, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 4, "class": "message", "row": 0, "address": 128, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 5, "class": "message", "row": 0, "address": 160, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 6, "class": "message", "row": 0, "address": 192, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 7, "class": "message", "row": 0, "address": 224, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]}
+      ]
+    },
+    {
+      "pe": 1,
+      "required_rows": [
+        {"bank": 1, "class": "state", "row": 0, "address": 32, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 2, "class": "state", "row": 0, "address": 64, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 3, "class": "state", "row": 0, "address": 96, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 4, "class": "message", "row": 0, "address": 128, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 5, "class": "message", "row": 0, "address": 160, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 6, "class": "message", "row": 0, "address": 192, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]},
+        {"bank": 7, "class": "message", "row": 0, "address": 224, "snapshot_seq": 7, "snapshot_cycle": 4096, "beats": [0,0,0,0,0,0,0,0]}
+      ]
+    }
+  ],
+  "variable_snapshots": [
+    {
+      "pe": 0,
+      "variable_id": 0,
+      "dofs": 2,
+      "state_bank": 1,
+      "state_row": 0,
+      "snapshot_seq": 7,
+      "snapshot_cycle": 4096,
+      "prior_eta": [0.0, 0.0],
+      "prior_lam": [[1.0, 0.0], [0.0, 1.0]],
+      "inbound_messages": [
+        {
+          "factor_id": 0,
+          "variable_id": 0,
+          "message_slot": 0,
+          "msg_bank": 4,
+          "msg_row": 0,
+          "msg_beat": 0,
+          "msg_eta": [1.401298464e-45, 0.0],
+          "msg_lam": [[0.0, 0.0], [0.0, 0.0]]
+        }
+      ]
+    },
+    {
+      "pe": 1,
+      "variable_id": 1,
+      "dofs": 2,
+      "state_bank": 2,
+      "state_row": 0,
+      "snapshot_seq": 7,
+      "snapshot_cycle": 4096,
+      "prior_eta": [0.0, 0.0],
+      "prior_lam": [[1.0, 0.0], [0.0, 1.0]],
+      "inbound_messages": [
+        {
+          "factor_id": 0,
+          "variable_id": 1,
+          "message_slot": 1,
+          "msg_bank": 5,
+          "msg_row": 0,
+          "msg_beat": 0,
+          "msg_eta": [1.401298464e-45, 0.0],
+          "msg_lam": [[0.0, 0.0], [0.0, 0.0]]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+top_sv: tops/unit/gbp_terminal_metrics_adapter_contract_top.sv
+rtl_f: tests/unit/gbp_terminal_metrics_adapter.f

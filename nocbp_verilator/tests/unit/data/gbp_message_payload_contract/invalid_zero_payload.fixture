@@ -1,0 +1,16 @@
+case_id: invalid_zero_payload
+expect_valid: false
+expected_error: invalid_zero_payload
+schema_version: 1
+direction: var_to_factor
+transport_direction: var_to_factor
+bank: 7
+slot: 3
+dim: 2
+eta_len: 2
+lam_len: 3
+segment_payload_words: 5
+segment_word_data: 0x00000000,0x00000000,0x00000000,0x00000000,0x00000000
+expected_eta: 0.0,0.0
+expected_lam: 0.0,0.0,0.0
+expected_remaining_words: 0

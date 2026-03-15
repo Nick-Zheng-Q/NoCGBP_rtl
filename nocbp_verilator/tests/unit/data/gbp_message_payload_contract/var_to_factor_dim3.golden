@@ -1,0 +1,16 @@
+case_id: var_to_factor_dim3
+expect_valid: true
+expected_error: none
+schema_version: 1
+direction: var_to_factor
+transport_direction: var_to_factor
+bank: 7
+slot: 3
+dim: 3
+eta_len: 3
+lam_len: 6
+segment_payload_words: 9
+segment_word_data: 0x3e000000,0xbf400000,0x40100000,0x40800000,0xbf800000,0x3e800000,0x40400000,0x3f000000,0x40000000
+expected_eta: 0.125,-0.75,2.25
+expected_lam: 4.0,-1.0,0.25,3.0,0.5,2.0
+expected_remaining_words: 0
