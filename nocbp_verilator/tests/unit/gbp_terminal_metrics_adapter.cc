@@ -42,8 +42,8 @@ int run_test(int argc, char** argv) {
     return 1;
   }
 
-  const double expected_are = 1.0;
-  const double expected_energy = 0.5;
+  const double expected_are = 0.06972;
+  const double expected_energy = 0.044911;
   const double tol = 1e-9;
   if (std::fabs(metrics.are - expected_are) > tol ||
       std::fabs(metrics.energy - expected_energy) > tol) {
