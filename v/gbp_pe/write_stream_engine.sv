@@ -27,12 +27,10 @@ module write_stream_engine
 
   logic                  data_fifo_ready_lo;
   logic                  data_fifo_valid_lo;
-  logic [BEAT_BYTES-1:0] data_fifo_data_lo;
+  logic [BEAT_BITS-1:0]  data_fifo_data_lo;
   logic                  data_fifo_unqueue_lo;
   logic [7:0]            data_fifo_occ_lo;
   logic                  data_fifo_afull_lo;
-
-  logic [BEAT_BITS-1:0] data_to_mic_lo;
   logic                 desc_accept;
 
   assign desc_accept = if_stream_dispatcher_if_stream.valid & if_stream_dispatcher_if_stream.ready;
@@ -97,6 +95,7 @@ module write_stream_engine
   );
 
   data_fifo u_data_fifo (
+      .width_p(BEAT_BITS),
       .clk_i(clk_i),
       .reset_i(reset_i),
       .data_i(if_stream_if_stream.data),
@@ -111,8 +110,6 @@ module write_stream_engine
 
   assign if_stream_if_stream.ready = data_fifo_ready_lo;
 
-  assign data_to_mic_lo = { {(BEAT_BITS-BEAT_BYTES){1'b0}}, data_fifo_data_lo };
-
   mic_write u_mic_write (
       .clk_i(clk_i),
       .reset_i(reset_i),
@@ -120,7 +117,7 @@ module write_stream_engine
       .addr_data_i(addr_fifo_data_lo),
       .addr_unqueue_o(addr_fifo_unqueue_lo),
       .data_valid_i(data_fifo_valid_lo),
-      .data_data_i(data_to_mic_lo),
+      .data_data_i(data_fifo_data_lo),
       .data_unqueue_o(data_fifo_unqueue_lo),
       .mic_to_spm_arbiter(mic_to_spm_arbiter)
   );

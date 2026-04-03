@@ -27,6 +27,7 @@ module pe_top_integration (
     .cmd_valid_i(cmd_valid),
     .cmd_kind_i(cmd_kind),
     .cmd_txn_id_i(cmd_txn),
+    .force_persistence_stall_i(1'b0),
     .cmd_ready_o(cmd_ready),
     .rsp_done_o(cmd_rsp_done),
     .rsp_error_o(cmd_rsp_error),

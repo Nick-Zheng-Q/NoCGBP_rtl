@@ -152,12 +152,14 @@ module gbp_pe_endpoint_adapter
 
   logic [data_width_p-1:0] read_data_n;
   logic read_v_n;
+  logic write_v_n;
   logic [data_width_p-1:0] payload_write_data;
 
   always_comb begin
-    in_yumi_li = in_v_lo;
+    in_yumi_li = 1'b0;
     read_data_n = '0;
     read_v_n = 1'b0;
+    write_v_n = 1'b0;
 
     core_req_v_o = 1'b0;
     core_req_we_o = in_we_lo;
@@ -165,8 +167,8 @@ module gbp_pe_endpoint_adapter
     core_req_data_o = in_data_lo;
 
     if (in_v_lo & ~in_we_lo) begin
-      read_v_n = 1'b1;
       if (is_b0_w) begin
+        read_v_n = 1'b1;
         unique case (field_w)
           3'd0: read_data_n = q_base_addr_r[qid_w];
           3'd1: read_data_n = {{(data_width_p-8){1'b0}}, q_depth_r[qid_w]};
@@ -178,11 +180,13 @@ module gbp_pe_endpoint_adapter
         endcase
       end
       else if (is_payload_w) begin
+        read_v_n = 1'b1;
         read_data_n = payload_mem_r[plane_w][row_w];
       end
       else begin
         core_req_v_o = 1'b1;
-        if (core_rsp_v_i) begin
+        read_v_n = core_req_yumi_i;
+        if (core_req_yumi_i & core_rsp_v_i) begin
           read_data_n = core_rsp_data_i;
         end
       end
@@ -190,8 +194,14 @@ module gbp_pe_endpoint_adapter
     else if (in_v_lo & in_we_lo) begin
       if (forward_local_writes_p || (~is_b0_w & ~is_payload_w)) begin
         core_req_v_o = 1'b1;
+        write_v_n = core_req_yumi_i;
+      end
+      else begin
+        write_v_n = 1'b1;
       end
     end
+
+    in_yumi_li = in_v_lo & (read_v_n | write_v_n);
   end
 
   always_comb begin
@@ -223,10 +233,10 @@ module gbp_pe_endpoint_adapter
       end
     end
     else begin
-      returning_v_li <= read_v_n;
+      returning_v_li <= read_v_n | write_v_n;
       returning_data_li <= read_data_n;
 
-      if (in_v_lo & in_we_lo & is_payload_w) begin
+      if (in_yumi_li & in_we_lo & is_payload_w) begin
         if (ordering_state_r != ORD_IDLE) begin
           ownership_err_r <= 1'b1;
         end
@@ -241,7 +251,7 @@ module gbp_pe_endpoint_adapter
         ordering_pending_r <= 1'b1;
       end
 
-      if (in_v_lo & in_we_lo & is_b0_w) begin
+      if (in_yumi_li & in_we_lo & is_b0_w) begin
         unique case (field_w)
           3'd0: q_base_addr_r[qid_w] <= in_data_lo;
           3'd1: q_depth_r[qid_w] <= in_data_lo[7:0];

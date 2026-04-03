@@ -22,10 +22,11 @@ endinterface
 
 // read data channel: read_stream_engine -> compute path
 interface read_stream_if;
+  import gbp_pkg::*;
 
   // Inputs (to/from the interface)
   logic valid;
-  logic [31:0] data;
+  logic [BEAT_BITS-1:0] data;
 
   // Outputs (from the interface)
   logic ready;
@@ -39,10 +40,11 @@ endinterface
 
 // write data channel: compute path -> write_stream_engine
 interface write_stream_if;
+  import gbp_pkg::*;
 
   // Inputs (to/from the interface)
   logic valid;
-  logic [31:0] data;
+  logic [BEAT_BITS-1:0] data;
 
   // Outputs (from the interface)
   logic ready;
@@ -108,12 +110,14 @@ interface control_dispatch_if;
   logic [XFER_BYTES_W-1:0] xfer_bytes;  // XFER_BYTES_W
   // Stride between consecutive beats in bytes
   logic [STEP_BYTES_W-1:0] addr_step_bytes;  // STEP_BYTES_W
+  // Write indicator: 1=write operation, 0=read operation
+  logic                    write;
   // stream_type_e stream_type;
 
   // Modports
-  modport master(input ready, output valid, mode, node_address, xfer_bytes, addr_step_bytes);
+  modport master(input ready, output valid, mode, node_address, xfer_bytes, addr_step_bytes, write);
 
-  modport slave(output ready, input valid, mode, node_address, xfer_bytes, addr_step_bytes);
+  modport slave(output ready, input valid, mode, node_address, xfer_bytes, addr_step_bytes, write);
 
 endinterface
 
@@ -142,8 +146,18 @@ interface control_compute_if;
   logic [NODE_ID_W-1:0] cmd_node_idx;
   // First iteration indicator (1 for iteration 0, 0 otherwise)
   logic cmd_iter0;
+  // 节点自由度，直接来自 META 解析结果
+  logic [2:0] cmd_dofs;
+  // 相邻节点数量，直接来自 META 解析结果
+  logic [3:0] cmd_adj_count;
+  // 本轮 compute 需要消费的 message 条数
+  logic [3:0] cmd_msg_count;
   // Transaction ID for matching responses (TXN_ID_W bits)
   logic [TXN_ID_W-1:0] cmd_txn_id;
+  // Writeback address: where to write result (SPM_ADDR_W bits)
+  logic [SPM_ADDR_W-1:0] cmd_wr_addr;
+  // Writeback total bytes: how much result payload should be persisted
+  logic [XFER_BYTES_W-1:0] cmd_wr_xfer_bytes;
 
   // Modports
   modport master(
@@ -156,7 +170,12 @@ interface control_compute_if;
       output cmd_kind,
       output cmd_node_idx,
       output cmd_iter0,
-      output cmd_txn_id
+      output cmd_dofs,
+      output cmd_adj_count,
+      output cmd_msg_count,
+      output cmd_txn_id,
+      output cmd_wr_addr,
+      output cmd_wr_xfer_bytes
   );
 
   modport slave(
@@ -169,7 +188,12 @@ interface control_compute_if;
       input cmd_kind,
       input cmd_node_idx,
       input cmd_iter0,
-      input cmd_txn_id
+      input cmd_dofs,
+      input cmd_adj_count,
+      input cmd_msg_count,
+      input cmd_txn_id,
+      input cmd_wr_addr,
+      input cmd_wr_xfer_bytes
   );
 
 endinterface

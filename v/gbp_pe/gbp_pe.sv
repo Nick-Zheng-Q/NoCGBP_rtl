@@ -44,6 +44,12 @@ module gbp_pe
 
     , input [pod_x_cord_width_p-1:0] pod_x_i
     , input [pod_y_cord_width_p-1:0] pod_y_i
+`ifdef GBP_WHITEBOX_TEST
+    , input logic wb_cmd_valid_i
+    , input logic [1:0] wb_cmd_kind_i
+    , input logic [gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output logic wb_cmd_ready_o
+`endif
   );
 
   logic rst_n;
@@ -96,6 +102,10 @@ module gbp_pe
   logic [31:0] pe_ingress_wr_req_data_low_lo;
 
   logic bridge_decode_error_lo;
+  logic cmd_valid_mux_lo;
+  logic [1:0] cmd_kind_mux_lo;
+  logic [gbp_pkg::TXN_ID_W-1:0] cmd_txn_id_mux_lo;
+  logic bridge_cmd_ready_lo;
 
   `declare_bsg_manycore_packet_s(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p);
   bsg_manycore_packet_s compute_done_packet_cast_lo;
@@ -170,7 +180,7 @@ module gbp_pe
       ,.sideband_cmd_valid_o(sideband_cmd_valid_lo)
       ,.sideband_cmd_kind_o(sideband_cmd_kind_lo)
       ,.sideband_cmd_txn_id_o(sideband_cmd_txn_id_lo)
-      ,.sideband_cmd_ready_i(sideband_cmd_ready_lo)
+      ,.sideband_cmd_ready_i(bridge_cmd_ready_lo)
       ,.sideband_rsp_done_i(sideband_rsp_done_lo)
       ,.sideband_rsp_error_i(sideband_rsp_error_lo)
       ,.ingress_intent_v_o(ingress_intent_v_lo)
@@ -182,13 +192,26 @@ module gbp_pe
       ,.decode_error_o(bridge_decode_error_lo)
     );
 
+`ifdef GBP_WHITEBOX_TEST
+  assign cmd_valid_mux_lo = wb_cmd_valid_i ? 1'b1 : sideband_cmd_valid_lo;
+  assign cmd_kind_mux_lo = wb_cmd_valid_i ? wb_cmd_kind_i : sideband_cmd_kind_lo;
+  assign cmd_txn_id_mux_lo = wb_cmd_valid_i ? wb_cmd_txn_id_i : sideband_cmd_txn_id_lo;
+  assign bridge_cmd_ready_lo = wb_cmd_valid_i ? 1'b0 : sideband_cmd_ready_lo;
+  assign wb_cmd_ready_o = sideband_cmd_ready_lo;
+`else
+  assign cmd_valid_mux_lo = sideband_cmd_valid_lo;
+  assign cmd_kind_mux_lo = sideband_cmd_kind_lo;
+  assign cmd_txn_id_mux_lo = sideband_cmd_txn_id_lo;
+  assign bridge_cmd_ready_lo = sideband_cmd_ready_lo;
+`endif
+
   pe_top pe
     (
       .clk_i(clk_i)
       ,.reset_i(reset_i)
-      ,.cmd_valid_i(sideband_cmd_valid_lo)
-      ,.cmd_kind_i(sideband_cmd_kind_lo)
-      ,.cmd_txn_id_i(sideband_cmd_txn_id_lo)
+      ,.cmd_valid_i(cmd_valid_mux_lo)
+      ,.cmd_kind_i(cmd_kind_mux_lo)
+      ,.cmd_txn_id_i(cmd_txn_id_mux_lo)
       ,.force_persistence_stall_i(force_persistence_stall_lo)
       ,.cmd_ready_o(sideband_cmd_ready_lo)
       ,.rsp_done_o(sideband_rsp_done_lo)

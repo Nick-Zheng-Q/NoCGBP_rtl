@@ -26,7 +26,8 @@ module agu
     base_addr = descriptor_i.base_addr;
     xfer_bytes = descriptor_i.xfer_bytes;
     step_bytes = descriptor_i.addr_step_bytes;
-    beat_count_max = xfer_bytes >> $clog2(BEAT_BYTES);
+    // xfer_bytes 不是 beat 对齐时必须向上取整，否则 108B 这类负载会少发最后一个 beat。
+    beat_count_max = (xfer_bytes + XFER_BYTES_W'(BEAT_BYTES - 1)) >> $clog2(BEAT_BYTES);
   end
 
   always_ff @(posedge clk_i) begin

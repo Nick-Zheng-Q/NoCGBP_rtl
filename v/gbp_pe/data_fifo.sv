@@ -1,22 +1,27 @@
 module data_fifo
   import gbp_pkg::*;
+#(
+    parameter int unsigned width_p = BEAT_BITS,
+    parameter int unsigned depth_p = DATA_ELS_DEPTH
+)
 (
     input logic clk_i,
     input logic reset_i,
     // in 
-    input logic [BEAT_BYTES-1:0] data_i,
+    input logic [width_p-1:0] data_i,
     input logic valid_i,
     output logic ready_o,
     // out
     output logic valid_o,
-    output logic [BEAT_BYTES-1:0] data_o,
+    output logic [width_p-1:0] data_o,
     input logic unqueue_i,
     // status
     output logic [7:0] occ,
     output logic afull
 );
 
-  logic [DATA_ELS_DEPTH-1:0] count;
+  localparam int unsigned COUNT_W = (depth_p <= 1) ? 1 : $clog2(depth_p + 1);
+  logic [COUNT_W-1:0] count;
 
   always_ff @(posedge clk_i) begin
     if (reset_i) begin
@@ -34,11 +39,11 @@ module data_fifo
   end
 
   assign occ   = count;
-  assign afull = (count >= DATA_ELS_DEPTH - 1);
+  assign afull = (count >= depth_p - 1);
 
   bsg_fifo_1r1w_large #(
-      .width_p(BEAT_BYTES),
-      .els_p  (DATA_ELS_DEPTH)
+      .width_p(width_p),
+      .els_p  (depth_p)
   ) data_fifo (
       .clk_i(clk_i),
       .reset_i(reset_i),

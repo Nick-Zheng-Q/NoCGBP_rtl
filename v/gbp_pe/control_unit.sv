@@ -167,22 +167,30 @@ module control_unit (
     control_compute_if.cmd_kind = 1'b0;
     control_compute_if.cmd_node_idx = '0;
     control_compute_if.cmd_iter0 = 1'b0;
+    control_compute_if.cmd_dofs = 3'd2;
+    control_compute_if.cmd_adj_count = 4'd1;
+    control_compute_if.cmd_msg_count = 4'd1;
     control_compute_if.cmd_txn_id = meta_txn_id_r;
+    control_compute_if.cmd_wr_addr = state_addr_r;
+    control_compute_if.cmd_wr_xfer_bytes = state_xfer_bytes_r;
 
     unique case (state_r)
       S_IDLE: begin
         if (compute_cmd_pending_r && dispatch_ready_rise_r) begin
           control_dispatch_if.valid = 1'b1;
           control_dispatch_if.mode = STREAM_MESSAGE;
+          $display("CTRL_UNIT_DBG IDLE: issuing compute cmd");
         end
 
         if (compute_cmd_pending_r && control_compute_if.cmd_ready) begin
           compute_cmd_pending_n = 1'b0;
           compute_running_n = 1'b1;
+          $display("CTRL_UNIT_DBG IDLE: compute cmd accepted, running=1");
         end
 
         if (control_compute_if.rsp_done) begin
           compute_running_n = 1'b0;
+          $display("CTRL_UNIT_DBG IDLE: compute rsp_done");
         end
 
         if ((!compute_running_n && !compute_cmd_pending_n) || control_compute_if.rsp_done) begin
@@ -214,6 +222,9 @@ module control_unit (
           state_step_bytes_n = meta_word4_lo[31:24];
           message_step_bytes_n = meta_word4_lo[23:16];
           meta_parsed_n = 1'b1;
+          // Debug
+          $display("CTRL_UNIT_DBG META_PARSE: txn_id=%h state_addr=%h msg_addr=%h state_xfer=%d msg_xfer=%d",
+                   meta_word0_lo[7:0], state_addr_n, message_addr_n, state_xfer_bytes_n, message_xfer_bytes_n);
         end
 
         if (meta_parsed_r) begin
@@ -243,10 +254,12 @@ module control_unit (
         if (issue_hs) begin
           if (followup_idx_r == 2'd0) begin
             followup_idx_n = 2'd1;
+            $display("CTRL_UNIT_DBG FOLLOWUP: state read done, starting message read");
           end else begin
             compute_cmd_pending_n = 1'b1;
             state_n = S_IDLE;
             followup_idx_n = '0;
+            $display("CTRL_UNIT_DBG FOLLOWUP: message read done, cmd_pending=1");
           end
         end
       end

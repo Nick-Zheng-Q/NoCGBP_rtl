@@ -12,7 +12,7 @@ package gbp_pkg;
   parameter int unsigned NODE_ID_W = 13;  // up to 8192 nodes/object ids
   parameter int unsigned EDGE_ID_W = 16;  // configurable
   parameter int unsigned XFER_BYTES_W = 16;  // transfer length in bytes
-  parameter int unsigned STEP_BYTES_W = 8;  // stride per beat
+  parameter int unsigned STEP_BYTES_W = 16;  // stride per beat，需要覆盖固定 bank 的 256B 行步长
   parameter int unsigned DATA_ELS_DEPTH = 16;  // depth of data fifo
   parameter int unsigned ADDR_ELS_DEPTH = 16;  // depth of address fifo
 

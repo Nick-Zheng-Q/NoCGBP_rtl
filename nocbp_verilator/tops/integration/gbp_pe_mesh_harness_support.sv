@@ -32,11 +32,22 @@ module bsg_manycore_proc_vanilla
     input [y_cord_width_p-1:0] my_y_i,
     input [pod_x_cord_width_p-1:0] pod_x_i,
     input [pod_y_cord_width_p-1:0] pod_y_i
+`ifdef GBP_WHITEBOX_TEST
+    , input logic wb_cmd_valid_i
+    , input logic [1:0] wb_cmd_kind_i
+    , input logic [gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output logic wb_cmd_ready_o
+`endif
   );
   assign link_sif_o = '0;
   assign barrier_data_o = 1'b0;
   assign barrier_src_r_o = '0;
   assign barrier_dest_r_o = '0;
+`ifdef GBP_WHITEBOX_TEST
+  assign wb_cmd_ready_o = 1'b0;
+  logic unused_whitebox;
+  assign unused_whitebox = wb_cmd_valid_i | (^wb_cmd_kind_i) | (^wb_cmd_txn_id_i);
+`endif
 endmodule
 
 module bsg_manycore_gather_scatter
@@ -73,11 +84,22 @@ module bsg_manycore_gather_scatter
     input [y_cord_width_p-1:0] my_y_i,
     input [pod_x_cord_width_p-1:0] pod_x_i,
     input [pod_y_cord_width_p-1:0] pod_y_i
+`ifdef GBP_WHITEBOX_TEST
+    , input logic wb_cmd_valid_i
+    , input logic [1:0] wb_cmd_kind_i
+    , input logic [gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output logic wb_cmd_ready_o
+`endif
   );
   assign link_sif_o = '0;
   assign barrier_data_o = 1'b0;
   assign barrier_src_r_o = '0;
   assign barrier_dest_r_o = '0;
+`ifdef GBP_WHITEBOX_TEST
+  assign wb_cmd_ready_o = 1'b0;
+  logic unused_whitebox;
+  assign unused_whitebox = wb_cmd_valid_i | (^wb_cmd_kind_i) | (^wb_cmd_txn_id_i);
+`endif
 endmodule
 
 module bsg_manycore_accel_default
@@ -114,9 +136,20 @@ module bsg_manycore_accel_default
     input [y_cord_width_p-1:0] my_y_i,
     input [pod_x_cord_width_p-1:0] pod_x_i,
     input [pod_y_cord_width_p-1:0] pod_y_i
+`ifdef GBP_WHITEBOX_TEST
+    , input logic wb_cmd_valid_i
+    , input logic [1:0] wb_cmd_kind_i
+    , input logic [gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output logic wb_cmd_ready_o
+`endif
   );
   assign link_sif_o = '0;
   assign barrier_data_o = 1'b0;
   assign barrier_src_r_o = '0;
   assign barrier_dest_r_o = '0;
+`ifdef GBP_WHITEBOX_TEST
+  assign wb_cmd_ready_o = 1'b0;
+  logic unused_whitebox;
+  assign unused_whitebox = wb_cmd_valid_i | (^wb_cmd_kind_i) | (^wb_cmd_txn_id_i);
+`endif
 endmodule

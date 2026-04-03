@@ -1,0 +1,9 @@
+level: integration
+test: gbp_pe_mesh_whitebox_convergence
+mesh:
+  x: 2
+  y: 2
+workload: bal_fr1desk_small
+dataset: ../../../../data/fr1desk_small.txt
+seed: 12345
+partition: ../../oracle/generated/bal_fr1desk_small_partition_4pe_2x2.json

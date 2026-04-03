@@ -40,6 +40,7 @@ module stream_dispatcher
 
     // For invalid mode, always ready (non-blocking); otherwise follow read channel
     control_dispatch_if.ready = is_valid_mode ? stream_dispatcher_if_read.ready : 1'b1;
+    
   end
 
 endmodule

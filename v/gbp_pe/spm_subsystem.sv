@@ -9,6 +9,7 @@ module spm_subsystem
 );
 
   localparam int unsigned ROW_BYTES_LG = BYTE_OFF_W + WORD_OFF_W;
+  localparam int unsigned ACTIVE_MIC_PORTS = 2;
 
   spm_bank_if bank_if[NB]();
 
@@ -24,25 +25,30 @@ module spm_subsystem
   logic [NB-1:0][1:0][WSTRB_W-1:0] wr_wstrb_by_bank;
   logic [NB-1:0][1:0] wr_ready_by_bank;
 
-  logic [NB-1:0][1:0] rd_req_bytes_unused;
+  logic [ACTIVE_MIC_PORTS-1:0][BANK_ID_W-1:0] rd_bank_sel_lo;
+  logic [ACTIVE_MIC_PORTS-1:0][BANK_ID_W-1:0] wr_bank_sel_lo;
+  logic [ACTIVE_MIC_PORTS-1:0] rd_req_bytes_unused;
+
+  for (genvar p = 0; p < ACTIVE_MIC_PORTS; p++) begin : decode_req_bank
+    assign rd_bank_sel_lo[p] = rd_if[p].spm_rd_req_addr[ROW_BYTES_LG +: BANK_ID_W];
+    assign wr_bank_sel_lo[p] = wr_if[p].spm_wr_req_addr[ROW_BYTES_LG +: BANK_ID_W];
+    assign rd_req_bytes_unused[p] = |rd_if[p].spm_rd_req_bytes;
+  end
 
   for (genvar b = 0; b < NB; b++) begin : per_bank
-    assign rd_req_bytes_unused[b][0] = rd_if[2*b].spm_rd_req_bytes;
-    assign rd_req_bytes_unused[b][1] = rd_if[2*b+1].spm_rd_req_bytes;
+    assign rd_req_by_bank[b][0] = rd_if[0].spm_rd_req_valid & (rd_bank_sel_lo[0] == BANK_ID_W'(b));
+    assign rd_row_by_bank[b][0] = rd_if[0].spm_rd_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
+    assign rd_req_by_bank[b][1] = rd_if[1].spm_rd_req_valid & (rd_bank_sel_lo[1] == BANK_ID_W'(b));
+    assign rd_row_by_bank[b][1] = rd_if[1].spm_rd_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
 
-    assign rd_req_by_bank[b][0] = rd_if[2*b].spm_rd_req_valid;
-    assign rd_row_by_bank[b][0] = rd_if[2*b].spm_rd_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
-    assign rd_req_by_bank[b][1] = rd_if[2*b+1].spm_rd_req_valid;
-    assign rd_row_by_bank[b][1] = rd_if[2*b+1].spm_rd_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
-
-    assign wr_req_by_bank[b][0] = wr_if[2*b].spm_wr_req_valid;
-    assign wr_row_by_bank[b][0] = wr_if[2*b].spm_wr_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
-    assign wr_data_by_bank[b][0] = wr_if[2*b].spm_wr_req_data;
-    assign wr_wstrb_by_bank[b][0] = wr_if[2*b].spm_wr_req_wstrb;
-    assign wr_req_by_bank[b][1] = wr_if[2*b+1].spm_wr_req_valid;
-    assign wr_row_by_bank[b][1] = wr_if[2*b+1].spm_wr_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
-    assign wr_data_by_bank[b][1] = wr_if[2*b+1].spm_wr_req_data;
-    assign wr_wstrb_by_bank[b][1] = wr_if[2*b+1].spm_wr_req_wstrb;
+    assign wr_req_by_bank[b][0] = wr_if[0].spm_wr_req_valid & (wr_bank_sel_lo[0] == BANK_ID_W'(b));
+    assign wr_row_by_bank[b][0] = wr_if[0].spm_wr_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
+    assign wr_data_by_bank[b][0] = wr_if[0].spm_wr_req_data;
+    assign wr_wstrb_by_bank[b][0] = wr_if[0].spm_wr_req_wstrb;
+    assign wr_req_by_bank[b][1] = wr_if[1].spm_wr_req_valid & (wr_bank_sel_lo[1] == BANK_ID_W'(b));
+    assign wr_row_by_bank[b][1] = wr_if[1].spm_wr_req_addr[(ROW_BYTES_LG + BANK_ID_W) +: ROW_ADDR_W];
+    assign wr_data_by_bank[b][1] = wr_if[1].spm_wr_req_data;
+    assign wr_wstrb_by_bank[b][1] = wr_if[1].spm_wr_req_wstrb;
 
     spm_rd_arbiter u_rd_arbiter (
         .clk_i(clk_i),
@@ -73,14 +79,37 @@ module spm_subsystem
 
     assign bank_if[b].bank_rd_bank = BANK_ID_W'(b);
     assign bank_if[b].bank_wr_bank = BANK_ID_W'(b);
+  end
 
-    assign rd_if[2*b].spm_rd_rsp_valid = rd_rsp_valid_by_bank[b][0];
-    assign rd_if[2*b].spm_rd_rsp_data = rd_rsp_data_by_bank[b][0];
-    assign rd_if[2*b+1].spm_rd_rsp_valid = rd_rsp_valid_by_bank[b][1];
-    assign rd_if[2*b+1].spm_rd_rsp_data = rd_rsp_data_by_bank[b][1];
+  always_comb begin
+    rd_if[0].spm_rd_rsp_valid = 1'b0;
+    rd_if[0].spm_rd_rsp_data = '0;
+    wr_if[0].spm_wr_req_ready = 1'b0;
+    rd_if[1].spm_rd_rsp_valid = 1'b0;
+    rd_if[1].spm_rd_rsp_data = '0;
+    wr_if[1].spm_wr_req_ready = 1'b0;
+    for (int b = 0; b < NB; b++) begin
+      if (rd_bank_sel_lo[0] == BANK_ID_W'(b)) begin
+        rd_if[0].spm_rd_rsp_valid = rd_rsp_valid_by_bank[b][0];
+        rd_if[0].spm_rd_rsp_data = rd_rsp_data_by_bank[b][0];
+      end
+      if (wr_bank_sel_lo[0] == BANK_ID_W'(b)) begin
+        wr_if[0].spm_wr_req_ready = wr_ready_by_bank[b][0];
+      end
+      if (rd_bank_sel_lo[1] == BANK_ID_W'(b)) begin
+        rd_if[1].spm_rd_rsp_valid = rd_rsp_valid_by_bank[b][1];
+        rd_if[1].spm_rd_rsp_data = rd_rsp_data_by_bank[b][1];
+      end
+      if (wr_bank_sel_lo[1] == BANK_ID_W'(b)) begin
+        wr_if[1].spm_wr_req_ready = wr_ready_by_bank[b][1];
+      end
+    end
+  end
 
-    assign wr_if[2*b].spm_wr_req_ready = wr_ready_by_bank[b][0];
-    assign wr_if[2*b+1].spm_wr_req_ready = wr_ready_by_bank[b][1];
+  for (genvar p = ACTIVE_MIC_PORTS; p < 2*NB; p++) begin : tie_unused_rsp_ready
+    assign rd_if[p].spm_rd_rsp_valid = 1'b0;
+    assign rd_if[p].spm_rd_rsp_data = '0;
+    assign wr_if[p].spm_wr_req_ready = 1'b0;
   end
 
   spm_bank_array u_spm_bank_array (

@@ -5,6 +5,7 @@
 
 module compute_unit
   import bsg_manycore_pkg::*;
+  import gbp_pkg::*;
 #(
     parameter int GBP_CORE_PER_PE = 16
     , parameter int FP_EXP_WIDTH_P = 8
@@ -52,7 +53,7 @@ module compute_unit
   logic [GBP_CORE_PER_PE-1:0][31:0] div_result_r;
 
   logic wr_pending_r;
-  logic [31:0] wr_data_r;
+  logic [BEAT_BITS-1:0] wr_data_r;
   logic [31:0] lane0_result_r;
   logic busy_r;
   logic done_pulse_r;
@@ -250,7 +251,7 @@ module compute_unit
 
       if (!wr_pending_r && valid_o) begin
         wr_pending_r <= 1'b1;
-        wr_data_r <= lane0_result_r;
+        wr_data_r <= {{(BEAT_BITS-32){1'b0}}, lane0_result_r};
       end
     end
   end

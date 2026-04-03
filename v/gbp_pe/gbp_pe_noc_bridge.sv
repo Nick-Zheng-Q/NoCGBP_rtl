@@ -80,6 +80,7 @@ module gbp_pe_noc_bridge
   logic req_blocked;
   logic req_accepted;
   logic ordering_doorbell_match;
+  logic direct_ingress_write;
 
   always_comb begin
     bank_id = core_req_addr_i[bank_lsb_lp +: GBP_INGRESS_BANK_W];
@@ -95,7 +96,13 @@ module gbp_pe_noc_bridge
                               & (ordering_state_r == ORD_TAIL_WRITTEN)
                               & (pending_payload_qid_r == qid);
 
-    req_blocked = core_req_v_i & ordering_doorbell_match & ~ingress_intent_ready_i;
+    direct_ingress_write = core_req_we_i
+                           & ~is_mmio_bank
+                           & ~is_payload_bank;
+
+    req_blocked = core_req_v_i
+                  & ~ingress_intent_ready_i
+                  & (ordering_doorbell_match | direct_ingress_write);
     core_req_yumi_o = core_req_v_i & ~req_blocked;
     req_accepted = core_req_v_i & core_req_yumi_o;
 
@@ -166,6 +173,12 @@ module gbp_pe_noc_bridge
             decode_error_n = 1'b1;
             last_decode_addr_n = core_req_addr_i;
           end
+        end else if (direct_ingress_write) begin
+          ingress_intent_v_o = 1'b1;
+          ingress_intent_addr_o = core_req_addr_i;
+          ingress_intent_data_o = core_req_data_i;
+          ingress_intent_bank_o = bank_id;
+          ingress_intent_qid_o = qid;
         end else begin
           decode_error_n = 1'b1;
           last_decode_addr_n = core_req_addr_i;

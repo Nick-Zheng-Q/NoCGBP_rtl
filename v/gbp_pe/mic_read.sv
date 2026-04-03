@@ -16,7 +16,8 @@ module mic_read
     // with data_fifo
     input logic ready_i,
     output logic valid_o,
-    output logic [BEAT_BITS-1:0] data_o
+    output logic [BEAT_BITS-1:0] data_o,
+    output logic busy_o
 );
 
   // ============================================================
@@ -36,21 +37,25 @@ module mic_read
   // ============================================================
   logic [SPM_ADDR_W-1:0] addr_r;
   logic [ BEAT_BITS-1:0] rsp_data_r;
+  logic                  accept_addr_lo;
 
   // SPM request can be sent when:
   // - addr_fifo has valid data
   // - SPM arbiter is ready
-  assign mic_to_spm_arbiter.spm_rd_req_valid = (state_r == IDLE) & valid_i;
-  assign mic_to_spm_arbiter.spm_rd_req_addr = (state_r == IDLE) ? data_i[SPM_ADDR_W-1:0] : addr_r;
+  assign accept_addr_lo = (state_r == IDLE) & valid_i;
+  assign mic_to_spm_arbiter.spm_rd_req_valid = accept_addr_lo;
+  // 接收新地址的同拍直接使用队头值，之后一律使用锁存值。
+  assign mic_to_spm_arbiter.spm_rd_req_addr = accept_addr_lo ? data_i[SPM_ADDR_W-1:0] : addr_r;
   // Full-beat request width is part of gbp_pkg ingress/SPM contract.
   assign mic_to_spm_arbiter.spm_rd_req_bytes = SPM_RD_REQ_BYTES_FULL_BEAT;
 
-  // Advance addr_fifo when we accept the address
-  assign unqueue_o = (state_r == IDLE) & valid_i;
+  // 只有在真正接收一条新地址进入本模块时才推进 addr_fifo。
+  assign unqueue_o = accept_addr_lo;
 
   // Write to data_fifo
   assign valid_o = (state_r == WRITE_FIFO);
   assign data_o = rsp_data_r;
+  assign busy_o = (state_r != IDLE);
 
   // ============================================================
   // FSM sequential logic
@@ -64,7 +69,7 @@ module mic_read
       state_r <= state_n;
 
       // Latch address when accepting from addr_fifo
-      if ((state_r == IDLE) && valid_i) begin
+      if (accept_addr_lo) begin
         addr_r <= data_i[SPM_ADDR_W-1:0];
       end
 
@@ -83,8 +88,9 @@ module mic_read
 
     case (state_r)
       IDLE: begin
-        if (valid_i) begin
+        if (accept_addr_lo) begin
           state_n = REQ_SEND;
+          $display("MIC_READ_REQ %m addr=%h", data_i);
         end
       end
 
@@ -96,6 +102,7 @@ module mic_read
       WAIT_RSP: begin
         if (mic_to_spm_arbiter.spm_rd_rsp_valid) begin
           state_n = WRITE_FIFO;
+          $display("MIC_READ_RSP %m addr=%h data=%h", addr_r, mic_to_spm_arbiter.spm_rd_rsp_data);
         end
       end
 
