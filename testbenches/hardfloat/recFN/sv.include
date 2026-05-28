@@ -1,5 +1,0 @@
-testbench.sv
-$HARDFLOAT_DIR/source/fNToRecFN.v
-$HARDFLOAT_DIR/source/recFNToFN.v
-$HARDFLOAT_DIR/source/HardFloat_primitives.v
-$HARDFLOAT_DIR/source/HardFloat_rawFN.v

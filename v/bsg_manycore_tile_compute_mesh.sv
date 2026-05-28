@@ -36,7 +36,7 @@ module bsg_manycore_tile_compute_mesh
 
     , parameter stub_p = {dirs_lp{1'b0}}           // {re,rw,s,n,e,w}
     , repeater_output_p = {dirs_lp{1'b0}} // {re,rw,s,n,e,w}
-    , hetero_type_p = 0
+    , hetero_type_p = 2
     , debug_p = 0
 
     , localparam link_sif_width_lp =
@@ -64,6 +64,12 @@ module bsg_manycore_tile_compute_mesh
     , input [y_cord_width_p-1:0] global_y_i
     , output logic [x_cord_width_p-1:0] global_x_o
     , output logic [y_cord_width_p-1:0] global_y_o
+`ifdef GBP_WHITEBOX_TEST
+    , input logic wb_cmd_valid_i
+    , input logic [1:0] wb_cmd_kind_i
+    , input logic [gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output logic wb_cmd_ready_o
+`endif
   );
 
 
@@ -112,20 +118,11 @@ module bsg_manycore_tile_compute_mesh
 
 
 
-  // For vanilla core (hetero type = 0), it uses credit interface for the P ports,
-  // which has three-element fifo because the credit returns with one extra cycle delay.
-  localparam fwd_use_credits_lp = (hetero_type_p == 0)
-    ? 5'b00001
-    : 5'b00000;
-  localparam int fwd_fifo_els_lp[dirs_lp:0] = (hetero_type_p == 0)
-    ? '{2,2,2,2,3}
-    : '{2,2,2,2,2};
-  localparam rev_use_credits_lp = (hetero_type_p == 0)
-    ? 5'b00001
-    : 5'b00000;
-  localparam int rev_fifo_els_lp[dirs_lp:0] = (hetero_type_p == 0)
-    ? '{2,2,2,2,3}
-    : '{2,2,2,2,2};
+  // P ports do not use credit interface.
+  localparam fwd_use_credits_lp = 5'b00000;
+  localparam int fwd_fifo_els_lp[dirs_lp:0] = '{2,2,2,2,2};
+  localparam rev_use_credits_lp = 5'b00000;
+  localparam int rev_fifo_els_lp[dirs_lp:0] = '{2,2,2,2,2};
    
  
   // Instantiate router and the socket.
@@ -205,6 +202,12 @@ module bsg_manycore_tile_compute_mesh
 
     ,.my_x_i(my_x_r)
     ,.my_y_i(my_y_r)
+`ifdef GBP_WHITEBOX_TEST
+    ,.wb_cmd_valid_i(wb_cmd_valid_i)
+    ,.wb_cmd_kind_i(wb_cmd_kind_i)
+    ,.wb_cmd_txn_id_i(wb_cmd_txn_id_i)
+    ,.wb_cmd_ready_o(wb_cmd_ready_o)
+`endif
   );
 
 

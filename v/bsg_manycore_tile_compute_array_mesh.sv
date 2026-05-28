@@ -24,7 +24,7 @@ module bsg_manycore_tile_compute_array_mesh
     // the type of an X/Y coordinate in the array. This is a vector of
     // num_tiles_x_p*num_tiles_y_p ints; type "0" is the
     // default. See bsg_manycore_hetero_socket.v for more types.
-    , parameter int hetero_type_vec_p [0:(subarray_num_tiles_y_p*subarray_num_tiles_x_p) - 1]  = '{default:0}
+    , parameter int hetero_type_vec_p [0:(subarray_num_tiles_y_p*subarray_num_tiles_x_p) - 1]  = '{default:2}
 
     // this is the addr width on the manycore network packet (word addr).
     // also known as endpoint physical address (EPA).
@@ -81,6 +81,12 @@ module bsg_manycore_tile_compute_array_mesh
     , input [subarray_num_tiles_x_p-1:0][y_cord_width_p-1:0] global_y_i
     , output [subarray_num_tiles_x_p-1:0][x_cord_width_p-1:0] global_x_o
     , output [subarray_num_tiles_x_p-1:0][y_cord_width_p-1:0] global_y_o
+`ifdef GBP_WHITEBOX_TEST
+    , input [subarray_num_tiles_y_p-1:0][subarray_num_tiles_x_p-1:0] wb_cmd_valid_i
+    , input [subarray_num_tiles_y_p-1:0][subarray_num_tiles_x_p-1:0][1:0] wb_cmd_kind_i
+    , input [subarray_num_tiles_y_p-1:0][subarray_num_tiles_x_p-1:0][gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output [subarray_num_tiles_y_p-1:0][subarray_num_tiles_x_p-1:0] wb_cmd_ready_o
+`endif
   );
 
    // synopsys translate_off
@@ -149,6 +155,12 @@ module bsg_manycore_tile_compute_array_mesh
         ,.global_y_i(global_y_li[r][c])
         ,.global_x_o(global_x_lo[r][c])
         ,.global_y_o(global_y_lo[r][c])
+`ifdef GBP_WHITEBOX_TEST
+        ,.wb_cmd_valid_i(wb_cmd_valid_i[r][c])
+        ,.wb_cmd_kind_i(wb_cmd_kind_i[r][c])
+        ,.wb_cmd_txn_id_i(wb_cmd_txn_id_i[r][c])
+        ,.wb_cmd_ready_o(wb_cmd_ready_o[r][c])
+`endif
       );
 
       // connect north

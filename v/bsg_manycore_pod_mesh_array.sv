@@ -47,7 +47,7 @@ module bsg_manycore_pod_mesh_array
     // num_tiles_x_p*num_tiles_y_p ints; type "0" is the
     // default. See bsg_manycore_hetero_socket.v for more types.
     `ifndef SYNTHESIS
-    , parameter int hetero_type_vec_p [0:(num_tiles_y_p*num_tiles_x_p) - 1]  = '{default:0}
+    , parameter int hetero_type_vec_p [0:(num_tiles_y_p*num_tiles_x_p) - 1]  = '{default:2}
     `endif
   )
   (

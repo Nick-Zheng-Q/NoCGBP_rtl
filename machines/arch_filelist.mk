@@ -7,7 +7,7 @@ VINCLUDES += $(BASEJUMP_STL_DIR)/bsg_cache
 VINCLUDES += $(BASEJUMP_STL_DIR)/bsg_noc
 VINCLUDES += $(BASEJUMP_STL_DIR)/bsg_tag
 VINCLUDES += $(BSG_MANYCORE_DIR)/v
-VINCLUDES += $(BSG_MANYCORE_DIR)/v/vanilla_bean
+VINCLUDES += $(BSG_MANYCORE_DIR)/v/pe
 VINCLUDES += $(BSG_MANYCORE_DIR)/imports/HardFloat/source
 VINCLUDES += $(BSG_MANYCORE_DIR)/imports/HardFloat/source/RISCV
 
@@ -21,7 +21,6 @@ VHEADERS += $(BASEJUMP_STL_DIR)/bsg_cache/bsg_cache_pkg.sv
 VHEADERS += $(BASEJUMP_STL_DIR)/bsg_cache/bsg_cache_non_blocking_pkg.sv
 VHEADERS += $(BASEJUMP_STL_DIR)/bsg_fpu/bsg_fpu_defines.svh
 VHEADERS += $(BSG_MANYCORE_DIR)/v/bsg_manycore_pkg.sv
-VHEADERS += $(BSG_MANYCORE_DIR)/v/vanilla_bean/bsg_vanilla_pkg.sv
 VHEADERS += $(BSG_MANYCORE_DIR)/v/bsg_manycore_addr_pkg.sv
 VHEADERS += $(BSG_MANYCORE_DIR)/imports/HardFloat/source/bsg_hardfloat_pkg.sv
 
@@ -153,30 +152,7 @@ VSOURCES += $(BSG_MANYCORE_DIR)/imports/HardFloat/source/recFNToIN.v
 VSOURCES += $(BSG_MANYCORE_DIR)/imports/HardFloat/source/RISCV/HardFloat_specialize.v
 
 
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/bsg_manycore_proc_vanilla.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/network_rx.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/network_tx.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/vanilla_core.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/alu.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/cl_decode.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_float.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_float_fma.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_float_fma_round.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_float_aux.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_int.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_int_fclass.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fcsr.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/mcsr.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_fdiv_fsqrt.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/fpu_fmin_fmax.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/icache.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/idiv.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/load_packer.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/lsu.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/regfile.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/regfile_synth.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/regfile_hard.sv
-VSOURCES += $(BSG_MANYCORE_DIR)/v/vanilla_bean/scoreboard.sv
+VSOURCES += $(BSG_MANYCORE_DIR)/v/pe/load_packer.sv
 
 VSOURCES += $(BSG_MANYCORE_DIR)/v/bsg_manycore_pod_ruche_array.sv
 VSOURCES += $(BSG_MANYCORE_DIR)/v/bsg_manycore_pod_ruche.sv

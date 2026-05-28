@@ -6,7 +6,7 @@
 -Wno-PINCONNECTEMPTY
 -I../v
 -I../v/gbp_pe
--I../v/vanilla_bean
+-I../v/pe
 -I../basejump_stl
 -I../basejump_stl/bsg_dataflow
 -I../basejump_stl/bsg_misc
@@ -24,7 +24,6 @@
 ../basejump_stl/bsg_mem/bsg_mem_1rw_sync_synth.sv
 
 ../v/bsg_manycore_pkg.sv
-../v/vanilla_bean/bsg_vanilla_pkg.sv
 ../v/bsg_manycore_reg_id_decode.sv
 ../v/bsg_manycore_endpoint.sv
 ../v/bsg_manycore_endpoint_fc.sv

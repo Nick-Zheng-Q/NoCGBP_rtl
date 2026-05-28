@@ -36,7 +36,7 @@ module bsg_manycore_tile_compute_ruche
 
     , parameter stub_p = {dirs_lp{1'b0}}           // {re,rw,s,n,e,w}
     , repeater_output_p = {dirs_lp{1'b0}} // {re,rw,s,n,e,w}
-    , hetero_type_p = 0
+    , hetero_type_p = 2
     , debug_p = 0
 
     , localparam link_sif_width_lp =
@@ -116,20 +116,11 @@ module bsg_manycore_tile_compute_ruche
   assign global_y_o = (y_cord_width_p)'(({pod_y_r, my_y_r}) + 1);
 
 
-  // For vanilla core (hetero type = 0), it uses credit interface for the P ports,
-  // which has three-element fifo because the credit returns with one extra cycle delay.
-  localparam fwd_use_credits_lp = (hetero_type_p == 0)
-    ? 7'b0000001
-    : 7'b0000000;
-  localparam int fwd_fifo_els_lp[dirs_lp:0] = (hetero_type_p == 0)
-    ? '{2,2,2,2,2,2,3}
-    : '{2,2,2,2,2,2,2};
-  localparam rev_use_credits_lp = (hetero_type_p == 0)
-    ? 7'b0000001
-    : 7'b0000000;
-  localparam int rev_fifo_els_lp[dirs_lp:0] = (hetero_type_p == 0)
-    ? '{2,2,2,2,2,2,3}
-    : '{2,2,2,2,2,2,2};
+  // P ports do not use credit interface.
+  localparam fwd_use_credits_lp = 7'b0000000;
+  localparam int fwd_fifo_els_lp[dirs_lp:0] = '{2,2,2,2,2,2,2};
+  localparam rev_use_credits_lp = 7'b0000000;
+  localparam int rev_fifo_els_lp[dirs_lp:0] = '{2,2,2,2,2,2,2};
    
  
   // Instantiate router and the socket.

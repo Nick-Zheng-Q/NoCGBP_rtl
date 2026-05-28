@@ -32,7 +32,6 @@
 
 module bsg_manycore_gather_scatter
   import bsg_manycore_pkg::*;
-  import bsg_vanilla_pkg::*;
   #(`BSG_INV_PARAM(x_cord_width_p )
     , `BSG_INV_PARAM(y_cord_width_p )
     , `BSG_INV_PARAM(pod_x_cord_width_p )

@@ -80,6 +80,11 @@ package bsg_manycore_pkg;
   } bsg_manycore_pod_tag_payload_s;
 
 
+  // Processor parameters (formerly in bsg_vanilla_pkg)
+  localparam RV32_reg_addr_width_gp = 5;
+  localparam RV32_reg_data_width_gp = 32;
+  localparam epa_word_addr_width_gp = 16;
+
   // EVA Address Format
 
 

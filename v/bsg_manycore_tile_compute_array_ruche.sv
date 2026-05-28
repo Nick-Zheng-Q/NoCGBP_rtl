@@ -26,7 +26,7 @@ module bsg_manycore_tile_compute_array_ruche
     // the type of an X/Y coordinate in the array. This is a vector of
     // num_tiles_x_p*num_tiles_y_p ints; type "0" is the
     // default. See bsg_manycore_hetero_socket.v for more types.
-    , parameter int hetero_type_vec_p [0:(subarray_num_tiles_y_p*subarray_num_tiles_x_p) - 1]  = '{default:0}
+    , parameter int hetero_type_vec_p [0:(subarray_num_tiles_y_p*subarray_num_tiles_x_p) - 1]  = '{default:2}
 
     // this is the addr width on the manycore network packet (word addr).
     // also known as endpoint physical address (EPA).

@@ -42,6 +42,12 @@
            ,.my_y_i                                                                    \
            ,.pod_x_i                                                                    \
            ,.pod_y_i                                                                    \
+`ifdef GBP_WHITEBOX_TEST                                                               \
+           ,.wb_cmd_valid_i                                                             \
+           ,.wb_cmd_kind_i                                                              \
+           ,.wb_cmd_txn_id_i                                                            \
+           ,.wb_cmd_ready_o                                                             \
+`endif                                                                                 \
            );                                                                          \
      end
 
@@ -55,7 +61,7 @@ module bsg_manycore_hetero_socket
     , `BSG_INV_PARAM(addr_width_p )
     , `BSG_INV_PARAM(dmem_size_p )
     , debug_p = 0
-    , int hetero_type_p = 0
+    , int hetero_type_p = 2
     , `BSG_INV_PARAM(pod_x_cord_width_p)
     , `BSG_INV_PARAM(pod_y_cord_width_p)
     , `BSG_INV_PARAM(num_tiles_x_p)
@@ -92,10 +98,15 @@ module bsg_manycore_hetero_socket
 
     , input [pod_x_cord_width_p-1:0] pod_x_i
     , input [pod_y_cord_width_p-1:0] pod_y_i
+`ifdef GBP_WHITEBOX_TEST
+    , input logic wb_cmd_valid_i
+    , input logic [1:0] wb_cmd_kind_i
+    , input logic [gbp_pkg::TXN_ID_W-1:0] wb_cmd_txn_id_i
+    , output logic wb_cmd_ready_o
+`endif
   );
 
   // add as many types as you like...
-  `HETERO_TYPE_MACRO(0,bsg_manycore_proc_vanilla) else
   `HETERO_TYPE_MACRO(1,bsg_manycore_gather_scatter) else
   `HETERO_TYPE_MACRO(2,bsg_manycore_accel_default) else
   `HETERO_TYPE_MACRO(3,bsg_manycore_accel_default) else

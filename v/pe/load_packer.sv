@@ -1,13 +1,12 @@
 /**
- *  load_packer.v
+ *  load_packer.sv
  *
  */
 
 `include "bsg_defines.sv"
 
 module load_packer
-  import bsg_vanilla_pkg::*;
-  #(data_width_p = RV32_reg_data_width_gp)
+  #(data_width_p = 32)
   (
     input [data_width_p-1:0] mem_data_i
 
@@ -60,4 +59,3 @@ module load_packer
   end
 
 endmodule
-
