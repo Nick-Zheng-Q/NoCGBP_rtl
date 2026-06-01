@@ -8,10 +8,10 @@
 module bsg_manycore_mesh_node
   import bsg_manycore_pkg::*;
   import bsg_noc_pkg::*; // {P=0, W, E, N, S}
-  #(`BSG_INV_PARAM(x_cord_width_p)
-    , `BSG_INV_PARAM(y_cord_width_p)
-    , `BSG_INV_PARAM(data_width_p)
-    , `BSG_INV_PARAM(addr_width_p)
+  #(x_cord_width_p
+    , y_cord_width_p
+    , data_width_p
+    , addr_width_p
 
     , dims_p=2
     , localparam dirs_lp=(dims_p*2)+1

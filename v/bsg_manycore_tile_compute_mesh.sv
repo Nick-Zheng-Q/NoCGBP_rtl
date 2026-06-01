@@ -9,24 +9,24 @@
 module bsg_manycore_tile_compute_mesh
   import bsg_noc_pkg::*; // { P=0, W,E,N,S }
   import bsg_manycore_pkg::*;
-  #(`BSG_INV_PARAM(dmem_size_p )
-    , `BSG_INV_PARAM(x_cord_width_p )
-    , `BSG_INV_PARAM(y_cord_width_p )
-    , `BSG_INV_PARAM(pod_x_cord_width_p )
-    , `BSG_INV_PARAM(pod_y_cord_width_p )
+  #(dmem_size_p 
+    , x_cord_width_p 
+    , y_cord_width_p 
+    , pod_x_cord_width_p 
+    , pod_y_cord_width_p 
 
     // Number of tiles in a pod
-    , `BSG_INV_PARAM(num_tiles_x_p)
-    , `BSG_INV_PARAM(num_tiles_y_p)
+    , num_tiles_x_p
+    , num_tiles_y_p
     , localparam x_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_x_p)
     , y_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_y_p)
 
-    , parameter `BSG_INV_PARAM(data_width_p )
-    , `BSG_INV_PARAM(addr_width_p )
+    , parameter data_width_p 
+    , addr_width_p 
 
     , barrier_ruche_factor_X_p = 3
 
-    , `BSG_INV_PARAM(ipoly_hashing_p) 
+    , ipoly_hashing_p 
 
     , parameter dims_p = 2
     , localparam dirs_lp = (dims_p*2)

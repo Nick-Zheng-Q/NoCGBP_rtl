@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import hashlib
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
-
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[3]
 ORACLE_DIR = ROOT / "nocbp_verilator" / "tests" / "oracle"
@@ -14,6 +15,16 @@ SIM_SRC = ROOT / "nocbp_simulator"
 REF_BIN = TOOLS_DIR / "gbp_oracle_ref_bin"
 PE_SRC = ROOT / "nocbp_simulator" / "pe" / "ProcessingElement.cpp"
 
+CONTRACT_PATH = TOOLS_DIR / "ba_onboarding_contract.py"
+CONTRACT_SPEC = importlib.util.spec_from_file_location("ba_onboarding_contract", CONTRACT_PATH)
+if CONTRACT_SPEC is None or CONTRACT_SPEC.loader is None:
+    raise RuntimeError(f"Failed to load contract module from {CONTRACT_PATH}")
+CONTRACT_MODULE = importlib.util.module_from_spec(CONTRACT_SPEC)
+CONTRACT_SPEC.loader.exec_module(CONTRACT_MODULE)
+BA_DATASET_REL_PATH = cast(str, CONTRACT_MODULE.BA_DATASET_REL_PATH)
+BA_FIXED_ITERS = cast(int, CONTRACT_MODULE.BA_FIXED_ITERS)
+BA_WORKLOAD_TOKEN = cast(str, CONTRACT_MODULE.BA_WORKLOAD_TOKEN)
+
 FUNCTION_ANCHORS = {
     "compute_variable_node": 805,
     "compute_factor_node": 833,
@@ -22,9 +33,11 @@ FUNCTION_ANCHORS = {
 
 def build_reference_binary() -> None:
     cpp_main = TOOLS_DIR / "gbp_oracle_ref_main.cpp"
+
     gbp_sources = [
         SIM_SRC / "gbp" / "FactorGraph.cpp",
         SIM_SRC / "gbp" / "FactorNode.cpp",
+        SIM_SRC / "gbp" / "BAFactorGraph.cpp",
         SIM_SRC / "gbp" / "LinearFactorGraph.cpp",
         SIM_SRC / "gbp" / "VariableNode.cpp",
         SIM_SRC / "gbp" / "factor_utils.cpp",
@@ -33,6 +46,7 @@ def build_reference_binary() -> None:
     ]
     utils_sources = [
         SIM_SRC / "utils" / "Logger.cpp",
+        SIM_SRC / "utils" / "read_balfile.cpp",
         SIM_SRC / "utils" / "read_g2o.cpp",
     ]
 
@@ -53,17 +67,29 @@ def build_reference_binary() -> None:
     subprocess.run(cmd, cwd=ROOT, check=True)
 
 
-def run_workload(workload: str, seed: int, line_nodes: int, rows: int, cols: int) -> dict:
+def run_workload(
+    workload: str,
+    seed: int,
+    line_nodes: int,
+    rows: int,
+    cols: int,
+    max_iters: int,
+    dataset_path: Path | None,
+) -> dict[str, object]:
+    cmd = [
+        str(REF_BIN),
+        workload,
+        str(max_iters),
+        str(seed),
+        str(line_nodes),
+        str(rows),
+        str(cols),
+    ]
+    if dataset_path is not None:
+        cmd.append(str(dataset_path))
+
     proc = subprocess.run(
-        [
-            str(REF_BIN),
-            workload,
-            "50",
-            str(seed),
-            str(line_nodes),
-            str(rows),
-            str(cols),
-        ],
+        cmd,
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -71,7 +97,7 @@ def run_workload(workload: str, seed: int, line_nodes: int, rows: int, cols: int
     )
 
     lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
-    metrics = {}
+    metrics: dict[str, float | int] = {}
     for ln in lines:
         if "=" not in ln:
             continue
@@ -86,8 +112,9 @@ def run_workload(workload: str, seed: int, line_nodes: int, rows: int, cols: int
     if not {"final_are", "final_energy", "iters"}.issubset(metrics):
         raise RuntimeError(f"Failed to parse metrics for {workload}: {proc.stdout}")
 
-    cfg_path = ORACLE_DIR / ("synthetic_line_phase1.yml" if workload == "synthetic_line" else "synthetic_lattice_phase1.yml")
-    config_checksum = hashlib.sha256(cfg_path.read_bytes()).hexdigest()
+    if dataset_path is None:
+        raise RuntimeError(f"dataset_path is required for workload '{workload}'")
+    config_checksum = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     return {
         "input_checksum": {
             "algorithm": "sha256",
@@ -97,7 +124,22 @@ def run_workload(workload: str, seed: int, line_nodes: int, rows: int, cols: int
     }
 
 
-def compute_artifact_checksum(doc: dict) -> str:
+def resolve_ba_dataset_path(dataset_arg: str) -> Path:
+    expected = (ROOT / BA_DATASET_REL_PATH).resolve()
+    candidate = Path(dataset_arg)
+    resolved = (ROOT / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+    if resolved != expected:
+        raise RuntimeError(
+            f"dataset-scope: only '{BA_DATASET_REL_PATH}' is supported for {BA_WORKLOAD_TOKEN}; got '{dataset_arg}'"
+        )
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"BA dataset is required at '{BA_DATASET_REL_PATH}' (resolved: {resolved})"
+        )
+    return resolved
+
+
+def compute_artifact_checksum(doc: dict[str, object]) -> str:
     shadow = json.loads(json.dumps(doc))
     shadow["checksum"]["value"] = ""
     payload = json.dumps(shadow, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -110,7 +152,7 @@ def deterministic_fraction(seed: int, tag: str, low: float, high: float) -> floa
     return low + (high - low) * unit
 
 
-def get_anchor_checksum(src: Path, anchor_line: int, span: int = 8) -> dict:
+def get_anchor_checksum(src: Path, anchor_line: int, span: int = 8) -> dict[str, object]:
     lines = src.read_text(encoding="utf-8").splitlines()
     if anchor_line < 1 or anchor_line > len(lines):
         raise RuntimeError(f"Anchor line out of range: {anchor_line}")
@@ -126,7 +168,7 @@ def get_anchor_checksum(src: Path, anchor_line: int, span: int = 8) -> dict:
     }
 
 
-def make_function_placeholder_cases(seed: int, section: str) -> list[dict]:
+def make_function_placeholder_cases(seed: int, section: str) -> list[dict[str, object]]:
     case0_tag = f"{section}:case0"
     case1_tag = f"{section}:case1"
     return [
@@ -159,8 +201,8 @@ def make_function_placeholder_cases(seed: int, section: str) -> list[dict]:
     ]
 
 
-def make_function_oracle(seed: int) -> dict:
-    sections = {}
+def make_function_oracle(seed: int) -> dict[str, object]:
+    sections: dict[str, object] = {}
     for section_name, anchor_line in FUNCTION_ANCHORS.items():
         sections[section_name] = {
             "mode": "staged_placeholder_v1",
@@ -178,7 +220,18 @@ def make_function_oracle(seed: int) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate deterministic GBP phase-1 oracle artifact")
-    parser.add_argument("--seed", type=int, default=12345, help="Deterministic synthetic seed")
+    parser.add_argument("--seed", type=int, default=12345, help="Deterministic seed")
+    parser.add_argument(
+        "--workload",
+        required=True,
+        choices=(BA_WORKLOAD_TOKEN,),
+        help="Workload token to generate",
+    )
+    parser.add_argument(
+        "--dataset",
+        required=True,
+        help="BA dataset path (must resolve to data/fr1desk_small.txt)",
+    )
     parser.add_argument(
         "--metadata-seed",
         type=int,
@@ -193,11 +246,19 @@ def main() -> int:
     args = parser.parse_args()
 
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    dataset_path = resolve_ba_dataset_path(args.dataset)
     build_reference_binary()
 
     workloads = {
-        "synthetic_line": run_workload("synthetic_line", args.seed, 16, 4, 4),
-        "synthetic_lattice": run_workload("synthetic_lattice", args.seed, 16, 4, 4),
+        args.workload: run_workload(
+            args.workload,
+            args.seed,
+            16,
+            4,
+            4,
+            BA_FIXED_ITERS,
+            dataset_path,
+        )
     }
 
     metadata_seed = args.seed if args.metadata_seed is None else args.metadata_seed
@@ -208,18 +269,18 @@ def main() -> int:
 
     deterministic_generated_at = f"seed-{args.seed:010d}"
 
-    artifact = {
+    artifact: dict[str, object] = {
         "schema_version": "1.0",
         "artifact_type": "oracle_task4",
         "metadata": {
             "run_id": "phase1-deterministic",
             "generated_at_utc": deterministic_generated_at,
-            "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+            "git_commit": "not-recorded",
             "tool_version": "generate_gbp_oracle_phase1.py+gbp_oracle_ref_main.cpp",
             "determinism": {
                 "seed": metadata_seed,
-                "workloads": ["synthetic_line", "synthetic_lattice"],
-                "max_iters": 50,
+                "workloads": [args.workload],
+                "max_iters": BA_FIXED_ITERS,
                 "max_cycles": 5000,
             },
         },
@@ -240,14 +301,15 @@ def main() -> int:
         },
     }
 
-    artifact["checksum"]["value"] = compute_artifact_checksum(artifact)
+    checksum_block = cast(dict[str, object], artifact["checksum"])
+    checksum_block["value"] = compute_artifact_checksum(artifact)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     print(f"oracle artifact written: {out_path}")
-    print(f"checksum: {artifact['checksum']['value']}")
+    print(f"checksum: {checksum_block['value']}")
     return 0
 
 

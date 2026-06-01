@@ -64,86 +64,19 @@ module gbp_control_fsm #(
 
   localparam int VAR_PAYLOAD_CHUNK_WORDS = 15;
 
-  function automatic int compact_payload_words(input logic [2:0] dofs);
-    begin
-      unique case (dofs)
-        3'd1: compact_payload_words = 2;
-        3'd2: compact_payload_words = 5;
-        3'd3: compact_payload_words = 9;
-        3'd4: compact_payload_words = 14;
-        3'd5: compact_payload_words = 20;
-        3'd6: compact_payload_words = 27;
-        default: compact_payload_words = 0;
-      endcase
-    end
-  endfunction
-
-  function automatic int square_words(input logic [2:0] dofs);
-    begin
-      unique case (dofs)
-        3'd1: square_words = 1;
-        3'd2: square_words = 4;
-        3'd3: square_words = 9;
-        3'd4: square_words = 16;
-        3'd5: square_words = 25;
-        3'd6: square_words = 36;
-        default: square_words = 0;
-      endcase
-    end
-  endfunction
-
-  function automatic int compact_payload_rows(input logic [2:0] dofs);
-    begin
-      unique case (dofs)
-        3'd1,
-        3'd2: compact_payload_rows = 1;
-        3'd3,
-        3'd4: compact_payload_rows = 2;
-        3'd5: compact_payload_rows = 3;
-        3'd6: compact_payload_rows = 4;
-        default: compact_payload_rows = 0;
-      endcase
-    end
-  endfunction
-
-  function automatic int payload_chunk_count(input logic [2:0] dofs);
-    begin
-      unique case (dofs)
-        3'd6: payload_chunk_count = 2;
-        3'd1,
-        3'd2,
-        3'd3,
-        3'd4,
-        3'd5: payload_chunk_count = 1;
-        default: payload_chunk_count = 0;
-      endcase
-    end
-  endfunction
-
-  function automatic int chunk_offset_words(input logic [1:0] chunk_idx);
-    begin
-      unique case (chunk_idx)
-        2'd0: chunk_offset_words = 0;
-        2'd1: chunk_offset_words = 15;
-        2'd2: chunk_offset_words = 30;
-        2'd3: chunk_offset_words = 45;
-        default: chunk_offset_words = 0;
-      endcase
-    end
-  endfunction
+  // Lookup tables replacing functions
+  localparam int COMPACT_PAYLOAD_WORDS [0:7] = '{0, 2, 5, 9, 14, 20, 27, 0};
+  localparam int SQUARE_WORDS [0:7] = '{0, 1, 4, 9, 16, 25, 36, 0};
+  localparam int COMPACT_PAYLOAD_ROWS [0:7] = '{0, 1, 1, 2, 2, 3, 4, 0};
+  localparam int PAYLOAD_CHUNK_COUNT [0:7] = '{0, 1, 1, 1, 1, 1, 2, 0};
+  localparam int CHUNK_OFFSET_WORDS [0:3] = '{0, 15, 30, 45};
 
   function automatic int message_offset_words(input logic [3:0] msg_index,
-                                              input logic [2:0] dofs);
+                                               input logic [2:0] dofs);
     int stride_words;
-    int offset_words;
-    int idx;
     begin
-      stride_words = compact_payload_rows(dofs) << 3;
-      offset_words = 0;
-      for (idx = 0; idx < msg_index; idx = idx + 1) begin
-        offset_words = offset_words + stride_words;
-      end
-      message_offset_words = offset_words;
+      stride_words = COMPACT_PAYLOAD_ROWS[dofs] << 3;
+      message_offset_words = stride_words * msg_index;
     end
   endfunction
 
@@ -200,13 +133,13 @@ module gbp_control_fsm #(
   // whitebox variable/state message 都使用紧凑 payload：
   // eta 后接上三角 lam。
   always_comb begin
-    payload_size_int = compact_payload_words(dofs_r);
-    payload_rows_int = compact_payload_rows(dofs_r);
+    payload_size_int = COMPACT_PAYLOAD_WORDS[dofs_r];
+    payload_rows_int = COMPACT_PAYLOAD_ROWS[dofs_r];
     payload_stride_words_int = payload_rows_int << 3;
     msg_size_int = payload_stride_words_int;
-    lam_size_int = square_words(dofs_r);  // Full matrix size for computation
-    payload_chunk_count_int = payload_chunk_count(dofs_r);
-    chunk_offset_int = chunk_offset_words(payload_chunk_r);
+    lam_size_int = SQUARE_WORDS[dofs_r];  // Full matrix size for computation
+    payload_chunk_count_int = PAYLOAD_CHUNK_COUNT[dofs_r];
+    chunk_offset_int = CHUNK_OFFSET_WORDS[payload_chunk_r];
     payload_remaining_int = payload_size_int - chunk_offset_int;
     if (payload_remaining_int > VAR_PAYLOAD_CHUNK_WORDS) begin
       chunk_words_int = VAR_PAYLOAD_CHUNK_WORDS;

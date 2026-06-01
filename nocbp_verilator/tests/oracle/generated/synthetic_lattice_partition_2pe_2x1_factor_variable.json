@@ -1,0 +1,283 @@
+{
+  "fac_mapping_table": [
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    []
+  ],
+  "graph": {
+    "factor_var_edges": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        5
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        4,
+        3
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        6,
+        3
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        7,
+        4
+      ],
+      [
+        7,
+        5
+      ],
+      [
+        8,
+        4
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        5
+      ],
+      [
+        9,
+        6
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        11,
+        6
+      ],
+      [
+        11,
+        7
+      ],
+      [
+        12,
+        6
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        13,
+        7
+      ],
+      [
+        13,
+        11
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        15,
+        8
+      ],
+      [
+        15,
+        12
+      ],
+      [
+        16,
+        9
+      ],
+      [
+        16,
+        10
+      ],
+      [
+        17,
+        9
+      ],
+      [
+        17,
+        13
+      ],
+      [
+        18,
+        10
+      ],
+      [
+        18,
+        11
+      ],
+      [
+        19,
+        10
+      ],
+      [
+        19,
+        14
+      ],
+      [
+        20,
+        11
+      ],
+      [
+        20,
+        15
+      ],
+      [
+        21,
+        12
+      ],
+      [
+        21,
+        13
+      ],
+      [
+        22,
+        13
+      ],
+      [
+        22,
+        14
+      ],
+      [
+        23,
+        14
+      ],
+      [
+        23,
+        15
+      ]
+    ],
+    "n_fac_nodes": 24,
+    "n_var_nodes": 16
+  },
+  "mapping_info": {
+    "fallback_rule": "pe0_factors_pe1_variables",
+    "fallback_used": true,
+    "mapping_backend": "fixed_fallback",
+    "mesh_x": 2,
+    "mesh_y": 1,
+    "scotch_helper_binary": "ephemeral_tmp_build/gbp_partition_scotch_ref_bin",
+    "source_of_truth": "nocbp_simulator/pe/FactorGraphManager.cpp:scotchMapping"
+  },
+  "mapping_mode": "factor_variable_split",
+  "mesh": {
+    "x": 2,
+    "y": 1
+  },
+  "partition_contract": {
+    "artifact_naming_tokens": {
+      "mesh_token": "2x1",
+      "partition": "partition",
+      "pe_token": "2pe",
+      "stem": "synthetic_lattice_partition_2pe_2x1",
+      "workload": "synthetic_lattice"
+    },
+    "mesh_x": 2,
+    "mesh_y": 1,
+    "partition_mode": "factor_variable_split",
+    "pe_count": 2,
+    "seed": 12345,
+    "workload": "synthetic_lattice"
+  },
+  "pes": 2,
+  "schema_version": "1.0",
+  "seed": 12345,
+  "var_mapping_table": [
+    [],
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ]
+  ],
+  "workload": "synthetic_lattice"
+}

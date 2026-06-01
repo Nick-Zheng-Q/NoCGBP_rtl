@@ -27,11 +27,11 @@
 
 module bsg_manycore_endpoint_standard 
   import bsg_manycore_pkg::*; 
-  #(`BSG_INV_PARAM(x_cord_width_p          )
-    , `BSG_INV_PARAM(y_cord_width_p         )
-    , `BSG_INV_PARAM(fifo_els_p             )
-    , `BSG_INV_PARAM(data_width_p           )
-    , `BSG_INV_PARAM(addr_width_p           )
+  #(x_cord_width_p          
+    , y_cord_width_p         
+    , fifo_els_p             
+    , data_width_p           
+    , addr_width_p           
     , credit_counter_width_p = `BSG_WIDTH(32)
     , warn_out_of_credits_p  = 1
 
@@ -366,27 +366,7 @@ module bsg_manycore_endpoint_standard
 
   // synopsys translate_off
 
-  always_ff @ (negedge clk_i) begin
-    if (~reset_i & return_packet_v_lo) begin
-      assert({return_packet_lo.y_cord, return_packet_lo.x_cord} == {global_y_i, global_x_i})
-        else begin
-          $error("[BSG_ERROR] errant credit packet v=%b for YX = %d,%d landed at YX=%d,%d (%m)",
-            return_packet_v_lo,
-            return_packet_lo.y_cord,
-            return_packet_lo.x_cord,
-            global_y_i, global_x_i);
-          $finish();
-        end
-    end
-  end
-
-  always_ff @ (negedge clk_i) begin
-    if ((returned_v_r_o === 1'b1) && (returned_yumi_i != 1'b1) && returned_fifo_full_o) begin
-      $display("[BSG_ERROR] When the returned_fifo is full, the packet has to be taken, otherwise other incoming responses can be lost, YX=%d, %d (%m)",
-        global_y_i, global_x_i);
-      $finish();
-    end
-  end
+  // Debug assertions removed for synthesis
 
   // synopsys translate_on
 

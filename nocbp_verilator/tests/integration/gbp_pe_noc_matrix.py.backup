@@ -1,0 +1,456 @@
+#!/usr/bin/env python3
+
+import argparse
+import pathlib
+import subprocess
+import sys
+from typing import Final, NotRequired, TypedDict, cast
+
+
+class MatrixRow(TypedDict):
+    name: str
+    command: str
+    expected_exit: int
+    marker: str
+    forbidden_markers: NotRequired[tuple[str, ...]]
+
+
+class ScaleTopology(TypedDict):
+    pe_count: int
+    mesh_x: int
+    mesh_y: int
+
+
+class ScaleWorkload(TypedDict):
+    workload: str
+    row_suffix: str
+    partition_flags: tuple[str, ...]
+    runtime_flags: tuple[str, ...]
+    run_shapes: tuple[str, ...]
+
+
+class ScaleRunShape(TypedDict):
+    row_suffix: str
+    test: str
+    marker_test: str
+    forbidden_markers: tuple[str, ...]
+
+
+SMOKE_ROWS: Final[tuple[MatrixRow, ...]] = (
+    {
+        "name": "endpoint_baseline",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=endpoint_noc",
+        "expected_exit": 0,
+        "marker": "BASELINE_PASS endpoint_noc",
+    },
+    {
+        "name": "pe_top_regression",
+        "command": 'make -C nocbp_verilator run LEVEL=integration TEST=pe_top_integration VERILATOR="verilator -Wno-fatal -Wno-WIDTHCONCAT -Wno-EOFNEWLINE"',
+        "expected_exit": 0,
+        "marker": "pe_top integration: PASS",
+    },
+    {
+        "name": "gbp_pe_unit",
+        "command": "make -C nocbp_verilator run LEVEL=unit TEST=gbp_pe",
+        "expected_exit": 0,
+        "marker": "gbp_pe: PASS",
+    },
+    {
+        "name": "single_pe_gbp_line",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=synthetic_line",
+    },
+    {
+        "name": "single_pe_gbp_lattice",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_lattice SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=synthetic_lattice",
+    },
+    {
+        "name": "single_pe_retire_order_line",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=synthetic_line",
+        "forbidden_markers": ("PREMATURE_RETIRE_MARKER",),
+    },
+    {
+        "name": "single_pe_retire_order_lattice",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=synthetic_lattice SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=synthetic_lattice",
+        "forbidden_markers": ("PREMATURE_RETIRE_MARKER",),
+    },
+    {
+        "name": "ba_single_pe_fr1desk_small",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_single_pe_gbp WORKLOAD=bal_fr1desk_small DATASET=data/fr1desk_small.txt SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_single_pe_gbp: PASS workload=bal_fr1desk_small",
+    },
+    {
+        "name": "partition_export_line_scotch",
+        "command": "python3 nocbp_verilator/tests/tools/export_gbp_partition_map.py --workload synthetic_line --seed 12345 --pes 2 --mesh-x 2 --mesh-y 1 --mode scotch --output nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe_2x1.json",
+        "expected_exit": 0,
+        "marker": "mode: scotch",
+    },
+    {
+        "name": "partition_cross_edge_check_line",
+        "command": "python3 nocbp_verilator/tests/tools/check_gbp_partition_cross_edges.py --mapping nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe_2x1.json",
+        "expected_exit": 0,
+        "marker": "cross_pe_edges:",
+    },
+    {
+        "name": "partition_export_line_factor_variable",
+        "command": "python3 nocbp_verilator/tests/tools/export_gbp_partition_map.py --workload synthetic_line --seed 12345 --pes 2 --mesh-x 2 --mesh-y 1 --mode factor_variable_split --output nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe_2x1_factor_variable.json",
+        "expected_exit": 0,
+        "marker": "mode: factor_variable_split",
+    },
+    {
+        "name": "partition_cross_edge_check_line_factor_variable",
+        "command": "python3 nocbp_verilator/tests/tools/check_gbp_partition_cross_edges.py --mapping nocbp_verilator/tests/oracle/generated/synthetic_line_partition_2pe_2x1_factor_variable.json",
+        "expected_exit": 0,
+        "marker": "cross_pe_edges:",
+    },
+    {
+        "name": "partition_export_lattice_scotch",
+        "command": "python3 nocbp_verilator/tests/tools/export_gbp_partition_map.py --workload synthetic_lattice --seed 12345 --pes 2 --mesh-x 2 --mesh-y 1 --mode scotch --output nocbp_verilator/tests/oracle/generated/synthetic_lattice_partition_2pe_2x1.json",
+        "expected_exit": 0,
+        "marker": "mode: scotch",
+    },
+    {
+        "name": "partition_cross_edge_check_lattice",
+        "command": "python3 nocbp_verilator/tests/tools/check_gbp_partition_cross_edges.py --mapping nocbp_verilator/tests/oracle/generated/synthetic_lattice_partition_2pe_2x1.json",
+        "expected_exit": 0,
+        "marker": "cross_pe_edges:",
+    },
+    {
+        "name": "ingress_real_path",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm",
+        "expected_exit": 0,
+        "marker": "ORDERED_WRITE_MARKER",
+    },
+    {
+        "name": "ingress_order_negative",
+        "command": "GBP_PE_NOC_INGRESS_ORDER_NEGATIVE=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_noc_ingress_spm",
+        "expected_exit": 2,
+        "marker": "ORDERING_ERROR_MARKER",
+    },
+    {
+        "name": "mesh_2pe_positive",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe: PASS src=(0,0) dst=(1,0)",
+    },
+    {
+        "name": "mesh_2pe_order_negative",
+        "command": "GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe",
+        "expected_exit": 2,
+        "marker": "ORDERING_ERROR_MARKER",
+    },
+    {
+        "name": "mesh_2pe_gbp_line",
+        "command": "PARTITION=tests/oracle/generated/synthetic_line_partition_2pe_2x1.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_gbp WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_gbp: PASS workload=synthetic_line",
+    },
+    {
+        "name": "mesh_2pe_event_correlation_line",
+        "command": "PARTITION=tests/oracle/generated/synthetic_line_partition_2pe_2x1.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_gbp WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_gbp: PASS workload=synthetic_line",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER",),
+    },
+    {
+        "name": "mesh_2pe_event_correlation_lattice",
+        "command": "PARTITION=tests/oracle/generated/synthetic_lattice_partition_2pe_2x1.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_gbp WORKLOAD=synthetic_lattice SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_gbp: PASS workload=synthetic_lattice",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER",),
+    },
+    {
+        "name": "ba_mesh_2pe_distributed_fr1desk_small",
+        "command": "PARTITION=tests/oracle/generated/bal_fr1desk_small_partition_2pe_2x1.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_gbp WORKLOAD=bal_fr1desk_small DATASET=data/fr1desk_small.txt SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_gbp: PASS workload=bal_fr1desk_small",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER",),
+    },
+    {
+        "name": "mesh_2pe_fixed_iters_line",
+        "command": "PARTITION=tests/oracle/generated/synthetic_line_partition_2pe_2x1_factor_variable.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "iterations=50 stop_reason=fixed_iters",
+    },
+    {
+        "name": "mesh_2x2_positive",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2x2: PASS src=(0,0) dst=(1,1)",
+    },
+    {
+        "name": "mesh_2x2_stall_recovery",
+        "command": "GBP_PE_MESH_FORCE_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2",
+        "expected_exit": 0,
+        "marker": "recovered_from_stall=1",
+    },
+    {
+        "name": "mesh_2x2_order_negative",
+        "command": "GBP_PE_MESH_EXPECT_ORDER_ERROR=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2x2",
+        "expected_exit": 2,
+        "marker": "ORDERING_ERROR_MARKER",
+    },
+    {
+        "name": "egress_positive",
+        "command": "make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
+        "expected_exit": 0,
+        "marker": "gbp_pe_compute_done_egress: PASS txn_id=",
+    },
+    {
+        "name": "egress_stall_recovery",
+        "command": "GBP_PE_EGRESS_FORCE_NOC_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
+        "expected_exit": 0,
+        "marker": "recovered_from_stall=1",
+    },
+    {
+        "name": "egress_spm_stall_direct_origin",
+        "command": "GBP_PE_EGRESS_FORCE_SPM_STALL=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
+        "expected_exit": 0,
+        "marker": "egress_precedes_persistence=1 persistence_secondary=1",
+    },
+    {
+        "name": "egress_mismatch_negative",
+        "command": "GBP_PE_EGRESS_EXPECT_MISMATCH=1 make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_compute_done_egress",
+        "expected_exit": 2,
+        "marker": "PACKET_COUNT_MISMATCH_MARKER",
+    },
+    {
+        "name": "mesh_2pe_convergence_line",
+        "command": "PARTITION=tests/oracle/generated/synthetic_line_partition_2pe_2x1_factor_variable.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_line SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_convergence: PASS pe_count=2 mesh=2x1 workload=synthetic_line",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER", "POST_STOP_TRAFFIC_MARKER"),
+    },
+    {
+        "name": "mesh_2pe_convergence_lattice",
+        "command": "PARTITION=tests/oracle/generated/synthetic_lattice_partition_2pe_2x1.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=synthetic_lattice SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_convergence: PASS pe_count=2 mesh=2x1 workload=synthetic_lattice",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER", "POST_STOP_TRAFFIC_MARKER"),
+    },
+    {
+        "name": "ba_mesh_2pe_convergence_fr1desk_small",
+        "command": "PARTITION=tests/oracle/generated/bal_fr1desk_small_partition_2pe_2x1.json make -C nocbp_verilator run LEVEL=integration TEST=gbp_pe_mesh_2pe_convergence WORKLOAD=bal_fr1desk_small DATASET=data/fr1desk_small.txt SEED=12345",
+        "expected_exit": 0,
+        "marker": "gbp_pe_mesh_2pe_convergence: PASS pe_count=2 mesh=2x1 workload=bal_fr1desk_small",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER", "POST_STOP_TRAFFIC_MARKER"),
+    },
+)
+
+
+SCALE_TOPOLOGIES: Final[tuple[ScaleTopology, ...]] = (
+    {"pe_count": 16, "mesh_x": 4, "mesh_y": 4},
+    {"pe_count": 32, "mesh_x": 8, "mesh_y": 4},
+)
+
+SCALE_WORKLOADS: Final[tuple[ScaleWorkload, ...]] = (
+    {
+        "workload": "synthetic_line",
+        "row_suffix": "line",
+        "partition_flags": ("--line-nodes 16",),
+        "runtime_flags": (),
+        "run_shapes": ("event_correlation", "convergence"),
+    },
+    {
+        "workload": "synthetic_lattice",
+        "row_suffix": "lattice",
+        "partition_flags": ("--lattice-rows 4", "--lattice-cols 4"),
+        "runtime_flags": (),
+        "run_shapes": ("event_correlation", "convergence"),
+    },
+    {
+        "workload": "bal_fr1desk_small",
+        "row_suffix": "bal_fr1desk_small",
+        "partition_flags": ("--dataset data/fr1desk_small.txt",),
+        "runtime_flags": ("DATASET=data/fr1desk_small.txt",),
+        "run_shapes": ("event_correlation",),
+    },
+)
+
+SCALE_RUN_SHAPES: Final[tuple[ScaleRunShape, ...]] = (
+    {
+        "row_suffix": "event_correlation",
+        "test": "gbp_pe_mesh_gbp",
+        "marker_test": "gbp_pe_mesh_gbp",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER",),
+    },
+    {
+        "row_suffix": "convergence",
+        "test": "gbp_pe_mesh_convergence",
+        "marker_test": "gbp_pe_mesh_2pe_convergence",
+        "forbidden_markers": ("EVENT_DIVERGENCE_MARKER", "POST_STOP_TRAFFIC_MARKER"),
+    },
+)
+
+SCALE_RUN_SHAPE_BY_SUFFIX: Final[dict[str, ScaleRunShape]] = {
+    run_shape["row_suffix"]: run_shape for run_shape in SCALE_RUN_SHAPES
+}
+
+
+def scale_partition_artifact(topology: ScaleTopology, workload: ScaleWorkload) -> str:
+    pe_count = topology["pe_count"]
+    mesh_x = topology["mesh_x"]
+    mesh_y = topology["mesh_y"]
+    workload_name = workload["workload"]
+    return (
+        "nocbp_verilator/tests/oracle/generated/"
+        f"{workload_name}_partition_{pe_count}pe_{mesh_x}x{mesh_y}.json"
+    )
+
+
+def build_scale_rows() -> tuple[MatrixRow, ...]:
+    rows: list[MatrixRow] = []
+    for topology in SCALE_TOPOLOGIES:
+        pe_count = topology["pe_count"]
+        mesh_x = topology["mesh_x"]
+        mesh_y = topology["mesh_y"]
+        mesh_token = f"{mesh_x}x{mesh_y}"
+
+        for workload in SCALE_WORKLOADS:
+            workload_name = workload["workload"]
+            workload_suffix = workload["row_suffix"]
+            partition_artifact = scale_partition_artifact(topology, workload)
+
+            partition_export_parts = [
+                "python3 nocbp_verilator/tests/tools/export_gbp_partition_map.py",
+                f"--workload {workload_name}",
+                "--seed 12345",
+                f"--pes {pe_count}",
+                f"--mesh-x {mesh_x}",
+                f"--mesh-y {mesh_y}",
+                *workload["partition_flags"],
+                "--mode scotch",
+                f"--output {partition_artifact}",
+            ]
+            rows.append({
+                "name": f"partition_export_{pe_count}pe_{workload_suffix}",
+                "command": " ".join(partition_export_parts),
+                "expected_exit": 0,
+                "marker": "mode: scotch",
+            })
+
+            rows.append({
+                "name": f"partition_cross_edge_check_{pe_count}pe_{workload_suffix}",
+                "command": (
+                    "python3 nocbp_verilator/tests/tools/check_gbp_partition_cross_edges.py "
+                    f"--mapping {partition_artifact}"
+                ),
+                "expected_exit": 0,
+                "marker": "cross_pe_edges:",
+            })
+
+            for run_shape_suffix in workload["run_shapes"]:
+                run_shape = SCALE_RUN_SHAPE_BY_SUFFIX[run_shape_suffix]
+                run_command_parts = [
+                    f"PARTITION=tests/oracle/generated/{workload_name}_partition_{pe_count}pe_{mesh_token}.json",
+                    *workload["runtime_flags"],
+                    "make -C nocbp_verilator run LEVEL=integration",
+                    f"TEST={run_shape['test']}",
+                    f"PE_COUNT={pe_count}",
+                    f"MESH_X={mesh_x}",
+                    f"MESH_Y={mesh_y}",
+                    f"WORKLOAD={workload_name}",
+                    "SEED=12345",
+                ]
+                rows.append({
+                    "name": f"mesh_{pe_count}pe_{run_shape['row_suffix']}_{workload_suffix}",
+                    "command": " ".join(run_command_parts),
+                    "expected_exit": 0,
+                    "marker": (
+                        f"{run_shape['marker_test']}: PASS "
+                        f"pe_count={pe_count} mesh={mesh_token} workload={workload_name}"
+                    ),
+                    "forbidden_markers": run_shape["forbidden_markers"],
+                })
+
+    return tuple(rows)
+
+
+SCALE_ROWS: Final[tuple[MatrixRow, ...]] = build_scale_rows()
+
+
+def rows_for_suite(suite: str) -> tuple[MatrixRow, ...]:
+    if suite == "smoke":
+        return SMOKE_ROWS
+    if suite == "scale":
+        return SCALE_ROWS
+    return SMOKE_ROWS + SCALE_ROWS
+
+
+def project_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[3]
+
+
+def command_exit_matches(actual: int, expected: int) -> bool:
+    return actual == expected
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    _ = parser.add_argument("--output", required=True, type=str)
+    _ = parser.add_argument("--suite", choices=("all", "smoke", "scale"), default="all", type=str)
+    args = parser.parse_args()
+    output_arg = cast(str, args.output)
+    suite = cast(str, args.suite)
+    rows = rows_for_suite(suite)
+
+    repo_root = project_root()
+    output_path = pathlib.Path(output_arg)
+    if not output_path.is_absolute():
+        output_path = repo_root / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    blocks: list[str] = []
+    all_ok = True
+
+    for row in rows:
+        proc = subprocess.run(
+            ["bash", "-lc", row["command"]],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+        )
+        combined = proc.stdout + proc.stderr
+        marker_found = row["marker"] in combined
+        forbidden_markers = row.get("forbidden_markers", ())
+        forbidden_found = tuple(marker for marker in forbidden_markers if marker in combined)
+        exit_ok = command_exit_matches(proc.returncode, row["expected_exit"])
+        row_ok = marker_found and exit_ok and not forbidden_found
+        all_ok = all_ok and row_ok
+
+        blocks.append("\n".join((
+            f"ROW: {row['name']}",
+            f"COMMAND: {row['command']}",
+            f"EXPECTED_EXIT: {row['expected_exit']}",
+            f"EXIT_CODE: {proc.returncode}",
+            f"REQUIRED_MARKER: {row['marker']}",
+            f"MARKER_FOUND: {'yes' if marker_found else 'no'}",
+            f"FORBIDDEN_MARKERS: {','.join(forbidden_markers) if forbidden_markers else '(none)'}",
+            f"FORBIDDEN_FOUND: {','.join(forbidden_found) if forbidden_found else '(none)'}",
+            f"ROW_STATUS: {'PASS' if row_ok else 'FAIL'}",
+            "OUTPUT_BEGIN",
+            combined.rstrip(),
+            "OUTPUT_END",
+        )))
+
+    _ = output_path.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+
+    if all_ok:
+        print(f"GBP_PE_NOC_MATRIX_PASS suite={suite} rows={len(rows)} output={output_path}")
+        return 0
+
+    print(f"GBP_PE_NOC_MATRIX_FAIL suite={suite} rows={len(rows)} output={output_path}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    exit_code = main()
+    raise SystemExit(exit_code)

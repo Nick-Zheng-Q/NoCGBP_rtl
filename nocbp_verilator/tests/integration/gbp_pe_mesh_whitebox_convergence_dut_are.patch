@@ -1,0 +1,314 @@
+// 这是修改 gbp_pe_mesh_whitebox_convergence.cc 以实现真正从 DUT 读取 ARE 的补丁说明
+// 关键修改点：
+
+// ============================================
+// 1. 添加新的结构体来存储从 DUT 读取的原始数据
+// ============================================
+
+struct DutVariableState {
+  int variable_id = -1;
+  int pe = -1;
+  int dofs = 2;  // BA 问题的维度是 2
+  
+  // 从 Bank 1-3 读取的 State (prior_eta, prior_lam)
+  // Row 0 Words 0-1: prior_eta[0], prior_eta[1] (FP32)
+  // Row 0 Words 2-4: prior_lam[0,0], prior_lam[0,1], prior_lam[1,1] (FP32, symmetric)
+  Eigen::VectorXd prior_eta;
+  Eigen::MatrixXd prior_lam;
+  
+  // 从 Bank 4-7 读取的 Messages
+  // 每个 message 存储在一个 row 中，格式：
+  // Words 0-1: eta[0], eta[1]
+  // Words 2-4: lam[0,0], lam[0,1], lam[1,1] (symmetric)
+  struct InboundMessage {
+    int factor_id = -1;
+    int msg_bank = -1;
+    int msg_row = -1;
+    Eigen::VectorXd eta;
+    Eigen::MatrixXd lam;
+  };
+  std::vector<InboundMessage> inbound_messages;
+};
+
+// ============================================
+// 2. 添加从 SPM raw words 解码 float 的辅助函数
+// ============================================
+
+static float decode_fp32_word(uint32_t word) {
+  float value = 0.0f;
+  std::memcpy(&value, &word, sizeof(value));
+  return value;
+}
+
+// 从 SPM row (8 words) 解码 state (prior_eta, prior_lam)
+// 假设格式：words[0-1]=eta, words[2-4]=lam (upper triangular)
+static bool decode_state_from_row(const std::array<uint32_t, kWordsPerRow>& row_words,
+                                   int dofs,
+                                   Eigen::VectorXd* out_eta,
+                                   Eigen::MatrixXd* out_lam,
+                                   std::string* error) {
+  if (dofs != 2) {
+    *error = "only dim=2 is supported for state decoding";
+    return false;
+  }
+  
+  // eta: 2 floats (words 0-1)
+  *out_eta = Eigen::VectorXd(2);
+  (*out_eta)(0) = decode_fp32_word(row_words[0]);
+  (*out_eta)(1) = decode_fp32_word(row_words[1]);
+  
+  // lam: symmetric 2x2, stored as [lam00, lam01, lam11] (words 2-4)
+  *out_lam = Eigen::MatrixXd(2, 2);
+  double lam00 = decode_fp32_word(row_words[2]);
+  double lam01 = decode_fp32_word(row_words[3]);
+  double lam11 = decode_fp32_word(row_words[4]);
+  (*out_lam)(0, 0) = lam00;
+  (*out_lam)(0, 1) = lam01;
+  (*out_lam)(1, 0) = lam01;  // symmetric
+  (*out_lam)(1, 1) = lam11;
+  
+  return true;
+}
+
+// 从 SPM row 解码 message (5 words format used in message banks)
+static bool decode_message_from_row(const std::array<uint32_t, kWordsPerRow>& row_words,
+                                     int dofs,
+                                     Eigen::VectorXd* out_eta,
+                                     Eigen::MatrixXd* out_lam,
+                                     std::string* error) {
+  if (dofs != 2) {
+    *error = "only dim=2 is supported for message decoding";
+    return false;
+  }
+  
+  // 使用与 message payload codec 相同的格式
+  // words 0-1: eta
+  // words 2-4: lam (lam00, lam01, lam11)
+  *out_eta = Eigen::VectorXd(2);
+  (*out_eta)(0) = decode_fp32_word(row_words[0]);
+  (*out_eta)(1) = decode_fp32_word(row_words[1]);
+  
+  *out_lam = Eigen::MatrixXd(2, 2);
+  double lam00 = decode_fp32_word(row_words[2]);
+  double lam01 = decode_fp32_word(row_words[3]);
+  double lam11 = decode_fp32_word(row_words[4]);
+  (*out_lam)(0, 0) = lam00;
+  (*out_lam)(0, 1) = lam01;
+  (*out_lam)(1, 0) = lam01;
+  (*out_lam)(1, 1) = lam11;
+  
+  return true;
+}
+
+// ============================================
+// 3. 修改 write_terminal_dump_from_store 函数
+// ============================================
+
+// 替换原来的实现，不再使用 build_reference_ba_snapshot
+// 而是从 DUT 的 g_pmem_words 中读取实际数据
+
+static bool write_terminal_dump_from_store(
+    const std::string& path,
+    const RuntimeConfig& cfg,
+    const PartitionInfo& partition,
+    // 新增参数：返回从 DUT 读取的 variable states
+    std::vector<DutVariableState>* out_dut_states) {
+  
+  std::ofstream ofs(path);
+  if (!ofs.is_open()) {
+    std::fprintf(stderr, "FAIL: cannot write terminal dump: %s\n", path.c_str());
+    return false;
+  }
+
+  // 构建 var_owner 映射：variable_id -> PE
+  std::unordered_map<int, int> var_owner;
+  for (size_t pe = 0; pe < partition.var_mapping.size(); ++pe) {
+    for (int var_id : partition.var_mapping[pe]) {
+      var_owner[var_id] = static_cast<int>(pe);
+    }
+  }
+  
+  // 构建 factor -> variable 邻接关系 (从 edges)
+  std::unordered_map<int, std::vector<int>> factor_to_vars;
+  std::unordered_map<int, std::vector<int>> var_to_factors;
+  for (const auto& edge : partition.edges) {
+    int factor_id = edge.first;
+    int var_id = edge.second;
+    factor_to_vars[factor_id].push_back(var_id);
+    var_to_factors[var_id].push_back(factor_id);
+  }
+
+  // 从 DUT SPM 读取每个 variable 的状态
+  std::vector<DutVariableState> dut_states;
+  
+  for (const auto& kv : var_owner) {
+    int var_id = kv.first;
+    int pe = kv.second;
+    
+    DutVariableState state;
+    state.variable_id = var_id;
+    state.pe = pe;
+    state.dofs = 2;  // BA 问题维度
+    
+    // 读取 State (Bank 3, Row 0) - 假设所有 variable 都存在 row 0
+    // 注意：这里假设 SPM 中 variable 按顺序存储，row = variable_index_in_pe
+    // 需要根据实际情况调整 row 计算
+    int var_index_in_pe = -1;
+    for (size_t i = 0; i < partition.var_mapping[pe].size(); ++i) {
+      if (partition.var_mapping[pe][i] == var_id) {
+        var_index_in_pe = static_cast<int>(i);
+        break;
+      }
+    }
+    
+    if (var_index_in_pe < 0) {
+      continue;  // 不应该发生
+    }
+    
+    uint32_t state_row = static_cast<uint32_t>(var_index_in_pe);
+    
+    // 从 Bank 3 读取 State (使用 row = var_index_in_pe)
+    std::array<uint32_t, kWordsPerRow> state_beats{};
+    if (!read_spm_row_words(pe, 3, state_row, &state_beats)) {
+      std::fprintf(stderr, "WARN: cannot read state for var=%d pe=%d row=%u\n", 
+                   var_id, pe, state_row);
+      continue;
+    }
+    
+    std::string decode_error;
+    if (!decode_state_from_row(state_beats, state.dofs, 
+                               &state.prior_eta, &state.prior_lam, 
+                               &decode_error)) {
+      std::fprintf(stderr, "WARN: cannot decode state for var=%d: %s\n", 
+                   var_id, decode_error.c_str());
+      continue;
+    }
+    
+    // 读取 Messages (Bank 4-7)
+    // 每个 variable 的 inbound message 来自其相邻的 factors
+    auto it = var_to_factors.find(var_id);
+    if (it != var_to_factors.end()) {
+      const std::vector<int>& adj_factors = it->second;
+      
+      // 假设 message row 与 factor 的映射关系
+      // 简化处理：每个 message 占用一个 row，按 factor_id 排序
+      for (size_t msg_idx = 0; msg_idx < adj_factors.size(); ++msg_idx) {
+        int factor_id = adj_factors[msg_idx];
+        
+        // 确定 message bank (4-7) 和 row
+        // 简化：按 msg_idx 循环使用 banks 4-7
+        uint32_t msg_bank = kRequiredMessageBankLo + (msg_idx % 4);
+        uint32_t msg_row = static_cast<uint32_t>(var_index_in_pe);  // 简化假设
+        
+        std::array<uint32_t, kWordsPerRow> msg_beats{};
+        if (!read_spm_row_words(pe, msg_bank, msg_row, &msg_beats)) {
+          continue;
+        }
+        
+        DutVariableState::InboundMessage msg;
+        msg.factor_id = factor_id;
+        msg.msg_bank = static_cast<int>(msg_bank);
+        msg.msg_row = static_cast<int>(msg_row);
+        
+        if (decode_message_from_row(msg_beats, state.dofs, 
+                                    &msg.eta, &msg.lam, &decode_error)) {
+          state.inbound_messages.push_back(msg);
+        }
+      }
+    }
+    
+    dut_states.push_back(state);
+  }
+  
+  // 输出到文件 (保持原有格式以兼容 reconstruct_metrics_from_dump)
+  // ... (写入 terminal_dump 和 variable_snapshots)
+  // variable_snapshots 应该使用从 DUT 读取的 dut_states 数据
+  
+  if (out_dut_states != nullptr) {
+    *out_dut_states = dut_states;
+  }
+  
+  return true;
+}
+
+// ============================================
+// 4. 修改 run_test 中的调用
+// ============================================
+
+// 在 run_test 中：
+// - 调用修改后的 write_terminal_dump_from_store
+// - 或者直接从 dut_states 计算 ARE，而不通过 JSON dump
+
+// 选项 A: 直接计算 ARE (不经过 JSON)
+static bool compute_are_from_dut_states(
+    const std::vector<DutVariableState>& dut_states,
+    const PartitionInfo& partition,
+    double* out_are,
+    double* out_energy) {
+  
+  // 构建 BAFactorGraph
+  Config config{};
+  config.eta_damping = 0.4;
+  config.beta = 0.01;
+  config.num_undamped_iters = 6;
+  config.min_linear_iters = 8;
+  config.gauss_noise_std = 2.0;
+  config.loss = HUBER;
+  config.mahalanobis_threshold = 3.0;
+  
+  BAFactorGraph graph(0.0, 0.0, 0, 0);
+  try {
+    graph = create_ba_graph(kBaDatasetPath, config);
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "FAIL: cannot create BA graph: %s\n", e.what());
+    return false;
+  }
+  
+  // 应用从 DUT 读取的 beliefs
+  for (const DutVariableState& state : dut_states) {
+    // 找到对应的 variable
+    VariableNode* var = nullptr;
+    for (VariableNode* v : graph.get_var_nodes()) {
+      if (v->get_variable_ID() == state.variable_id) {
+        var = v;
+        break;
+      }
+    }
+    if (var == nullptr) continue;
+    
+    // 设置 prior
+    var->set_prior_eta(state.prior_eta);
+    var->set_prior_lam(state.prior_lam);
+    
+    // 构建 inbound messages
+    std::vector<NdimGaussian> inbound;
+    for (const auto& msg : state.inbound_messages) {
+      NdimGaussian msg_gaussian(state.dofs, msg.eta, msg.lam);
+      inbound.push_back(msg_gaussian);
+    }
+    
+    // 更新 belief
+    var->update_belief(inbound);
+    
+    // 更新 factor 的 adjacent beliefs
+    const std::vector<FactorNode*> adj = var->get_adj_fac_nodes();
+    for (FactorNode* factor : adj) {
+      const std::vector<int> adj_ids = factor->get_adj_vIDs();
+      const auto pos = std::find(adj_ids.begin(), adj_ids.end(), state.variable_id);
+      if (pos != adj_ids.end()) {
+        const size_t idx = std::distance(adj_ids.begin(), pos);
+        factor->get_adj_beliefs()[idx].set_eta(var->get_belief().get_eta());
+        factor->get_adj_beliefs()[idx].set_lam(var->get_belief().get_lam());
+      }
+    }
+  }
+  
+  // 同步 factor 状态
+  graph.compute_all_factors();
+  graph.robustify_all_factors();
+  
+  *out_are = graph.are();
+  *out_energy = graph.energy();
+  
+  return std::isfinite(*out_are) && std::isfinite(*out_energy);
+}

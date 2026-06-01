@@ -1,13 +1,14 @@
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string>
 
-#include "gbp/LinearFactorGraph.hpp"
+#include "../../../nocbp_simulator/gbp/BAFactorGraph.hpp"
 
 int main(int argc, char **argv) {
-  if (argc != 7) {
-    std::cerr << "Usage: gbp_oracle_ref_main <workload> <iter> <seed> <line_nodes> <rows> <cols>" << std::endl;
+  if (argc != 7 && argc != 8) {
+    std::cerr << "Usage: gbp_oracle_ref_main <workload> <iter> <seed> <line_nodes> <rows> <cols> [dataset]" << std::endl;
     return 1;
   }
 
@@ -17,6 +18,7 @@ int main(int argc, char **argv) {
   const int line_nodes = std::atoi(argv[4]);
   const int rows = std::atoi(argv[5]);
   const int cols = std::atoi(argv[6]);
+  const std::string dataset = (argc == 8) ? argv[7] : "";
 
   Config config;
   config.eta_damping = 0.4;
@@ -27,13 +29,19 @@ int main(int argc, char **argv) {
   config.loss = HUBER;
   config.mahalanobis_threshold = 3.0;
 
-  std::unique_ptr<LinearFactorGraph> graph;
-  if (workload == "synthetic_line") {
-    graph = std::make_unique<LinearFactorGraph>(
-        create_synthetic_line_graph(line_nodes, 1.0, 1.0, seed, 1e-3, config));
-  } else if (workload == "synthetic_lattice") {
-    graph = std::make_unique<LinearFactorGraph>(
-        create_synthetic_lattice_graph(rows, cols, 1.0, 1.0, seed, 1e-3, config));
+  std::unique_ptr<BAFactorGraph> ba_graph;
+  FactorGraph *graph = nullptr;
+  if (workload == "bal_fr1desk_small") {
+    if (dataset.empty()) {
+      std::cerr << "Missing dataset for workload: " << workload << std::endl;
+      return 2;
+    }
+    if (!std::filesystem::is_regular_file(dataset)) {
+      std::cerr << "Dataset file not found: " << dataset << std::endl;
+      return 2;
+    }
+    ba_graph = std::make_unique<BAFactorGraph>(create_ba_graph(dataset, config));
+    graph = ba_graph.get();
   } else {
     std::cerr << "Unsupported workload: " << workload << std::endl;
     return 2;

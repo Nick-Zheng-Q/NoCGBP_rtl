@@ -1,9 +1,9 @@
 // agu
 // address generation unit
 
+import gbp_pkg::*;
 module agu
   import bsg_manycore_pkg::*;
-  import gbp_pkg::*;
 (
     input  logic                   clk_i,
     input  logic                   reset_i,

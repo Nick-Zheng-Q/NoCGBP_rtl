@@ -1,0 +1,2 @@
+top: gbp_compute_engine
+rtl_f: tests/unit/gbp_compute_engine_test.f

@@ -29,6 +29,10 @@ module gbp_pe_mesh_2pe_gbp
   output logic [31:0] pe1_host_tx_count_o,
   output logic [31:0] pe0_dut_tx_count_o,
   output logic [31:0] pe1_dut_tx_count_o,
+  output logic [31:0] pe0_compute_done_count_o,
+  output logic [31:0] pe1_compute_done_count_o,
+  output logic [bsg_manycore_reg_id_width_gp-1:0] pe0_last_dut_txn_id_o,
+  output logic [bsg_manycore_reg_id_width_gp-1:0] pe1_last_dut_txn_id_o,
   output logic [31:0] pe0_state_b1_row0_word0_o,
   output logic [31:0] pe0_state_b2_row0_word0_o,
   output logic [31:0] pe0_state_b3_row0_word0_o,
@@ -195,6 +199,10 @@ module gbp_pe_mesh_2pe_gbp
   logic [31:0] pe1_host_tx_count_r;
   logic [31:0] pe0_dut_tx_count_r;
   logic [31:0] pe1_dut_tx_count_r;
+  logic [31:0] pe0_compute_done_count_r;
+  logic [31:0] pe1_compute_done_count_r;
+  logic [bsg_manycore_reg_id_width_gp-1:0] pe0_last_dut_txn_id_r;
+  logic [bsg_manycore_reg_id_width_gp-1:0] pe1_last_dut_txn_id_r;
   logic pe0_semantic_payload_seen_r;
   logic pe1_semantic_payload_seen_r;
   logic [2:0] pe0_semantic_payload_bank_r;
@@ -492,6 +500,10 @@ module gbp_pe_mesh_2pe_gbp
       pe1_host_tx_count_r <= '0;
       pe0_dut_tx_count_r <= '0;
       pe1_dut_tx_count_r <= '0;
+      pe0_compute_done_count_r <= '0;
+      pe1_compute_done_count_r <= '0;
+      pe0_last_dut_txn_id_r <= '0;
+      pe1_last_dut_txn_id_r <= '0;
       pe0_host_prio_r <= 1'b1;
       pe1_host_prio_r <= 1'b1;
       pe0_dut_pending_r <= 1'b0;
@@ -525,9 +537,18 @@ module gbp_pe_mesh_2pe_gbp
       end
       if (tx0_dut_fire) begin
         pe0_dut_tx_count_r <= pe0_dut_tx_count_r + 1'b1;
+        pe0_last_dut_txn_id_r <= pe0_dut_txn_id_r;
       end
       if (tx1_dut_fire) begin
         pe1_dut_tx_count_r <= pe1_dut_tx_count_r + 1'b1;
+        pe1_last_dut_txn_id_r <= pe1_dut_txn_id_r;
+      end
+
+      if (tile0.proc.h.z.pe_compute_done_lo) begin
+        pe0_compute_done_count_r <= pe0_compute_done_count_r + 1'b1;
+      end
+      if (tile1.proc.h.z.pe_compute_done_lo) begin
+        pe1_compute_done_count_r <= pe1_compute_done_count_r + 1'b1;
       end
 
       if (tx0_fire && send0_v && pe0_dut_pending_r) begin
@@ -557,8 +578,7 @@ module gbp_pe_mesh_2pe_gbp
 
       if (tile0.proc.h.z.pe_ingress_wr_req_valid_lo) begin
         pe0_ingress_wr_count_r <= pe0_ingress_wr_count_r + 1'b1;
-        if (!pe0_semantic_payload_seen_r
-            && (tile0.proc.h.z.pe_ingress_wr_req_addr_lo[7:5] >= 3'd4)) begin
+        if (tile0.proc.h.z.pe_ingress_wr_req_addr_lo[7:5] >= 3'd4) begin
           pe0_semantic_payload_seen_r <= 1'b1;
           pe0_semantic_payload_bank_r <= tile0.proc.h.z.pe_ingress_wr_req_addr_lo[7:5];
           pe0_semantic_payload_row_r <= tile0.proc.h.z.pe_ingress_wr_req_addr_lo[15:8];
@@ -567,8 +587,7 @@ module gbp_pe_mesh_2pe_gbp
       end
       if (tile1.proc.h.z.pe_ingress_wr_req_valid_lo) begin
         pe1_ingress_wr_count_r <= pe1_ingress_wr_count_r + 1'b1;
-        if (!pe1_semantic_payload_seen_r
-            && (tile1.proc.h.z.pe_ingress_wr_req_addr_lo[7:5] >= 3'd4)) begin
+        if (tile1.proc.h.z.pe_ingress_wr_req_addr_lo[7:5] >= 3'd4) begin
           pe1_semantic_payload_seen_r <= 1'b1;
           pe1_semantic_payload_bank_r <= tile1.proc.h.z.pe_ingress_wr_req_addr_lo[7:5];
           pe1_semantic_payload_row_r <= tile1.proc.h.z.pe_ingress_wr_req_addr_lo[15:8];
@@ -595,6 +614,10 @@ module gbp_pe_mesh_2pe_gbp
   assign pe1_host_tx_count_o = pe1_host_tx_count_r;
   assign pe0_dut_tx_count_o = pe0_dut_tx_count_r;
   assign pe1_dut_tx_count_o = pe1_dut_tx_count_r;
+  assign pe0_compute_done_count_o = pe0_compute_done_count_r;
+  assign pe1_compute_done_count_o = pe1_compute_done_count_r;
+  assign pe0_last_dut_txn_id_o = pe0_last_dut_txn_id_r;
+  assign pe1_last_dut_txn_id_o = pe1_last_dut_txn_id_r;
 
   assign pe0_state_b1_row0_word0_o =
     tile0.proc.h.z.pe.u_spm_subsystem.u_spm_bank_array.banks[1].u_spm_bank.mem_r[0][31:0];
@@ -710,6 +733,10 @@ module gbp_pe_mesh_2pe_convergence
   output logic [31:0] pe1_host_tx_count_o,
   output logic [31:0] pe0_dut_tx_count_o,
   output logic [31:0] pe1_dut_tx_count_o,
+  output logic [31:0] pe0_compute_done_count_o,
+  output logic [31:0] pe1_compute_done_count_o,
+  output logic [bsg_manycore_reg_id_width_gp-1:0] pe0_last_dut_txn_id_o,
+  output logic [bsg_manycore_reg_id_width_gp-1:0] pe1_last_dut_txn_id_o,
   output logic [31:0] pe0_state_b1_row0_word0_o,
   output logic [31:0] pe0_state_b2_row0_word0_o,
   output logic [31:0] pe0_state_b3_row0_word0_o,
@@ -795,6 +822,10 @@ module gbp_pe_mesh_2pe_convergence
     .pe1_host_tx_count_o(pe1_host_tx_count_o),
     .pe0_dut_tx_count_o(pe0_dut_tx_count_o),
     .pe1_dut_tx_count_o(pe1_dut_tx_count_o),
+    .pe0_compute_done_count_o(pe0_compute_done_count_o),
+    .pe1_compute_done_count_o(pe1_compute_done_count_o),
+    .pe0_last_dut_txn_id_o(pe0_last_dut_txn_id_o),
+    .pe1_last_dut_txn_id_o(pe1_last_dut_txn_id_o),
     .pe0_state_b1_row0_word0_o(pe0_state_b1_row0_word0_o),
     .pe0_state_b2_row0_word0_o(pe0_state_b2_row0_word0_o),
     .pe0_state_b3_row0_word0_o(pe0_state_b3_row0_word0_o),

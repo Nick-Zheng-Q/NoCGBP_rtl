@@ -20,16 +20,16 @@
 
 module bsg_manycore_eva_to_npa
   import bsg_manycore_pkg::*;
-  #(`BSG_INV_PARAM(data_width_p) // 32
-    , `BSG_INV_PARAM(addr_width_p)
-    , `BSG_INV_PARAM(x_cord_width_p)
-    , `BSG_INV_PARAM(y_cord_width_p)
-    , `BSG_INV_PARAM(pod_x_cord_width_p)
-    , `BSG_INV_PARAM(pod_y_cord_width_p)
+  #(data_width_p // 32
+    , addr_width_p
+    , x_cord_width_p
+    , y_cord_width_p
+    , pod_x_cord_width_p
+    , pod_y_cord_width_p
  
-    , `BSG_INV_PARAM(num_tiles_x_p)
-    , `BSG_INV_PARAM(num_tiles_y_p)
-    , `BSG_INV_PARAM(ipoly_hashing_p)
+    , num_tiles_x_p
+    , num_tiles_y_p
+    , ipoly_hashing_p
     , localparam x_subcord_width_lp=`BSG_SAFE_CLOG2(num_tiles_x_p)
     , y_subcord_width_lp=`BSG_SAFE_CLOG2(num_tiles_y_p)
 

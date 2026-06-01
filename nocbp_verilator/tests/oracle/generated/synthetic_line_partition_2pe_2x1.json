@@ -1,0 +1,204 @@
+{
+  "fac_mapping_table": [
+    [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  ],
+  "graph": {
+    "factor_var_edges": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        11,
+        11
+      ],
+      [
+        11,
+        12
+      ],
+      [
+        12,
+        12
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        13,
+        13
+      ],
+      [
+        13,
+        14
+      ],
+      [
+        14,
+        14
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "n_fac_nodes": 15,
+    "n_var_nodes": 16
+  },
+  "mapping_info": {
+    "fallback_rule": "pe0_factors_pe1_variables",
+    "fallback_used": false,
+    "mapping_backend": "simulator_scotch",
+    "mesh_x": 2,
+    "mesh_y": 1,
+    "scotch_helper_binary": "ephemeral_tmp_build/gbp_partition_scotch_ref_bin",
+    "source_of_truth": "nocbp_simulator/pe/FactorGraphManager.cpp:scotchMapping"
+  },
+  "mapping_mode": "scotch",
+  "mesh": {
+    "x": 2,
+    "y": 1
+  },
+  "partition_contract": {
+    "artifact_naming_tokens": {
+      "mesh_token": "2x1",
+      "partition": "partition",
+      "pe_token": "2pe",
+      "stem": "synthetic_line_partition_2pe_2x1",
+      "workload": "synthetic_line"
+    },
+    "mesh_x": 2,
+    "mesh_y": 1,
+    "partition_mode": "scotch",
+    "pe_count": 2,
+    "seed": 12345,
+    "workload": "synthetic_line"
+  },
+  "pes": 2,
+  "schema_version": "1.0",
+  "seed": 12345,
+  "var_mapping_table": [
+    [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  ],
+  "workload": "synthetic_line"
+}

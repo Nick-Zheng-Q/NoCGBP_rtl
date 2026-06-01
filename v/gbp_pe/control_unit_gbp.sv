@@ -2,6 +2,8 @@
 // Extended control_unit with full GBP algorithm support
 // Supports both Variable Node and Factor Node computation flows
 
+import gbp_pkg::*;
+
 module control_unit_gbp (
     input wire clk_i,
     input wire reset_i,
@@ -17,8 +19,6 @@ module control_unit_gbp (
     input wire [BEAT_BITS-1:0] meta_data_i,
     input wire [15:0] meta_seq_i
 );
-
-  import gbp_pkg::*;
 
   // Use explicit meta_valid input (workaround for Verilator interface issue)
   logic meta_valid_sampled;

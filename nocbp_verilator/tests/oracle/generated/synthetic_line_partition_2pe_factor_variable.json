@@ -1,14 +1,6 @@
 {
   "fac_mapping_table": [
     [
-      0,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
       8,
       9,
       10,
@@ -17,7 +9,16 @@
       13,
       14
     ],
-    []
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
   ],
   "graph": {
     "factor_var_edges": [
@@ -147,26 +148,17 @@
   },
   "mapping_info": {
     "fallback_rule": "pe0_factors_pe1_variables",
-    "fallback_used": true,
-    "mapping_backend": "fixed_fallback",
-    "scotch_helper_binary": "/home/nick/Workspace/bsg_manycore/nocbp_verilator/tests/tools/gbp_partition_scotch_ref_bin",
+    "fallback_used": false,
+    "mapping_backend": "simulator_scotch",
+    "scotch_helper_binary": "ephemeral_tmp_build/gbp_partition_scotch_ref_bin",
     "source_of_truth": "nocbp_simulator/pe/FactorGraphManager.cpp:scotchMapping"
   },
-  "mapping_mode": "factor_variable_split",
+  "mapping_mode": "scotch",
   "pes": 2,
   "schema_version": "1.0",
   "seed": 12345,
   "var_mapping_table": [
-    [],
     [
-      0,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
       8,
       9,
       10,
@@ -175,6 +167,16 @@
       13,
       14,
       15
+    ],
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
     ]
   ],
   "workload": "synthetic_line"

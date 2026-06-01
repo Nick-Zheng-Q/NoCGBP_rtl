@@ -1,8 +1,8 @@
 // mic_write
 // memory interface controller (write)
 
+import gbp_pkg::*;
 module mic_write
-  import gbp_pkg::*;
 (
     input logic clk_i,
     input logic reset_i,

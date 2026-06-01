@@ -47,3 +47,7 @@ dump.fst.hier
 obj_dir*/
 simsc*
 slpp_unit/
+
+.sisyphus/
+.cache/
+ppa/

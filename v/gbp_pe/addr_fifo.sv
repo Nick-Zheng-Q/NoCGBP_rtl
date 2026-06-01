@@ -1,5 +1,5 @@
+import gbp_pkg::*;
 module addr_fifo
-  import gbp_pkg::*;
 (
     input logic clk_i,
     input logic reset_i,

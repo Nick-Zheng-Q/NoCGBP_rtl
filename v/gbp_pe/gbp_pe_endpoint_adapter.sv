@@ -20,10 +20,10 @@ module gbp_pe_endpoint_adapter
   import bsg_manycore_pkg::*;
   import gbp_pe_endpoint_adapter_pkg::*;
   #(
-     parameter int x_cord_width_p = "inv"
-     , parameter int y_cord_width_p = "inv"
-     , parameter int data_width_p = "inv"
-     , parameter int addr_width_p = "inv"
+     parameter int x_cord_width_p = 1
+     , parameter int y_cord_width_p = 1
+     , parameter int data_width_p = 32
+     , parameter int addr_width_p = 28
      , parameter int fifo_els_p = 4
      , parameter int rev_fifo_els_p = 4
      , parameter int credit_counter_width_p = 32

@@ -1,5 +1,5 @@
+import gbp_pkg::*;
 module spm_arbiter
-  import gbp_pkg::*;
 (
     input logic clk_i,
     input logic reset_i,

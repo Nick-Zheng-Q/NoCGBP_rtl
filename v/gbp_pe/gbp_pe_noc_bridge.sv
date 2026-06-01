@@ -1,5 +1,5 @@
+import gbp_pkg::*;
 module gbp_pe_noc_bridge
-  import gbp_pkg::*;
   #(
     parameter int unsigned data_width_p = 32,
     parameter int unsigned addr_width_p = 16

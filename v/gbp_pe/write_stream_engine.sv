@@ -1,5 +1,5 @@
+import gbp_pkg::*;
 module write_stream_engine
-  import gbp_pkg::*;
 (
     input logic clk_i,
     input logic reset_i,
@@ -94,8 +94,9 @@ module write_stream_engine
       .unqueue_i(addr_fifo_unqueue_lo)
   );
 
-  data_fifo u_data_fifo (
-      .width_p(BEAT_BITS),
+  data_fifo #(
+      .width_p(BEAT_BITS)
+  ) u_data_fifo (
       .clk_i(clk_i),
       .reset_i(reset_i),
       .data_i(if_stream_if_stream.data),

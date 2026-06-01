@@ -3,20 +3,20 @@
 module gbp_pe
   import bsg_manycore_pkg::*;
   #(
-    `BSG_INV_PARAM(x_cord_width_p)
-    , `BSG_INV_PARAM(y_cord_width_p)
-    , `BSG_INV_PARAM(data_width_p)
-    , `BSG_INV_PARAM(addr_width_p)
-    , `BSG_INV_PARAM(dmem_size_p)
+    x_cord_width_p
+    , y_cord_width_p
+    , data_width_p
+    , addr_width_p
+    , dmem_size_p
     , debug_p = 0
-    , `BSG_INV_PARAM(num_tiles_x_p)
-    , `BSG_INV_PARAM(num_tiles_y_p)
-    , `BSG_INV_PARAM(pod_x_cord_width_p)
-    , `BSG_INV_PARAM(pod_y_cord_width_p)
-    , `BSG_INV_PARAM(fwd_fifo_els_p)
-    , `BSG_INV_PARAM(rev_fifo_els_p)
-    , `BSG_INV_PARAM(barrier_dirs_p)
-    , `BSG_INV_PARAM(ipoly_hashing_p)
+    , num_tiles_x_p
+    , num_tiles_y_p
+    , pod_x_cord_width_p
+    , pod_y_cord_width_p
+    , fwd_fifo_els_p
+    , rev_fifo_els_p
+    , barrier_dirs_p
+    , ipoly_hashing_p
 
     , localparam x_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_x_p)
     , localparam y_subcord_width_lp = `BSG_SAFE_CLOG2(num_tiles_y_p)

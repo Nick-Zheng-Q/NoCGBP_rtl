@@ -1,0 +1,1 @@
+/home/nick/Workspace/NoCBP/GBP_PE_MODULE_ARCHITECTURE.md

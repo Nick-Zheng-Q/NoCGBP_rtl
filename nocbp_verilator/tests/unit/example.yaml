@@ -1,5 +1,8 @@
 # Example YAML config for unit test
 # This file is optional; used to validate YAML -> Makefile var path.
+top: example_top
+top_sv: tops/unit/example_top.sv
+
 incdirs:
   - common
 defines:

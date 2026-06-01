@@ -1,5 +1,5 @@
+import gbp_pkg::*;
 module data_fifo
-  import gbp_pkg::*;
 #(
     parameter int unsigned width_p = BEAT_BITS,
     parameter int unsigned depth_p = DATA_ELS_DEPTH

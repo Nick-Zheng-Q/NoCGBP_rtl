@@ -1,0 +1,170 @@
+{
+  "artifact_type": "oracle_task4",
+  "checksum": {
+    "algorithm": "sha256",
+    "scope": "artifact_without_checksum_field",
+    "value": "8e09af9c582cbd1cd7a4042c87b7ea6c7a9bfe9b165db004dc8a97bf98f5937c"
+  },
+  "compare_contract": {
+    "pass_rule": "all_metrics_within_thresholds",
+    "thresholds": {
+      "final_are": {
+        "abs_tol": 0.001,
+        "rel_tol": 0.01
+      },
+      "final_energy": {
+        "abs_tol": 0.001,
+        "rel_tol": 0.01
+      },
+      "iters": {
+        "abs_tol": 0.0,
+        "rel_tol": 0.0
+      }
+    }
+  },
+  "function_oracle": {
+    "deterministic_seed": 12345,
+    "runtime_hookup": "pending",
+    "sections": {
+      "compute_factor_node": {
+        "anchor": {
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "a29ba2195d7f5d402a4bf8dece19ba79ca16297697273475724a7a4731dc1621"
+          },
+          "line": 833,
+          "span_lines": 8
+        },
+        "cases": [
+          {
+            "expected": {
+              "belief_eta_0": -1.70012629,
+              "belief_lam_00": 0.57610759,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                0,
+                1
+              ],
+              "stale_mask": [
+                0,
+                1,
+                0
+              ],
+              "vector_id": 0
+            },
+            "scenario": "compute_factor_node_staged_case_0"
+          },
+          {
+            "expected": {
+              "belief_eta_0": 1.31648731,
+              "belief_lam_00": 1.13068545,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                1,
+                0
+              ],
+              "stale_mask": [
+                1,
+                1,
+                0
+              ],
+              "vector_id": 1
+            },
+            "scenario": "compute_factor_node_staged_case_1"
+          }
+        ],
+        "mode": "staged_placeholder_v1"
+      },
+      "compute_variable_node": {
+        "anchor": {
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "f5669a554cae45e5233856d18a692261405afd3a186c3d09705ae3272bf0b5fa"
+          },
+          "line": 805,
+          "span_lines": 8
+        },
+        "cases": [
+          {
+            "expected": {
+              "belief_eta_0": -0.2928514,
+              "belief_lam_00": 2.57729064,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                0,
+                1
+              ],
+              "stale_mask": [
+                0,
+                1,
+                0
+              ],
+              "vector_id": 0
+            },
+            "scenario": "compute_variable_node_staged_case_0"
+          },
+          {
+            "expected": {
+              "belief_eta_0": -1.3730377,
+              "belief_lam_00": 2.47196887,
+              "can_compute": true
+            },
+            "inputs": {
+              "new_mask": [
+                1,
+                1,
+                0
+              ],
+              "stale_mask": [
+                1,
+                1,
+                0
+              ],
+              "vector_id": 1
+            },
+            "scenario": "compute_variable_node_staged_case_1"
+          }
+        ],
+        "mode": "staged_placeholder_v1"
+      }
+    },
+    "source": "nocbp_simulator/pe/ProcessingElement.cpp"
+  },
+  "metadata": {
+    "determinism": {
+      "max_cycles": 5000,
+      "max_iters": 50,
+      "seed": 12345,
+      "workloads": [
+        "bal_fr1desk_small"
+      ]
+    },
+    "generated_at_utc": "seed-0000012345",
+    "git_commit": "not-recorded",
+    "run_id": "phase1-deterministic",
+    "tool_version": "generate_gbp_oracle_phase1.py+gbp_oracle_ref_main.cpp"
+  },
+  "schema_version": "1.0",
+  "workloads": {
+    "bal_fr1desk_small": {
+      "input_checksum": {
+        "algorithm": "sha256",
+        "value": "9a7eeea2a9f9b99715a090df7597a444b411eea01fab87bb919df356dbd669db"
+      },
+      "metrics": {
+        "final_are": 1.41498,
+        "final_energy": 1609.0,
+        "iters": 50
+      }
+    }
+  }
+}

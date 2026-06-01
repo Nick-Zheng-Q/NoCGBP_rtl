@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -14,12 +15,15 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../../../nocbp_simulator/gbp/BAFactorGraph.hpp"
 #include "../../../nocbp_simulator/gbp/LinearFactorGraph.hpp"
 #include "../../../nocbp_simulator/gbp/precision.hpp"
 
 namespace gbp_terminal_metrics_adapter {
 
 namespace {
+
+constexpr const char* kBaDatasetPath = "data/fr1desk_small.txt";
 
 struct MessageDump {
   int factor_id = -1;
@@ -74,6 +78,7 @@ struct GraphDump {
   int node_count = -1;
   int rows = -1;
   int cols = -1;
+  std::string ba_dataset;
   double spacing = 0.0;
   double init_noise_std = 0.0;
   int seed = -1;
@@ -337,6 +342,35 @@ bool parse_vec2(const std::string& text,
   return true;
 }
 
+bool parse_vec_n(const std::string& text,
+                 const std::string& key,
+                 int expected_size,
+                 Eigen::VectorXd* out,
+                 std::string* error) {
+  if (expected_size <= 0) {
+    *error = "invalid expected vector size for field: " + key;
+    return false;
+  }
+  std::string block;
+  if (!extract_delimited_block(text, key, '[', ']', &block, error)) {
+    return false;
+  }
+  std::vector<double> values;
+  if (!parse_number_list(block, &values, error)) {
+    *error = "invalid vector field: " + key;
+    return false;
+  }
+  if (static_cast<int>(values.size()) != expected_size) {
+    *error = "expected " + std::to_string(expected_size) + " entries for field: " + key;
+    return false;
+  }
+  *out = Eigen::VectorXd(expected_size);
+  for (int i = 0; i < expected_size; ++i) {
+    (*out)(i) = values[static_cast<size_t>(i)];
+  }
+  return true;
+}
+
 bool parse_mat2(const std::string& text,
                 const std::string& key,
                 Eigen::MatrixXd* out,
@@ -362,15 +396,61 @@ bool parse_mat2(const std::string& text,
   return true;
 }
 
+bool parse_mat_n(const std::string& text,
+                 const std::string& key,
+                 int expected_dim,
+                 Eigen::MatrixXd* out,
+                 std::string* error) {
+  if (expected_dim <= 0) {
+    *error = "invalid expected matrix size for field: " + key;
+    return false;
+  }
+  std::string block;
+  if (!extract_delimited_block(text, key, '[', ']', &block, error)) {
+    return false;
+  }
+  std::vector<double> values;
+  if (!parse_number_list(block, &values, error)) {
+    *error = "invalid matrix field: " + key;
+    return false;
+  }
+  const int expected_entries = expected_dim * expected_dim;
+  if (static_cast<int>(values.size()) != expected_entries) {
+    *error = "expected " + std::to_string(expected_entries) + " entries for field: " + key;
+    return false;
+  }
+  *out = Eigen::MatrixXd(expected_dim, expected_dim);
+  for (int r = 0; r < expected_dim; ++r) {
+    for (int c = 0; c < expected_dim; ++c) {
+      (*out)(r, c) = values[static_cast<size_t>(r * expected_dim + c)];
+    }
+  }
+  return true;
+}
+
 bool canonicalize_message_payload(MessageDump* message, std::string* error) {
-  if (message->msg_eta.size() != 2 || message->msg_lam.rows() != 2 || message->msg_lam.cols() != 2) {
+  if (message->message_slot < 0) {
+    *error = "bad_bank_slot";
+    return false;
+  }
+
+  if (message->msg_eta.size() != message->msg_lam.rows()
+      || message->msg_lam.rows() != message->msg_lam.cols()) {
     *error = "message payload shape mismatch";
     return false;
   }
 
-  if (message->message_slot < 0) {
-    *error = "bad_bank_slot";
-    return false;
+  if (message->msg_eta.size() != 2) {
+    if (!message->msg_eta.allFinite() || !message->msg_lam.allFinite()) {
+      *error = "non_finite_message_payload";
+      return false;
+    }
+    const double max_asym = (message->msg_lam - message->msg_lam.transpose()).cwiseAbs().maxCoeff();
+    if (max_asym > 1e-6) {
+      *error = "lam_not_symmetric";
+      return false;
+    }
+    return true;
   }
 
   const double lam01 = message->msg_lam(0, 1);
@@ -424,14 +504,16 @@ bool canonicalize_message_payload(MessageDump* message, std::string* error) {
 }
 
 bool parse_message_dump(const std::string& text, MessageDump* out, std::string* error) {
+  int dim = -1;
   if (!extract_int(text, "factor_id", &out->factor_id, error) ||
       !extract_int(text, "variable_id", &out->variable_id, error) ||
       !extract_int(text, "message_slot", &out->message_slot, error) ||
       !extract_int(text, "msg_bank", &out->msg_bank, error) ||
       !extract_int(text, "msg_row", &out->msg_row, error) ||
       !extract_int(text, "msg_beat", &out->msg_beat, error) ||
-      !parse_vec2(text, "msg_eta", &out->msg_eta, error) ||
-      !parse_mat2(text, "msg_lam", &out->msg_lam, error)) {
+      !extract_int(text, "dim", &dim, error) ||
+      !parse_vec_n(text, "msg_eta", dim, &out->msg_eta, error) ||
+      !parse_mat_n(text, "msg_lam", dim, &out->msg_lam, error)) {
     return false;
   }
   if (out->msg_bank < 4 || out->msg_bank > 7) {
@@ -450,17 +532,19 @@ bool parse_variable_dump(const std::string& text, VariableDump* out, std::string
       !extract_int(text, "state_bank", &out->state_bank, error) ||
       !extract_int(text, "state_row", &out->state_row, error) ||
       !extract_int(text, "snapshot_seq", &out->snapshot_seq, error) ||
-      !extract_int(text, "snapshot_cycle", &out->snapshot_cycle, error) ||
-      !parse_vec2(text, "prior_eta", &out->prior_eta, error) ||
-      !parse_mat2(text, "prior_lam", &out->prior_lam, error)) {
+      !extract_int(text, "snapshot_cycle", &out->snapshot_cycle, error)) {
     return false;
   }
-  if (out->dofs != 2) {
-    *error = "unsupported dofs (expected 2)";
+  if (out->dofs <= 0) {
+    *error = "unsupported dofs (expected positive)";
     return false;
   }
   if (out->state_bank < 1 || out->state_bank > 3) {
     *error = "state bank outside B1-B3";
+    return false;
+  }
+  if (!parse_vec_n(text, "prior_eta", out->dofs, &out->prior_eta, error) ||
+      !parse_mat_n(text, "prior_lam", out->dofs, &out->prior_lam, error)) {
     return false;
   }
 
@@ -493,7 +577,8 @@ bool parse_graph_dump(const std::string& text, GraphDump* out, std::string* erro
     return false;
   }
 
-  if (out->workload != "synthetic_line" && out->workload != "synthetic_lattice") {
+  if (out->workload != "synthetic_line" && out->workload != "synthetic_lattice"
+      && out->workload != "bal_fr1desk_small") {
     *error = "unsupported workload";
     return false;
   }
@@ -510,9 +595,17 @@ bool parse_graph_dump(const std::string& text, GraphDump* out, std::string* erro
     if (!extract_int(graph, "node_count", &out->node_count, error)) {
       return false;
     }
-  } else {
+  } else if (out->workload == "synthetic_lattice") {
     if (!extract_int(graph, "rows", &out->rows, error) ||
         !extract_int(graph, "cols", &out->cols, error)) {
+      return false;
+    }
+  } else {
+    if (!extract_quoted_string(graph, "dataset", &out->ba_dataset, error)) {
+      return false;
+    }
+    if (out->ba_dataset != kBaDatasetPath) {
+      *error = "unsupported BA dataset";
       return false;
     }
   }
@@ -758,8 +851,41 @@ bool make_graph(const GraphDump& dump, LinearFactorGraph* out, std::string* erro
   return false;
 }
 
+bool make_ba_graph(const GraphDump& dump, BAFactorGraph* out, std::string* error) {
+  Config config{};
+  config.eta_damping = 0.4;
+  config.beta = 0.01;
+  config.num_undamped_iters = 6;
+  config.min_linear_iters = 8;
+  config.gauss_noise_std = 2.0;
+  config.loss = HUBER;
+  config.mahalanobis_threshold = 3.0;
+
+  if (dump.workload != "bal_fr1desk_small") {
+    *error = "unsupported workload";
+    return false;
+  }
+
+  std::string dataset_path = dump.ba_dataset;
+  if (!std::filesystem::is_regular_file(dataset_path)
+      && dump.ba_dataset.rfind("data/", 0) == 0u) {
+    const std::string alt = std::string("../") + dump.ba_dataset;
+    if (std::filesystem::is_regular_file(alt)) {
+      dataset_path = alt;
+    }
+  }
+
+  try {
+    *out = create_ba_graph(dataset_path, config);
+    return true;
+  } catch (const std::exception& e) {
+    *error = std::string("failed to construct BA graph: ") + e.what();
+    return false;
+  }
+}
+
 bool apply_reconstructed_beliefs(const GraphDump& dump,
-                                 LinearFactorGraph* graph,
+                                 FactorGraph* graph,
                                  std::string* error) {
   const std::vector<VariableNode*> graph_vars = graph->get_var_nodes();
   std::unordered_map<int, VariableDump> by_id;
@@ -812,11 +938,56 @@ bool apply_reconstructed_beliefs(const GraphDump& dump,
 
     var->set_prior_eta(record.prior_eta);
     var->set_prior_lam(record.prior_lam);
+    const int var_dofs = var->get_dofs();
+    std::unordered_map<int, size_t> message_index_by_factor;
+    message_index_by_factor.reserve(adj.size());
+    for (size_t adj_idx = 0; adj_idx < adj.size(); ++adj_idx) {
+      message_index_by_factor.emplace(adj[adj_idx]->get_factor_id(), adj_idx);
+    }
+
+    const auto to_var_dim_message = [&](const MessageDump& msg, NdimGaussian* out_msg) -> bool {
+      if (out_msg == nullptr) {
+        return false;
+      }
+      if (msg.msg_eta.size() == var_dofs && msg.msg_lam.rows() == var_dofs
+          && msg.msg_lam.cols() == var_dofs) {
+        *out_msg = NdimGaussian(var_dofs, msg.msg_eta, msg.msg_lam);
+        return true;
+      }
+
+      const auto idx_it = message_index_by_factor.find(msg.factor_id);
+      if (idx_it == message_index_by_factor.end()) {
+        return false;
+      }
+      const size_t adj_idx = idx_it->second;
+      if (adj_idx >= adj.size()) {
+        return false;
+      }
+      const std::vector<int> adj_var_ids = adj[adj_idx]->get_adj_vIDs();
+      const auto var_it = std::find(adj_var_ids.begin(), adj_var_ids.end(), var_id);
+      if (var_it == adj_var_ids.end()) {
+        return false;
+      }
+      const size_t message_ix = static_cast<size_t>(std::distance(adj_var_ids.begin(), var_it));
+      const std::vector<NdimGaussian> factor_messages = adj[adj_idx]->get_messages();
+      if (message_ix >= factor_messages.size()) {
+        return false;
+      }
+      *out_msg = factor_messages[message_ix];
+      return true;
+    };
+
     std::vector<NdimGaussian> inbound;
     inbound.reserve(full_fan_in.size());
     for (const MessageDump& msg : full_fan_in) {
       observed_factor_ids.insert(msg.factor_id);
-      inbound.push_back(NdimGaussian(2, msg.msg_eta, msg.msg_lam));
+      NdimGaussian inbound_msg(var_dofs);
+      if (!to_var_dim_message(msg, &inbound_msg)) {
+        *error = "unable to materialize inbound message for var_id=" + std::to_string(var_id)
+            + " factor_id=" + std::to_string(msg.factor_id);
+        return false;
+      }
+      inbound.push_back(inbound_msg);
     }
     if (observed_factor_ids != expected_factor_ids) {
       *error = "inbound factor_id set mismatch for var_id=" + std::to_string(var_id);
@@ -861,24 +1032,38 @@ bool collect_static_inbound_factors(const std::string& workload,
   dump.init_noise_std = 1.0;
   dump.seed = seed;
   dump.anchor_std = 0.001;
+  if (workload == "bal_fr1desk_small") {
+    dump.ba_dataset = kBaDatasetPath;
+  }
+
+  auto collect_for_vars = [out](const std::vector<VariableNode*>& graph_vars) {
+    out->clear();
+    for (const VariableNode* var : graph_vars) {
+      std::vector<int> factor_ids;
+      const std::vector<FactorNode*> adj = var->get_adj_fac_nodes();
+      factor_ids.reserve(adj.size());
+      for (const FactorNode* factor : adj) {
+        factor_ids.push_back(factor->get_factor_id());
+      }
+      std::sort(factor_ids.begin(), factor_ids.end());
+      out->emplace(var->get_variable_ID(), factor_ids);
+    }
+  };
+
+  if (dump.workload == "bal_fr1desk_small") {
+    BAFactorGraph graph(0.0, 0.0, 0, 0);
+    if (!make_ba_graph(dump, &graph, error)) {
+      return false;
+    }
+    collect_for_vars(graph.get_var_nodes());
+    return true;
+  }
 
   LinearFactorGraph graph(false, 0.0, 0.0, 0, 0);
   if (!make_graph(dump, &graph, error)) {
     return false;
   }
-
-  out->clear();
-  const std::vector<VariableNode*> graph_vars = graph.get_var_nodes();
-  for (const VariableNode* var : graph_vars) {
-    std::vector<int> factor_ids;
-    const std::vector<FactorNode*> adj = var->get_adj_fac_nodes();
-    factor_ids.reserve(adj.size());
-    for (const FactorNode* factor : adj) {
-      factor_ids.push_back(factor->get_factor_id());
-    }
-    std::sort(factor_ids.begin(), factor_ids.end());
-    out->emplace(var->get_variable_ID(), factor_ids);
-  }
+  collect_for_vars(graph.get_var_nodes());
 
   return true;
 }
@@ -900,6 +1085,24 @@ bool reconstruct_metrics_from_dump(const std::string& dump_path,
   GraphDump dump;
   if (!parse_graph_dump(text, &dump, error)) {
     return false;
+  }
+
+  if (dump.workload == "bal_fr1desk_small") {
+    BAFactorGraph graph(0.0, 0.0, 0, 0);
+    if (!make_ba_graph(dump, &graph, error)) {
+      return false;
+    }
+    if (!apply_reconstructed_beliefs(dump, &graph, error)) {
+      return false;
+    }
+    // 白盒 dump 当前直接恢复的是变量 belief/prior/message；
+    // 为了让 energy 与 oracle 生成链保持同一因子内部状态语义，
+    // 在测试后处理里补一次 factor 与 robustify 同步，不回写 DUT。
+    graph.compute_all_factors();
+    graph.robustify_all_factors();
+    out->are = graph.are();
+    out->energy = graph.energy();
+    return std::isfinite(out->are) && std::isfinite(out->energy);
   }
 
   LinearFactorGraph graph(false, 0.0, 0.0, 0, 0);
@@ -928,9 +1131,12 @@ bool reconstruct_metrics_from_dump(const std::string& dump_path,
 
 #include "../../../nocbp_simulator/utils/Logger.cpp"
 #include "../../../nocbp_simulator/utils/read_g2o.cpp"
+#include "../../../nocbp_simulator/utils/read_balfile.cpp"
 #include "../../../nocbp_simulator/gbp/precision.cpp"
+#include "../../../nocbp_simulator/gbp/reprojection_utils.cpp"
 #include "../../../nocbp_simulator/gbp/factor_utils.cpp"
 #include "../../../nocbp_simulator/gbp/VariableNode.cpp"
 #include "../../../nocbp_simulator/gbp/FactorNode.cpp"
 #include "../../../nocbp_simulator/gbp/FactorGraph.cpp"
+#include "../../../nocbp_simulator/gbp/BAFactorGraph.cpp"
 #include "../../../nocbp_simulator/gbp/LinearFactorGraph.cpp"

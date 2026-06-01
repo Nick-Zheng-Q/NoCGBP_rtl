@@ -14,6 +14,7 @@ module gbp_pe_single_pe_gbp
   output logic                  decode_error_o,
   output logic                  compute_start_o,
   output logic                  compute_done_o,
+  output logic                  rsp_done_o,
   output logic [TXN_ID_W-1:0]   cmd_txn_id_o,
   output logic                  wr_req_valid_o,
   output logic [TXN_ID_W-1:0]   wr_txn_id_o,
@@ -150,6 +151,7 @@ module gbp_pe_single_pe_gbp
   assign decode_error_o = dut.bridge_decode_error_lo;
   assign compute_start_o = dut.pe_compute_start_lo;
   assign compute_done_o = dut.pe_compute_done_lo;
+  assign rsp_done_o = dut.pe.compute_rsp_done_lo;
   assign cmd_txn_id_o = dut.pe_cmd_txn_id_lo;
   assign wr_req_valid_o = dut.pe_wr_req_valid_lo;
   assign wr_txn_id_o = dut.pe_wr_txn_id_lo;

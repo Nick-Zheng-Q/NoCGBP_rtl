@@ -46,6 +46,8 @@ int run_test(int argc, char** argv) {
     bool persistence_seen_before_egress = false;
     bool persistence_done_at_accept = false;
     uint32_t target_txn_id = 0;
+    uint32_t target_iteration_id = 0;
+    uint32_t accepted_iteration_id = 0;
 
     for (int cycle = 0; cycle < kMaxSpmStallCycles; ++cycle) {
       tick(dut);
@@ -57,6 +59,7 @@ int run_test(int argc, char** argv) {
       if (!compute_done_seen && compute_done_pulse) {
         compute_done_seen = true;
         target_txn_id = static_cast<uint32_t>(dut->compute_txn_id_o);
+        target_iteration_id = static_cast<uint32_t>(dut->obs_iteration_id_o);
       }
 
       const bool accepted = static_cast<bool>(dut->egress_v_o) && static_cast<bool>(dut->noc_ready_i);
@@ -65,6 +68,7 @@ int run_test(int argc, char** argv) {
         const uint32_t accepted_txn_id = static_cast<uint32_t>(dut->egress_txn_id_o);
         if (accepted_txn_id == target_txn_id) {
           persistence_done_at_accept = persistence_done;
+          accepted_iteration_id = static_cast<uint32_t>(dut->obs_last_egress_accept_iteration_o);
           accepted_done_packet = true;
           break;
         }
@@ -90,6 +94,16 @@ int run_test(int argc, char** argv) {
       return 3;
     }
 
+    if (accepted_iteration_id != target_iteration_id) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: OBS_CONTRACT_ITERATION_MISMATCH_MARKER txn_id=0x%02x compute_iter=%u accept_iter=%u\n",
+                   static_cast<unsigned int>(target_txn_id),
+                   static_cast<unsigned int>(target_iteration_id),
+                   static_cast<unsigned int>(accepted_iteration_id));
+      delete dut;
+      return 3;
+    }
+
     if (persistence_seen_before_egress) {
       std::fprintf(stderr,
                    "gbp_pe_compute_done_egress: FAIL persistence_precedes_egress_under_spm_stall txn_id=0x%02x\n",
@@ -104,6 +118,36 @@ int run_test(int argc, char** argv) {
                    static_cast<unsigned int>(target_txn_id));
       delete dut;
       return 1;
+    }
+
+    if (static_cast<uint32_t>(dut->obs_compute_done_pulse_count_o) == 0u) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: OBS_CONTRACT_ACTIVITY_MISSING_MARKER done=%u rsp=%u egress_accept=%u ingress_write=%u ingress_consume=%u\n",
+                   static_cast<unsigned int>(dut->obs_compute_done_pulse_count_o),
+                   static_cast<unsigned int>(dut->obs_rsp_done_pulse_count_o),
+                   static_cast<unsigned int>(dut->obs_egress_accept_count_o),
+                   static_cast<unsigned int>(dut->obs_ingress_write_count_o),
+                   static_cast<unsigned int>(dut->obs_ingress_consume_count_o));
+      delete dut;
+      return 3;
+    }
+
+    if (static_cast<uint32_t>(dut->obs_ingress_consume_count_o)
+        > static_cast<uint32_t>(dut->obs_ingress_write_count_o)) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: OBS_CONTRACT_INGRESS_OVERCONSUME_MARKER writes=%u consumes=%u\n",
+                   static_cast<unsigned int>(dut->obs_ingress_write_count_o),
+                   static_cast<unsigned int>(dut->obs_ingress_consume_count_o));
+      delete dut;
+      return 3;
+    }
+
+    if (static_cast<uint32_t>(dut->obs_rsp_done_pulse_count_o) != 0u) {
+      std::fprintf(stderr,
+                   "gbp_pe_compute_done_egress: OBS_CONTRACT_PERSISTENCE_NOT_SECONDARY_MARKER rsp_done_pulses=%u\n",
+                   static_cast<unsigned int>(dut->obs_rsp_done_pulse_count_o));
+      delete dut;
+      return 3;
     }
 
     std::printf("gbp_pe_compute_done_egress: PASS txn_id=0x%02x packets=1 egress_precedes_persistence=1 persistence_secondary=1\n",
@@ -122,6 +166,8 @@ int run_test(int argc, char** argv) {
   bool accepted_after_release = false;
   int stall_hold_cycles = 0;
   uint32_t target_txn_id = 0;
+  uint32_t target_iteration_id = 0;
+  uint32_t accepted_iteration_id = 0;
   int target_packet_accepts = 0;
   bool completion_window_active = false;
   bool completion_window_closed = false;
@@ -136,6 +182,7 @@ int run_test(int argc, char** argv) {
     if (!target_done_seen && compute_done_pulse) {
       target_done_seen = true;
       target_txn_id = static_cast<uint32_t>(dut->compute_txn_id_o);
+      target_iteration_id = static_cast<uint32_t>(dut->obs_iteration_id_o);
       completion_window_active = true;
     } else if (completion_window_active && compute_done_pulse) {
       completion_window_active = false;
@@ -162,6 +209,7 @@ int run_test(int argc, char** argv) {
       }
       if (accepted_txn_id == target_txn_id) {
         target_packet_accepts++;
+        accepted_iteration_id = static_cast<uint32_t>(dut->obs_last_egress_accept_iteration_o);
       }
     }
 
@@ -201,6 +249,40 @@ int run_test(int argc, char** argv) {
                  target_packet_accepts);
     delete dut;
     return 1;
+  }
+
+  if (accepted_iteration_id != target_iteration_id) {
+    std::fprintf(stderr,
+                 "gbp_pe_compute_done_egress: OBS_CONTRACT_ITERATION_MISMATCH_MARKER txn_id=0x%02x compute_iter=%u accept_iter=%u\n",
+                 static_cast<unsigned int>(target_txn_id),
+                 static_cast<unsigned int>(target_iteration_id),
+                 static_cast<unsigned int>(accepted_iteration_id));
+    delete dut;
+    return 2;
+  }
+
+  if (static_cast<uint32_t>(dut->obs_compute_done_pulse_count_o) == 0u
+      || static_cast<uint32_t>(dut->obs_rsp_done_pulse_count_o) == 0u
+      || static_cast<uint32_t>(dut->obs_egress_accept_count_o) == 0u) {
+    std::fprintf(stderr,
+                 "gbp_pe_compute_done_egress: OBS_CONTRACT_ACTIVITY_MISSING_MARKER done=%u rsp=%u egress_accept=%u ingress_write=%u ingress_consume=%u\n",
+                 static_cast<unsigned int>(dut->obs_compute_done_pulse_count_o),
+                 static_cast<unsigned int>(dut->obs_rsp_done_pulse_count_o),
+                 static_cast<unsigned int>(dut->obs_egress_accept_count_o),
+                 static_cast<unsigned int>(dut->obs_ingress_write_count_o),
+                 static_cast<unsigned int>(dut->obs_ingress_consume_count_o));
+    delete dut;
+    return 2;
+  }
+
+  if (static_cast<uint32_t>(dut->obs_ingress_consume_count_o)
+      > static_cast<uint32_t>(dut->obs_ingress_write_count_o)) {
+    std::fprintf(stderr,
+                 "gbp_pe_compute_done_egress: OBS_CONTRACT_INGRESS_OVERCONSUME_MARKER writes=%u consumes=%u\n",
+                 static_cast<unsigned int>(dut->obs_ingress_write_count_o),
+                 static_cast<unsigned int>(dut->obs_ingress_consume_count_o));
+    delete dut;
+    return 2;
   }
 
    if (expect_mismatch) {

@@ -18,3 +18,6 @@
 [submodule "basejump_stl"]
 	path = basejump_stl
 	url = https://github.com/bespoke-silicon-group/basejump_stl.git
+[submodule "ramulator"]
+	path = ramulator
+	url = https://github.com/CMU-SAFARI/ramulator.git

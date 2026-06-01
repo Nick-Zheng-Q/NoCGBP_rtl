@@ -1,0 +1,8 @@
+top: $(if $(filter 2:2x1,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),gbp_pe_mesh_convergence,$(if $(filter 4:2x2,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),gbp_pe_mesh_convergence,$(if $(filter 16:4x4,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),gbp_pe_mesh_convergence,$(if $(filter 32:8x4,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),gbp_pe_mesh_convergence,$(error unsupported gbp_pe_mesh_convergence config; expected PE_COUNT/MESH_X/MESH_Y of 2/2/1, 4/2/2, 16/4/4, or 32/8/4)))))
+top_sv: $(if $(filter 2:2x1,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tops/integration/gbp_pe_mesh_gbp.sv,$(if $(filter 4:2x2,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tops/integration/gbp_pe_mesh_gbp.sv,$(if $(filter 16:4x4,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tops/integration/gbp_pe_mesh_gbp.sv,$(if $(filter 32:8x4,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tops/integration/gbp_pe_mesh_gbp.sv,$(error unsupported gbp_pe_mesh_convergence config; expected PE_COUNT/MESH_X/MESH_Y of 2/2/1, 4/2/2, 16/4/4, or 32/8/4)))))
+rtl_f: $(if $(filter 2:2x1,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tests/integration/gbp_pe_mesh_convergence.f,$(if $(filter 4:2x2,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tests/integration/gbp_pe_mesh_convergence.f,$(if $(filter 16:4x4,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tests/integration/gbp_pe_mesh_convergence.f,$(if $(filter 32:8x4,$(PE_COUNT):$(MESH_X)x$(MESH_Y)),tests/integration/gbp_pe_mesh_convergence.f,$(error unsupported gbp_pe_mesh_convergence config; expected PE_COUNT/MESH_X/MESH_Y of 2/2/1, 4/2/2, 16/4/4, or 32/8/4)))))
+tb: tests/integration/gbp_pe_mesh_convergence.cc
+defines:
+  - GBP_PE_COUNT=$(PE_COUNT)
+  - GBP_MESH_X=$(MESH_X)
+  - GBP_MESH_Y=$(MESH_Y)

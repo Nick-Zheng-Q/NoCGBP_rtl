@@ -1,0 +1,2 @@
+top: control_gbp_test_top
+rtl_f: tests/integration/control_gbp_test.f
