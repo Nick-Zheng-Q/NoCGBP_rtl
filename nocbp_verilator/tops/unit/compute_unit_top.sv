@@ -1,86 +1,83 @@
-module compute_unit_top (
-    input logic clk,
-    input logic rst_n,
-    input logic i_cmd_valid,
-    input logic i_cmd_kind,
-    output logic o_cmd_ready,
-    output logic o_rsp_done,
-    input logic i_valid,
-    input logic [1:0] i_op,
-    input logic i_write_ready,
-    input logic [31:0] i_a0,
-    input logic [31:0] i_a1,
-    input logic [31:0] i_a2,
-    input logic [31:0] i_a3,
-    input logic [31:0] i_b0,
-    input logic [31:0] i_b1,
-    input logic [31:0] i_b2,
-    input logic [31:0] i_b3,
-    output logic o_valid,
-    output logic o_wr_valid,
-    output logic [31:0] o_wr_data,
-    output logic [31:0] o_y0,
-    output logic [31:0] o_y1,
-    output logic [31:0] o_y2,
-    output logic [31:0] o_y3
-);
+module compute_unit_top;
+  import gbp_pkg::*;
 
-  localparam int lanes_lp = 4;
+  logic clk, rst_n;
 
-  logic reset_i;
-  logic [lanes_lp-1:0][31:0] data_a;
-  logic [lanes_lp-1:0][31:0] data_b;
-  logic [lanes_lp-1:0][31:0] data_o;
-  logic valid_o;
+  // Command
+  logic                 cmd_valid;
+  logic                 cmd_ready;
+  logic [NODE_ID_W-1:0] cmd_node_id;
+  logic                 cmd_is_factor;
+  logic [DOF_W-1:0]     cmd_dof;
+  logic [ADJ_COUNT_W-1:0] cmd_adj_count;
+  logic [STATE_WORDS_W-1:0] cmd_state_words;
 
-  read_stream_if if_read_stream();
-  write_stream_if if_write_stream();
+  // Neighbor state
+  logic                 ns_valid;
+  logic                 ns_ready;
+  logic [FP32_W-1:0]    ns_data;
+  logic                 ns_last;
 
-  assign reset_i = ~rst_n;
+  // Read Stream Engine
+  logic                 rd_desc_valid;
+  logic                 rd_desc_ready;
+  logic [SPM_ADDR_W-1:0] rd_desc_base_addr;
+  logic [15:0]          rd_desc_word_count;
+  logic                 rd_desc_is_staging;
 
-  assign data_a[0] = i_a0;
-  assign data_a[1] = i_a1;
-  assign data_a[2] = i_a2;
-  assign data_a[3] = i_a3;
+  logic                 rd_beat_valid;
+  logic                 rd_beat_ready;
+  logic [BEAT_BITS-1:0] rd_beat_data;
 
-  assign data_b[0] = i_b0;
-  assign data_b[1] = i_b1;
-  assign data_b[2] = i_b2;
-  assign data_b[3] = i_b3;
+  // Write Stream Engine
+  logic                 wr_desc_valid;
+  logic                 wr_desc_ready;
+  logic [SPM_ADDR_W-1:0] wr_desc_base_addr;
+  logic [15:0]          wr_desc_word_count;
 
-  assign if_read_stream.valid = 1'b0;
-  assign if_read_stream.data = '0;
+  logic                 wr_word_valid;
+  logic                 wr_word_ready;
+  logic [FP32_W-1:0]    wr_word_data;
 
-  assign if_write_stream.ready = i_write_ready;
+  // Completion
+  logic                 done_valid;
+  logic [NODE_ID_W-1:0] done_node_id;
+  logic                 done_is_factor;
+  logic                 batch_done;
 
-  assign o_valid = valid_o;
-  assign o_wr_valid = if_write_stream.valid;
-  assign o_wr_data = if_write_stream.data;
-
-  assign o_y0 = data_o[0];
-  assign o_y1 = data_o[1];
-  assign o_y2 = data_o[2];
-  assign o_y3 = data_o[3];
-
-  compute_unit #(
-      .GBP_CORE_PER_PE(lanes_lp)
-  ) dut (
-      .clk_i(clk),
-      .reset_i(reset_i),
-      .cmd_valid_i(i_cmd_valid),
-      .cmd_kind_i(i_cmd_kind),
-      .cmd_ready_o(o_cmd_ready),
-      .compute_done_o(),
-      .rsp_done_o(o_rsp_done),
-      .force_persistence_stall_i(1'b0),
-      .if_stream_if_stream(if_read_stream),
-      .if_write_stream_if_stream(if_write_stream),
-      .data_a_i(data_a),
-      .data_b_i(data_b),
-      .op_i(i_op),
-      .valid_i(i_valid),
-      .data_o(data_o),
-      .valid_o(valid_o)
+  compute_unit u_dut (
+    .clk(clk),
+    .rst_n(rst_n),
+    .cmd_valid(cmd_valid),
+    .cmd_ready(cmd_ready),
+    .cmd_node_id(cmd_node_id),
+    .cmd_is_factor(cmd_is_factor),
+    .cmd_dof(cmd_dof),
+    .cmd_adj_count(cmd_adj_count),
+    .cmd_state_words(cmd_state_words),
+    .ns_valid(ns_valid),
+    .ns_ready(ns_ready),
+    .ns_data(ns_data),
+    .ns_last(ns_last),
+    .rd_desc_valid(rd_desc_valid),
+    .rd_desc_ready(rd_desc_ready),
+    .rd_desc_base_addr(rd_desc_base_addr),
+    .rd_desc_word_count(rd_desc_word_count),
+    .rd_desc_is_staging(rd_desc_is_staging),
+    .rd_beat_valid(rd_beat_valid),
+    .rd_beat_ready(rd_beat_ready),
+    .rd_beat_data(rd_beat_data),
+    .wr_desc_valid(wr_desc_valid),
+    .wr_desc_ready(wr_desc_ready),
+    .wr_desc_base_addr(wr_desc_base_addr),
+    .wr_desc_word_count(wr_desc_word_count),
+    .wr_word_valid(wr_word_valid),
+    .wr_word_ready(wr_word_ready),
+    .wr_word_data(wr_word_data),
+    .done_valid(done_valid),
+    .done_node_id(done_node_id),
+    .done_is_factor(done_is_factor),
+    .batch_done(batch_done)
   );
 
 endmodule

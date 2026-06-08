@@ -1,0 +1,3 @@
+top: notification_flow_top
+top_sv: tops/integration/notification_flow_top.sv
+rtl_f: tests/integration/notification_flow.f

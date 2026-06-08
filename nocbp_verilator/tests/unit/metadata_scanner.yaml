@@ -1,0 +1,3 @@
+top: metadata_scanner_top
+top_sv: tops/unit/metadata_scanner_top.sv
+rtl_f: tests/unit/metadata_scanner.f

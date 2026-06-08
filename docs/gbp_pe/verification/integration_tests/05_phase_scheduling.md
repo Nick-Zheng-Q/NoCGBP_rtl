@@ -9,11 +9,17 @@ Verify the phase-based scheduling across multiple modules:
 4. Metadata Scanner provides node information
 5. Compute Unit executes node update
 
+
+---
+
 ## 2. Preconditions
 
 - System: Single PE with multiple nodes
 - Nodes: 4 factor nodes (0-3), 4 variable nodes (4-7)
 - Initial state: Factor phase, nodes 0 and 1 ready
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -26,12 +32,12 @@ Verify the phase-based scheduling across multiple modules:
 | T+1   | node_ready | 0x0003 | Nodes 0-1 ready |
 | T+2   | sched_valid | 1 | Node 0 selected |
 | T+2   | sched_node_id | 0 | Node 0 |
-| T+3   | compute_done_valid | 1 | Node 0 complete |
-| T+3   | compute_done_node_id | 0 | Node 0 |
+| T+3   | done_valid | 1 | Node 0 complete |
+| T+3   | done_node_id | 0 | Node 0 |
 | T+4   | sched_valid | 1 | Node 1 selected |
 | T+4   | sched_node_id | 1 | Node 1 |
-| T+5   | compute_done_valid | 1 | Node 1 complete |
-| T+5   | compute_done_node_id | 1 | Node 1 |
+| T+5   | done_valid | 1 | Node 1 complete |
+| T+5   | done_node_id | 1 | Node 1 |
 | T+6   | no_schedulable_nodes | 1 | No more factor nodes |
 
 ### Phase 2: Variable Phase
@@ -42,12 +48,12 @@ Verify the phase-based scheduling across multiple modules:
 | T+7   | node_ready | 0x00F0 | Nodes 4-7 ready |
 | T+8   | sched_valid | 1 | Node 4 selected |
 | T+8   | sched_node_id | 4 | Node 4 |
-| T+9   | compute_done_valid | 1 | Node 4 complete |
-| T+9   | compute_done_node_id | 4 | Node 4 |
+| T+9   | done_valid | 1 | Node 4 complete |
+| T+9   | done_node_id | 4 | Node 4 |
 | T+10  | sched_valid | 1 | Node 5 selected |
 | T+10  | sched_node_id | 5 | Node 5 |
-| T+11  | compute_done_valid | 1 | Node 5 complete |
-| T+11  | compute_done_node_id | 5 | Node 5 |
+| T+11  | done_valid | 1 | Node 5 complete |
+| T+11  | done_node_id | 5 | Node 5 |
 | T+12  | no_schedulable_nodes | 1 | No more variable nodes |
 
 ### Phase 3: Back to Factor Phase
@@ -58,6 +64,9 @@ Verify the phase-based scheduling across multiple modules:
 | T+13  | node_ready | 0x000C | Nodes 2-3 ready |
 | T+14  | sched_valid | 1 | Node 2 selected |
 | T+14  | sched_node_id | 2 | Node 2 |
+
+
+---
 
 ## 4. Expected Output
 
@@ -96,6 +105,9 @@ Verify the phase-based scheduling across multiple modules:
 | T+13  | phase_switch_pulse | 0 | No switch |
 | T+14  | sched_is_factor | 1 | Factor node |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -115,6 +127,9 @@ done      _______|   0   |__________________|   4   |______________
 switch    _______________________|        |________________________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Phase alternates correctly (factor → variable → factor)
@@ -125,6 +140,9 @@ switch    _______________________|        |________________________
 - [ ] Round-robin within phase works correctly
 - [ ] `no_schedulable_nodes` triggers phase switch
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Empty phase**: Phase with 0 ready nodes
@@ -132,3 +150,21 @@ switch    _______________________|        |________________________
 3. **Continuous phase**: No switch needed (always nodes ready)
 4. **Reset during phase**: Verify clean recovery
 5. **Simultaneous ready nodes**: Multiple nodes ready same cycle
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

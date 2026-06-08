@@ -1,3 +1,0 @@
-top: gbp_pe_compute_done_egress
-top_sv: tops/integration/gbp_pe_compute_done_egress.sv
-rtl_f: tests/integration/gbp_pe_compute_done_egress.f

@@ -6,7 +6,7 @@ GBP messages are transported over the manycore NoC using `e_remote_store` operat
 
 | Message | Mailbox Address | Payload | Purpose |
 |---------|----------------|---------|---------|
-| NOTIFICATION | `MBX_NOTIFICATION` | `{is_factor, source_node_id}` | Tell consumer "my state changed" |
+| NOTIFICATION | `MBX_NOTIFICATION` | `{is_factor, source_node_id, target_node_id}` | Tell consumer "my state changed" |
 | FETCH_REQUEST | `MBX_FETCH_REQ_*` (×3 stores) | `{is_factor, consumer_id}`, `{target_node_id}`, `{txn_id}` | Consumer requests current state |
 | FETCH_RESPONSE | `MBX_RESP_META` + `MBX_RESP_DATA`×N + `MBX_RESP_DONE` | metadata, data words, done signal | Producer sends requested state |
 
@@ -25,16 +25,15 @@ op      = e_remote_store
 dst_x   = consumer PE x_cord
 dst_y   = consumer PE y_cord
 addr    = GBP_BASE_ADDR + MBX_NOTIFICATION
-payload = {is_factor, source_node_id[NODE_ID_W-1:0]}
+payload = {is_factor, source_node_id[NODE_ID_W-1:0], target_node_id[NODE_ID_W-1:0]}
 ```
 
 ### 2.2 Send Logic (after producer updates node N)
 
 ```
 for each consuming neighbor M (remote):
-    dst_pe = lookup PE owning M
-    dst_xy = pe_id_to_xy(dst_pe)
-    send store(addr=MBX_NOTIFICATION, payload={is_factor, N}, dst=dst_xy)
+    (dst_x, dst_y) = lookup coordinates of PE owning M
+    send store(addr=MBX_NOTIFICATION, payload={is_factor, N, M}, dst=(dst_x, dst_y))
 ```
 
 ### 2.3 Receive Logic (on consumer PE)
@@ -42,6 +41,7 @@ for each consuming neighbor M (remote):
 ```
 NoC Adapter decodes in_addr == GBP_BASE_ADDR + MBX_NOTIFICATION:
   → Extract source_node_id from in_data_o
+  → Extract target_node_id from in_data_o
   → Extract source PE from (in_src_x_cord_o, in_src_y_cord_o)
   → Assert rx_notif_valid to ScoreboardPrefetcher
   → Record notification on edge (M, N)
@@ -79,18 +79,17 @@ addr    = GBP_BASE_ADDR + MBX_FETCH_REQ_2
 payload = {txn_id[TXN_ID_W-1:0]}
 ```
 
-`txn_id` is assigned by ScoreboardPrefetcher at request time. It is the edge_index within the per-node edge array. Used by Response Collector for STAGING lookup and by ScoreboardPrefetcher for edge matching on completion.
+`txn_id` is assigned by ScoreboardPrefetcher at request time. It is the global edge index within the per-PE scoreboard array. Used by Response Collector for STAGING lookup and by ScoreboardPrefetcher for edge matching on completion.
 
 ### 3.2 Send Logic (ScoreboardPrefetcher, on notification receipt)
 
 ```
 for each edge with state == NOTIFIED:
-    dst_pe = edge.source_pe
-    dst_xy = pe_id_to_xy(dst_pe)
+    (dst_x, dst_y) = edge.source_x, edge.source_y
     txn_id = edge.edge_index   // per-node edge index
-    send store1(addr=MBX_FETCH_REQ_0, payload={is_factor, consumer_id}, dst=dst_xy)
-    send store2(addr=MBX_FETCH_REQ_1, payload={target_id}, dst=dst_xy)
-    send store3(addr=MBX_FETCH_REQ_2, payload={txn_id}, dst=dst_xy)
+    send store1(addr=MBX_FETCH_REQ_0, payload={is_factor, consumer_id}, dst=(dst_x, dst_y))
+    send store2(addr=MBX_FETCH_REQ_1, payload={target_id}, dst=(dst_x, dst_y))
+    send store3(addr=MBX_FETCH_REQ_2, payload={txn_id}, dst=(dst_x, dst_y))
     edge.state = IN_FLIGHT
     add to Scoreboard
 ```
@@ -103,7 +102,7 @@ NoC Adapter decodes in_addr:
   MBX_FETCH_REQ_1:     latch {target_node_id}
   MBX_FETCH_REQ_2:     latch {txn_id}
   → All three latched: assert rx_fetch_req_valid to Pull Server
-  → Pull Server queues request for processing (max 4 per cycle)
+  → Pull Server queues request for processing (max 1 per cycle)
   → txn_id is echoed in FETCH_RESPONSE for consumer-side matching
 ```
 
@@ -193,7 +192,7 @@ PE_A updates node N:
   1. Compute new state for N.
   2. Writeback N's STATE to local SPM.
   3. For each consuming neighbor M (remote):
-     - Send NOTIFICATION store to M's PE: addr=MBX_NOTIFICATION, payload={is_factor, N}.
+     - Send NOTIFICATION store to M's PE: addr=MBX_NOTIFICATION, payload={is_factor, N, M}.
 ```
 
 ### 5.2 Consumer Side (before node update)
@@ -248,7 +247,7 @@ The `noc_adapter` module wraps `bsg_manycore_endpoint_standard` and provides:
 GBP reserves a region in the PE's local EPA (Endpoint Address) space:
 
 ```
-Base: GBP_BASE_ADDR (e.g., 0x1000)
+Base: GBP_BASE_ADDR = 0x1000
 
 Offset  Size   Name                 Direction    Description
 ------  ----   ----                 ---------    -----------
@@ -348,7 +347,7 @@ The `endpoint_standard` provides source coordinates with each incoming request:
 in_src_x_cord_o, in_src_y_cord_o  →  source PE coordinates
 ```
 
-For FETCH_REQUEST, the source PE is needed to route the response back. The adapter converts `(in_src_x_cord_o, in_src_y_cord_o)` to a `PE_ID_W`-bit source PE identifier.
+For FETCH_REQUEST, the source PE coordinates are needed to route the response back. The noc_adapter exposes `(in_src_x_cord_o, in_src_y_cord_o)` directly as `rx_fetch_req_src_x` and `rx_fetch_req_src_y`. No PE ID conversion is needed.
 
 ### 6.6 Credit Flow Control
 
@@ -366,26 +365,9 @@ The endpoint_fc tracks:
 
 GBP modules must check `out_credit_or_ready_o` before sending. The `noc_adapter` provides a `tx_ready` signal back to internal modules based on this.
 
-### 6.7 Return Path (FETCH_RESPONSE via rev channel)
+### 6.7 Return Path (FETCH_RESPONSE via rev channel) — NOT USED
 
-Manycore has a dedicated reverse (`rev`) channel for return packets. FETCH_RESPONSE can optionally use this path:
-
-```
-Producer PE receives FETCH_REQUEST:
-  1. Decode request from in_addr_o / in_data_o
-  2. Read state from SPM
-  3. Return data via returning_data_i / returning_v_i (rev channel)
-     - pkt_type = e_return_int_wb
-     - data = state word
-     - reg_id = transaction ID (for matching)
-
-Consumer PE receives return packet:
-  1. returned_v_r_o asserted
-  2. Decode returned_data_r_o as state word
-  3. Feed into Response Collector
-```
-
-This is more efficient than multi-store for large responses, as it uses the dedicated rev channel.
+Manycore has a dedicated reverse (`rev`) channel for return packets. This path is **not used** in the first version. All FETCH_RESPONSE uses fwd store to MBX_RESP_DATA. Rev channel may be considered for future optimization.
 
 ### 6.8 Combined Strategy
 
@@ -393,17 +375,16 @@ This is more efficient than multi-store for large responses, as it uses the dedi
 |---------|-----------|-----------|-----------|
 | NOTIFICATION | fwd store to MBX_NOTIFICATION | decode in_addr | Small, 1 store |
 | FETCH_REQUEST | fwd store to MBX_FETCH_REQ_* (3 stores) | decode in_addr, latch 3 stores | Carries {is_factor, consumer_id}, {target_id}, {txn_id} |
-| FETCH_RESPONSE (small, ≤4 words) | fwd store to MBX_RESP_DATA | decode in_addr | Simple |
-| FETCH_RESPONSE (large, >4 words) | rev channel (returning_data_i) | returned_v_r_o | Efficient, uses dedicated channel |
+| FETCH_RESPONSE | fwd store to MBX_RESP_DATA (all sizes) | decode in_addr | Simple, uniform. Rev channel deferred. |
 
 ### 6.9 Open Items
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| 1 | GBP_BASE_ADDR selection | Open | Must not conflict with existing PE address map |
-| 2 | Response path selection threshold | Open | When to use fwd store vs rev channel |
-| 3 | Multi-store atomicity | Open | What if FETCH_REQ stores 1, 2, and 3 are interrupted by another incoming store? |
-| 4 | Credit count for GBP | Open | How many outstanding GBP requests per PE |
+| 1 | GBP_BASE_ADDR selection | Resolved = 0x1000 | No conflict with existing PE address map |
+| 2 | Response path selection threshold | Resolved | Always use fwd store (MBX_RESP_DATA); rev channel deferred |
+| 3 | Multi-store atomicity | Resolved | NoC guarantees same-src-dst ordering, no extra handling needed |
+| 4 | Credit count for GBP | Resolved | Use bsg_manycore_endpoint_standard default credits |
 
 ---
 

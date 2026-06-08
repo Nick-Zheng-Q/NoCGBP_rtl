@@ -1,3 +1,0 @@
-top: gbp_pe_mesh_2pe_convergence
-top_sv: tops/integration/gbp_pe_mesh_2pe_gbp.sv
-rtl_f: tests/integration/gbp_pe_mesh_2pe_convergence.f

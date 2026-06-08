@@ -134,8 +134,8 @@ cycle C+1:
 
 cycle C+2 .. C+1+adj_count:
   For each AdjEntry[i]:
-    SPM returns {neighbor_id, neighbor_pe_id}.
-    Classify: is_local = (neighbor_pe_id == self_pe_id).
+    SPM returns {neighbor_id, neighbor_x, neighbor_y}.
+    Classify: is_local = (neighbor_x == self_x) && (neighbor_y == self_y).
     Output adj_valid stream to ScoreboardPrefetcher and Accumulator.
 
 cycle C+2+adj_count:
@@ -148,7 +148,7 @@ cycle C+2+adj_count:
 
 **Bank conflict mitigation**: NodeHeader and AdjEntry list should be placed in different banks by the graph compiler (adj_base should not alias header bank).
 
-**Local edge READY initialization**: During SCAN, when Metadata Scanner classifies an AdjEntry as local (`neighbor_pe_id == self_pe_id`), it asserts `adj_valid` with `adj_is_local = 1` and `adj_edge_idx` to the ScoreboardPrefetcher. The ScoreboardPrefetcher immediately sets that edge to READY state (bypasses the IDLE → NOTIFIED → IN_FLIGHT → READY lifecycle). This ensures local edges are always ready and never require a fetch request.
+**Local edge READY initialization**: During SCAN, when Metadata Scanner classifies an AdjEntry as local (`(neighbor_x == self_x) && (neighbor_y == self_y)`), it asserts `adj_valid` with `adj_is_local = 1` and `adj_edge_idx` to the ScoreboardPrefetcher. The ScoreboardPrefetcher immediately sets that edge to READY state (bypasses the IDLE → NOTIFIED → IN_FLIGHT → READY lifecycle). This ensures local edges are always ready and never require a fetch request.
 
 ### 3.4 Stage 3: ACCUMULATE
 
@@ -163,21 +163,26 @@ This stage has two sub-phases depending on neighbor locality:
 **Sub-phase 3a: Local neighbor reads**
 
 ```
-For each local neighbor (is_local == true):
+For each local neighbor (is_local == true), in adjacency order:
   Issue SPM read from neighbor's state_base.
   Data flows directly into accumulator.
   Latency: 1 cycle per read (pipelined, no stall if no bank conflict).
+  Uses single SPM read port (shared with Compute Unit, time-multiplexed).
 ```
 
 **Sub-phase 3b: Remote neighbor fetch (already in progress)**
 
 ```
-For each remote neighbor (is_local == false):
+For each remote neighbor (is_local == false), in adjacency order:
   ScoreboardPrefetcher already issued FETCH_REQUEST during background domain.
   Response Collector already wrote response to STAGING.
   Edge state should be READY by the time we reach ACCUMULATE.
   Read STAGING blocks sequentially into accumulator.
   Latency: 1 cycle per read (pipelined from STAGING).
+
+Local reads use SPM Arbiter client CU_state_rd; remote reads use CU_staging_rd.
+These are independent ports and can issue in the same cycle (no bank conflict permitting).
+Within each sub-phase, reads are sequential (1 per cycle).
 ```
 
 **Stall condition**: If any remote edge is NOT READY at this point, the node should not have been scheduled. This is a design invariant — the Node Scheduler only selects nodes where `node_ready == 1`.
@@ -199,7 +204,7 @@ Batch flow:
   6. Metadata Scanner stalls (adj_valid held, no new AdjEntry read) until adj_ready reasserted.
   7. Response Collector receives all batch responses, writes to STAGING.
   8. Compute Unit reads STAGING blocks, updates partial accumulator.
-  9. Compute Unit asserts batch_done → STAGING Allocator resets.
+  9. Compute Unit asserts batch_done → STAGING Allocator resets (1 cycle: staging_bump = staging_base, staging_reserved = 0).
   10. ScoreboardPrefetcher reasserts adj_ready → Metadata Scanner resumes scan.
   11. Repeat until all edges processed.
 
@@ -224,32 +229,36 @@ ACCUMULATE completes at cycle A:
        info_dof, info_adj_count, info_state_base, info_state_words
   A+0: Node Scheduler passes cmd_valid, cmd_node_id, cmd_is_factor to Compute Unit
   A+1: Compute Unit asserts cmd_ready (accepts command)
-  A+1: Compute Unit begins LOAD phase
+  A+1: Compute Unit issues read descriptors to stream engine (begin compute)
 ```
 
 The Compute Unit receives its command from two sources:
 - **Node Scheduler**: provides `cmd_valid`, `cmd_node_id`, `cmd_is_factor`
-- **Metadata Scanner**: provides `cmd_dof`, `cmd_adj_count`, `cmd_state_base`, `cmd_state_words` (via info_* ports)
+- **Metadata Scanner**: provides `cmd_dof`, `cmd_adj_count`, `cmd_state_words` (via info_* ports)
+
+Command merge rule: `cmd_valid` to Compute Unit is asserted when **both** `sched_valid` (from Node Scheduler) and `info_valid` (from Metadata Scanner, latched at SCAN time) are available. The Node Scheduler output is buffered in a 1-entry register during SCAN; on `accumulator_done`, the buffered `cmd_node_id` and `cmd_is_factor` are presented together with the latched `info_dof`, `info_adj_count`, `info_state_words`.
 
 Both must be valid simultaneously when `accumulator_done` fires.
+
+Note: The compute_unit does not receive `state_base` as a direct SPM address. It issues read/write descriptors to stream engines, which contain AGUs that generate SPM addresses.
 
 **Flow**:
 
 ```
 Variable node (schedule_vn):
-  LOAD prior + msgs from SPM STATE → accumulator input
+  Issue read descriptor for prior + msgs → stream in via rd_beat_valid/rd_beat_data
   MAT_ADD accumulate (partial accumulator from batches, if any)
-  MAT_INV (uses staging buffer, 128 words)
+  MAT_INV (uses internal staging buffer, 128 words)
   MAT_VEC_MUL
-  STORE belief to SPM STATE
+  Issue write descriptor for belief → stream out via wr_word_valid/wr_word_data
 
 Factor node (schedule_fn):
-  LOAD from SPM STATE
+  Issue read descriptor → stream in via rd_beat_valid/rd_beat_data (per-edge messages in STATE)
   [ROBUSTIFY] (if applicable)
   [RELINEARIZE] (if applicable)
   MAT_ADD total
   For each edge:
-    MAT_SUB cavity
+    MAT_SUB cavity (reads from STATE)
     MAT_INV cavity
     MAT_MUL msg
     STORE msg to SPM STATE
@@ -270,7 +279,8 @@ Factor node (schedule_fn):
 ```
 cycle W+0:
   Writeback Controller receives done_valid.
-  Latch adjacency info from Metadata Scanner (saved at SCAN time).
+  Latch adjacency info from register file (saved during SCAN stage):
+    adj_count, adj_neighbor_ids[], adj_neighbor_xs[], adj_neighbor_ys[], adj_is_local[]
 
 cycle W+1 .. W+M:
   For each remote consuming neighbor:
@@ -359,17 +369,20 @@ Foreground:
 ### 5.1 Foreground Pipeline Handshakes
 
 ```
-Phase Controller ──[phase_factor_first]──▶ Node Scheduler
+Phase Controller ──[phase_factor_first, visited_mask]──▶ Node Scheduler
 Node Scheduler ──[sched_valid, sched_node_id, sched_is_factor]──▶ Metadata Scanner (cmd_* inputs)
 Metadata Scanner ──[cmd_ready]──▶ Node Scheduler (sched_ready input)
-Metadata Scanner ──[adj_valid, adj_neighbor_*, adj_is_local, adj_last, adj_edge_idx]──▶ Accumulator + ScoreboardPrefetcher
-Metadata Scanner ──[info_valid, info_dof, info_adj_count, info_state_base, info_state_words]──▶ Compute Unit (cmd_* inputs)
-Accumulator ──[out_valid, out_data, out_last, accumulator_done]──▶ Compute Unit
-// Compute Unit cmd_valid driven by PE controller when accumulator_done && info_valid
+Metadata Scanner ──[adj_valid, adj_neighbor_*, adj_is_local, adj_last, adj_edge_idx]──▶ ScoreboardPrefetcher
+ScoreboardPrefetcher ──[adj_ready]──▶ Metadata Scanner (backpressure)
+Metadata Scanner ──[info_valid, info_dof, info_adj_count, info_state_words]──▶ Compute Unit (cmd_* inputs)
+Metadata Scanner ──[info_state_base]──▶ PE controller / stream engine (for descriptor base_addr, not direct compute_unit input)
+Accumulator ──[out_valid, out_data, out_last, accumulator_done]──▶ Compute Unit / PE controller
 Compute Unit ──[done_valid, done_node_id, done_is_factor]──▶ Writeback Controller
-Compute Unit ──[batch_done]──▶ Response Collector (staging_batch_done)
+Compute Unit ──[batch_done]──▶ Response Collector
 Writeback Controller ──[wb_done]──▶ Phase Controller
 Writeback Controller ──[reset_valid, reset_node_id]──▶ ScoreboardPrefetcher
+Response Collector ──[remote_valid, remote_data, remote_last]──▶ Accumulator (remote path)
+PE controller ──[local_valid, local_data, local_last]──▶ Accumulator (local path, reads STATE via SPM Arbiter)
 ```
 
 ### 5.2 Background ↔ Foreground Interactions
@@ -377,7 +390,7 @@ Writeback Controller ──[reset_valid, reset_node_id]──▶ ScoreboardPrefe
 ```
 Background → Foreground:
   ScoreboardPrefetcher.node_ready[i] → Node Scheduler (readiness check)
-  Response Collector.complete_valid → ScoreboardPrefetcher (edge state update)
+  Response Collector.complete_valid/txn_id/node_id → ScoreboardPrefetcher (edge state update)
 
 Foreground → Background:
   Writeback Controller.reset_valid → ScoreboardPrefetcher (edge reset)
@@ -482,15 +495,17 @@ WRITEBACK completes at cycle W (wb_done):
 
 ## 8. Open Items
 
-| # | Item | Status | Notes |
-|---|------|--------|-------|
-| 1 | Batch boundary during ACCUMULATE | Open | How many cycles to reset STAGING between batches? |
-| 2 | SCAN adjacency save for WRITEBACK | Open | Where to latch adj_count + neighbor info for notification loop? Registers or FIFO? |
-| 3 | Concurrent Pull Server + foreground SPM access | Open | SPM Arbiter must handle 7 clients; round-robin fairness may cause foreground stalls |
-| 4 | Factor node per-edge compute + STAGING interaction | Open | Factor compute reads/writes per-edge messages; does this interact with STAGING? |
-| 5 | Phase switch latency | Open | Phase Controller takes 1 cycle to switch; can we overlap with WRITEBACK? |
-| 6 | Multiple consuming neighbors notification ordering | Open | Does notification order matter? Round-robin or priority? |
-| 7 | ACCUMULATE local vs remote interleaving | Open | Can local and remote reads overlap in the same cycle? Need 2 SPM read ports? |
+All items resolved. See decisions below:
+
+| # | Item | Decision |
+|---|------|----------|
+| 1 | Batch boundary during ACCUMULATE | 1 cycle: reset staging_bump + staging_reserved registers |
+| 2 | SCAN adjacency save for WRITEBACK | Register file (MAX_ADJ_COUNT entries), latched during SCAN, consumed during WRITEBACK |
+| 3 | Concurrent Pull Server + foreground SPM access | Round-robin. Foreground may stall but acceptable (Pull Server throughput = 1/cycle) |
+| 4 | Factor node per-edge compute + STAGING interaction | Factor per-edge messages live in STATE, not STAGING. Factor compute reads/writes STATE directly. |
+| 5 | Phase switch latency | No overlap with WRITEBACK. 1-cycle switch, keep simple. |
+| 6 | Multiple consuming neighbors notification ordering | Round-robin. Order does not matter. |
+| 7 | ACCUMULATE local vs remote interleaving | Sequential: local neighbors first, then remote. Single SPM read port, no overlap. |
 
 ---
 

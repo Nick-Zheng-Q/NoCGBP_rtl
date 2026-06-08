@@ -1,0 +1,3 @@
+top: writeback_controller_top
+top_sv: tops/unit/writeback_controller_top.sv
+rtl_f: tests/unit/writeback_controller.f

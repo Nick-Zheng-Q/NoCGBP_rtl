@@ -1,2 +1,0 @@
-top: gbp_control_fsm
-rtl_f: tests/unit/gbp_control_fsm_test.f

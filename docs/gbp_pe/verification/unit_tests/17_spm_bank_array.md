@@ -8,6 +8,9 @@ Verify that `spm_bank_array` correctly:
 - Returns read data from correct bank
 - Supports parallel access to different banks
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `spm_bank_array`
@@ -15,6 +18,9 @@ Verify that `spm_bank_array` correctly:
 - Clock: 100MHz (10ns period)
 - Reset: Active high (`reset_i`)
 - Initial state: All banks idle
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -59,6 +65,9 @@ Verify that `spm_bank_array` correctly:
 | T+3   | bank_if[2].bank_rd_addr | 0x30 | Read address |
 | T+4   | bank_if[2].bank_rd_en | 0 | Clear read |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Single Bank Access
@@ -80,6 +89,9 @@ Verify that `spm_bank_array` correctly:
 |-------|--------|----------------|-------------|
 | T+4   | bank_if[2].bank_rd_data | 0xCAFEBABE | Read data matches write |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -96,6 +108,9 @@ bank0_data______| DATA0  |__| DATA0  |____
 bank1_data______| DATA1  |__| DATA1  |____
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Each bank operates independently
@@ -105,6 +120,9 @@ bank1_data______| DATA1  |__| DATA1  |____
 - [ ] Bank selection based on address bits
 - [ ] No interference between banks
 
+
+---
+
 ## 7. Corner Cases
 
 1. **All banks active**: Maximum concurrency
@@ -112,3 +130,21 @@ bank1_data______| DATA1  |__| DATA1  |____
 3. **Reset during access**: Clean state
 4. **Maximum address range**: Edge addresses
 5. **Back-to-back access**: Continuous operation
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

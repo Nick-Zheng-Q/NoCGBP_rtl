@@ -1,0 +1,2 @@
+top: noc_subsystem_top
+rtl_f: tests/integration/noc_subsystem.f

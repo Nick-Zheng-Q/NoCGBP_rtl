@@ -1,5 +1,7 @@
 # gbp_pe_endpoint_adapter Unit Test
 
+> **DEPRECATED**: This module has been replaced by `noc_adapter`. See `12_noc_adapter.md` for the new verification plan. This document is retained for reference only.
+
 ## 1. Test Objective
 
 Verify that `gbp_pe_endpoint_adapter` correctly:
@@ -8,12 +10,18 @@ Verify that `gbp_pe_endpoint_adapter` correctly:
 - Manages outgoing packets
 - Provides memory-mapped queue subsystem
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `gbp_pe_endpoint_adapter`
 - Clock: 100MHz (10ns period)
 - Reset: Active high (`reset_i`)
 - Initial state: Reset, all outputs deasserted
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -61,6 +69,9 @@ Verify that `gbp_pe_endpoint_adapter` correctly:
 | T+2   | out_credit_or_ready_o | 0 | Still no credits |
 | T+3   | out_credit_or_ready_o | 1 | Credit available |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Incoming Store
@@ -90,6 +101,9 @@ Verify that `gbp_pe_endpoint_adapter` correctly:
 | T+3   | out_credit_or_ready_o | 1 | Can send |
 | T+4   | link_sif_o.fwd.v | 1 | Packet sent |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -104,6 +118,9 @@ link_ready|        |__________________________
 core_req  _______|        |______________________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Incoming requests decoded correctly
@@ -113,6 +130,9 @@ core_req  _______|        |______________________
 - [ ] Source coordinates extracted
 - [ ] Return packets handled correctly
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Reset during transaction**: Clean state
@@ -120,3 +140,21 @@ core_req  _______|        |______________________
 3. **Back-to-back packets**: No gap
 4. **Simultaneous in/out**: Both directions active
 5. **Invalid address**: Error handling
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

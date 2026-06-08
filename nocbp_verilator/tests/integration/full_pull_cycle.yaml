@@ -1,0 +1,4 @@
+top: full_pull_cycle_top
+top_sv: tops/integration/full_pull_cycle_top.sv
+rtl_f: tests/integration/full_pull_cycle.f
+tb: tests/integration/full_pull_cycle.cc

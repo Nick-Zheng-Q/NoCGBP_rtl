@@ -10,12 +10,18 @@ Verify the fetch request flow across modules:
 5. Producer's NoC Adapter decodes incoming stores
 6. Producer's Pull Server receives assembled request
 
+
+---
+
 ## 2. Preconditions
 
 - System: 2 PEs (PE_A at (0,0), PE_B at (1,0))
 - Node M on PE_B, Node N on PE_A
 - Edge (M, N): M is consumer, N is producer
 - NOTIFICATION already received (edge in NOTIFIED state)
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -28,7 +34,8 @@ Verify the fetch request flow across modules:
 | T+1   | fetch_req_target_node_id | 0x10 | Target node N |
 | T+1   | fetch_req_consumer_node_id | 0x20 | Consumer node M |
 | T+1   | fetch_req_is_factor | 0 | Variable |
-| T+1   | fetch_req_target_pe | 0x00 | Target PE_A |
+| T+1   | fetch_req_target_x | 0x00 | Target X coord |
+| T+1   | fetch_req_target_y | 0x00 | Target Y coord |
 | T+1   | fetch_req_txn_id | 0x03 | Edge index |
 | T+2   | fetch_req_valid | 0 | Clear |
 
@@ -40,7 +47,8 @@ Verify the fetch request flow across modules:
 | T+2   | tx_fetch_req_target_node_id | 0x10 | Target node |
 | T+2   | tx_fetch_req_consumer_node_id | 0x20 | Consumer node |
 | T+2   | tx_fetch_req_is_factor | 0 | Variable |
-| T+2   | tx_fetch_req_target_pe | 0x00 | Target PE |
+| T+2   | tx_fetch_req_target_x | 0x00 | Target X coord |
+| T+2   | tx_fetch_req_target_y | 0x00 | Target Y coord |
 | T+2   | tx_fetch_req_txn_id | 0x03 | Edge index |
 | T+3   | tx_fetch_req_valid | 1 | Second store |
 | T+3   | tx_fetch_req_target_node_id | 0x10 | Target node |
@@ -100,6 +108,9 @@ Verify the fetch request flow across modules:
 | T+15  | rx_fetch_req_txn_id | 0x03 | Txn ID for response matching |
 | T+16  | rx_fetch_req_valid | 0 | Clear |
 
+
+---
+
 ## 4. Expected Output
 
 ### Phase 1: Pull Client (PE_B)
@@ -136,6 +147,9 @@ Verify the fetch request flow across modules:
 |-------|-------------|----------------|-------------|
 | T+2   | scoreboard_occupancy | 1 | Entry added |
 | T+2   | node_ready[20] | 0 | Not ready (in-flight) |
+
+
+---
 
 ## 5. Timing Diagram
 
@@ -176,6 +190,9 @@ PE_B (Consumer)                    PE_A (Producer)
     |                     [rx_fetch_req_valid]
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] FETCH_REQUEST issued within 1 cycle of notification
@@ -187,6 +204,9 @@ PE_B (Consumer)                    PE_A (Producer)
 - [ ] txn_id echoed correctly in assembled request
 - [ ] Scoreboard occupancy updated correctly
 
+
+---
+
 ## 7. Corner Cases
 
 1. **NoC latency variation**: Test with different latencies
@@ -194,3 +214,21 @@ PE_B (Consumer)                    PE_A (Producer)
 3. **Reset during NoC traversal**: Verify clean recovery
 4. **Multiple concurrent requests**: Different edges
 5. **Back-to-back requests**: No gap between requests
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

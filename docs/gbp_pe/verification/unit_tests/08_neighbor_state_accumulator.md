@@ -8,12 +8,18 @@ Verify that the Neighbor State Accumulator correctly:
 - Handles backpressure from Compute Unit
 - Maintains data ordering
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `neighbor_state_accumulator`
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: IDLE
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -57,6 +63,9 @@ Verify that the Neighbor State Accumulator correctly:
 | T+2   | remote_data | REMOTE_0 | Remote word |
 | T+2   | remote_last | 1 | Last remote |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Local State Only
@@ -94,6 +103,9 @@ Verify that the Neighbor State Accumulator correctly:
 | T+3   | out_data | REMOTE_0 | Remote word |
 | T+3   | out_last | 1 | Last word |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -112,6 +124,9 @@ out_data  XXXXXXX| WORD_0 |XX| WORD_1 |XXXXXXXXXXXXXXXXXXXXXX
 out_last  ___________________|        |______________________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Local and remote data merged correctly
@@ -121,6 +136,9 @@ out_last  ___________________|        |______________________
 - [ ] Data ordering preserved
 - [ ] No data loss or duplication
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Simultaneous local and remote**: Both valid same cycle (needs arbitration)
@@ -128,3 +146,21 @@ out_last  ___________________|        |______________________
 3. **Maximum backpressure**: Compute Unit busy for many cycles
 4. **Single word neighbors**: Each neighbor has 1 state word
 5. **Large state**: Neighbor with many state words
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

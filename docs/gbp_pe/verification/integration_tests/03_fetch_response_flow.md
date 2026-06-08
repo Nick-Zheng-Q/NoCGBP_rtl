@@ -11,12 +11,18 @@ Verify the fetch response flow across modules:
 6. Response Collector feeds data to Accumulator
 7. Response Collector signals completion to Scoreboard
 
+
+---
+
 ## 2. Preconditions
 
 - System: 2 PEs (PE_A at (0,0), PE_B at (1,0))
 - Node N on PE_A, Node M on PE_B
 - FETCH_REQUEST already received by PE_A's Pull Server
 - SPM on PE_A contains valid NodeHeader and STATE for node N (2 words)
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -59,13 +65,13 @@ Verify the fetch response flow across modules:
 | Cycle | PE_A Signal | Value | Description |
 |-------|-------------|-------|-------------|
 | T+6   | out_v_i | 1 | Metadata packet |
-| T+6   | out_packet_i.addr | 0x1008 | MBX_RESP_META |
+| T+6   | out_packet_i.addr | 0x1010 | MBX_RESP_META |
 | T+7   | out_v_i | 1 | Data word 0 packet |
-| T+7   | out_packet_i.addr | 0x100C | MBX_RESP_DATA |
+| T+7   | out_packet_i.addr | 0x1014 | MBX_RESP_DATA |
 | T+8   | out_v_i | 1 | Data word 1 packet |
-| T+8   | out_packet_i.addr | 0x100C | MBX_RESP_DATA |
+| T+8   | out_packet_i.addr | 0x1014 | MBX_RESP_DATA |
 | T+9   | out_v_i | 1 | Done packet |
-| T+9   | out_packet_i.addr | 0x1010 | MBX_RESP_DONE |
+| T+9   | out_packet_i.addr | 0x1018 | MBX_RESP_DONE |
 
 ### Phase 4: NoC Latency
 
@@ -81,7 +87,7 @@ Verify the fetch response flow across modules:
 | Cycle | PE_B Signal | Value | Description |
 |-------|-------------|-------|-------------|
 | T+15  | rx_fetch_resp_valid | 1 | Metadata received |
-| T+15  | rx_fetch_resp_node_id | 0x10 | Producer node |
+| T+15  | rx_fetch_resp_txn_id | 0x03 | txn_id for edge matching |
 | T+15  | rx_fetch_resp_state_words | 2 | Two words |
 | T+16  | rx_fetch_resp_valid | 1 | Data word 0 |
 | T+16  | rx_fetch_resp_data | WORD_0 | First word |
@@ -91,6 +97,9 @@ Verify the fetch response flow across modules:
 | T+17  | rx_fetch_resp_data_valid | 1 | Data valid |
 | T+17  | rx_fetch_resp_last | 1 | Last word |
 | T+18  | rx_fetch_resp_done_valid | 1 | Done received |
+
+
+---
 
 ## 4. Expected Output
 
@@ -108,14 +117,15 @@ Verify the fetch response flow across modules:
 | Cycle | PE_B Signal | Expected Value | Description |
 |-------|-------------|----------------|-------------|
 | T+15  | rx_fetch_resp_ready | 1 | Ready |
-| T+16  | accum_valid | 1 | Data to accumulator |
-| T+16  | accum_data | WORD_0 | First word |
-| T+16  | accum_last | 0 | Not last |
-| T+17  | accum_valid | 1 | Data to accumulator |
-| T+17  | accum_data | WORD_1 | Second word |
-| T+17  | accum_last | 1 | Last word |
+| T+16  | remote_valid | 1 | Data to accumulator |
+| T+16  | remote_data | WORD_0 | First word |
+| T+16  | remote_last | 0 | Not last |
+| T+17  | remote_valid | 1 | Data to accumulator |
+| T+17  | remote_data | WORD_1 | Second word |
+| T+17  | remote_last | 1 | Last word |
 | T+18  | complete_valid | 1 | Completion |
-| T+18  | complete_producer_node_id | 0x10 | Producer node |
+| T+18  | complete_txn_id | 0x03 | Edge index |
+| T+18  | complete_node_id | 0x10 | Producer node |
 | T+18  | complete_consumer_node_id | 0x20 | Consumer node |
 
 ### Phase 3: Scoreboard (PE_B)
@@ -124,6 +134,9 @@ Verify the fetch response flow across modules:
 |-------|-------------|----------------|-------------|
 | T+18  | scoreboard_occupancy | 0 | Entry removed |
 | T+19  | node_ready[20] | 1 | Node M ready |
+
+
+---
 
 ## 5. Timing Diagram
 
@@ -151,15 +164,18 @@ PE_A (Producer)                    PE_B (Consumer)
     |                     [rx_fetch_resp]<- (metadata)
     |                                    |
     |                     [rx_fetch_resp]<- (data 0)
-    |                     [accum_valid]  |
+    |                     [remote_valid]  |
     |                                    |
     |                     [rx_fetch_resp]<- (data 1, last)
-    |                     [accum_valid]  |
+    |                     [remote_valid]  |
     |                                    |
     |                     [rx_fetch_resp_done_valid]<-
     |                     [complete_valid]
     |                     [node_ready = 1]
 ```
+
+
+---
 
 ## 6. Pass/Fail Criteria
 
@@ -173,6 +189,9 @@ PE_A (Producer)                    PE_B (Consumer)
 - [ ] Scoreboard entry removed on completion
 - [ ] Node becomes ready after all edges complete
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Large state**: Many data words (e.g., 64 words)
@@ -181,3 +200,21 @@ PE_A (Producer)                    PE_B (Consumer)
 4. **Reset during response**: Verify clean recovery
 5. **Backpressure from NoC**: Pull Server stalls
 6. **Backpressure from Accumulator**: Response Collector stalls
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

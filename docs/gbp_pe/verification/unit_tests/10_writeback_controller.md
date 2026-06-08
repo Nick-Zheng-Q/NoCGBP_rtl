@@ -9,6 +9,9 @@ Verify that the Writeback Controller correctly:
 - Triggers Scoreboard reset for completed node
 - Signals completion to Phase Controller
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `writeback_controller`
@@ -16,6 +19,9 @@ Verify that the Writeback Controller correctly:
 - Reset: Active low (`rst_n`)
 - Initial state: IDLE
 - Adjacency info latched from Metadata Scanner
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -68,6 +74,9 @@ Verify that the Writeback Controller correctly:
 | T+3   | tx_notif_ready | 0 | Still not ready |
 | T+4   | tx_notif_ready | 1 | Ready again |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Node with 2 Remote Neighbors
@@ -81,12 +90,14 @@ Verify that the Writeback Controller correctly:
 | T+2   | tx_notif_source_node_id | 0x10 | Source node |
 | T+2   | tx_notif_target_node_id | 0x20 | Target neighbor 0 |
 | T+2   | tx_notif_is_factor | 0 | Variable |
-| T+2   | tx_notif_target_pe | 0x02 | Target PE 0 |
+| T+2   | tx_notif_target_x | 0x02 | Target X coord 0 |
+| T+2   | tx_notif_target_y | 0x00 | Target Y coord 0 |
 | T+3   | tx_notif_valid | 1 | Second notification |
 | T+3   | tx_notif_source_node_id | 0x10 | Source node |
 | T+3   | tx_notif_target_node_id | 0x30 | Target neighbor 1 |
 | T+3   | tx_notif_is_factor | 0 | Variable |
-| T+3   | tx_notif_target_pe | 0x03 | Target PE 1 |
+| T+3   | tx_notif_target_x | 0x03 | Target X coord 1 |
+| T+3   | tx_notif_target_y | 0x00 | Target Y coord 1 |
 | T+4   | tx_notif_valid | 0 | Complete |
 | T+4   | wb_done | 1 | Done signal |
 
@@ -97,7 +108,8 @@ Verify that the Writeback Controller correctly:
 | T+1   | reset_valid | 1 | Reset edges |
 | T+2   | tx_notif_valid | 1 | Notification (remote only) |
 | T+2   | tx_notif_target_node_id | 0x30 | Remote neighbor |
-| T+2   | tx_notif_target_pe | 0x03 | Remote PE |
+| T+2   | tx_notif_target_x | 0x03 | Remote X coord |
+| T+2   | tx_notif_target_y | 0x00 | Remote Y coord |
 | T+3   | tx_notif_valid | 0 | No more notifications |
 | T+3   | wb_done | 1 | Done signal |
 
@@ -112,6 +124,9 @@ Verify that the Writeback Controller correctly:
 | T+4   | tx_notif_valid | 1 | Still trying |
 | T+5   | tx_notif_valid | 1 | Can send now |
 | T+6   | wb_done | 1 | Done signal |
+
+
+---
 
 ## 5. Timing Diagram
 
@@ -129,15 +144,21 @@ tx_notif  _______|        |__|        |______________________
 wb_done   ___________________________|        |______________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] `reset_valid` asserted within 1 cycle of `done_valid`
 - [ ] NOTIFICATION sent to each remote neighbor
 - [ ] Local neighbors skipped (no notification)
-- [ ] `tx_notif_target_pe` correct for each neighbor
+- [ ] `tx_notif_target_x` and `tx_notif_target_y` correct for each neighbor
 - [ ] `wb_done` asserted after all notifications sent
 - [ ] Backpressure: notifications held when `tx_notif_ready = 0`
 - [ ] No notifications sent for local neighbors
+
+
+---
 
 ## 7. Corner Cases
 
@@ -146,3 +167,21 @@ wb_done   ___________________________|        |______________
 3. **Maximum adj_count**: Node with MAX_ADJ_COUNT neighbors
 4. **Reset during notification**: Verify clean state after reset
 5. **Back-to-back completions**: Multiple nodes complete same cycle
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

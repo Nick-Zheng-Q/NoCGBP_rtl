@@ -9,6 +9,9 @@ Verify that the NoC Adapter correctly:
 - Forms outgoing `e_remote_store` packets
 - Manages credit-based flow control
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `noc_adapter`
@@ -16,6 +19,9 @@ Verify that the NoC Adapter correctly:
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: No pending transactions
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -66,7 +72,8 @@ Verify that the NoC Adapter correctly:
 | T+1   | tx_notif_source_node_id | 0x10 | Source node |
 | T+1   | tx_notif_target_node_id | 0x20 | Target node |
 | T+1   | tx_notif_is_factor | 0 | Variable node |
-| T+1   | tx_notif_target_pe | 0x05 | Target PE ID |
+| T+1   | tx_notif_target_x | 5 | Target PE X |
+| T+1   | tx_notif_target_y | 3 | Target PE Y |
 | T+2   | tx_notif_valid | 0 | Clear request |
 
 ### 3.4 Test Case 4: Credit Stall
@@ -81,6 +88,9 @@ Verify that the NoC Adapter correctly:
 | T+2   | out_credit_or_ready_o | 0 | Still no credits |
 | T+3   | out_credit_or_ready_o | 1 | Credit available |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Incoming NOTIFICATION
@@ -89,21 +99,25 @@ Verify that the NoC Adapter correctly:
 |-------|--------|----------------|-------------|
 | T+1   | rx_notif_valid | 1 | Notification routed |
 | T+1   | rx_notif_source_node_id | 0x10 | Source node |
-| T+1   | rx_notif_source_pe | {3, 2} | Source PE coordinates |
+| T+1   | rx_notif_source_x | 3 | Source PE X |
+| T+1   | rx_notif_source_y | 2 | Source PE Y |
 | T+1   | rx_notif_is_factor | 0 | Variable |
 | T+2   | rx_notif_valid | 0 | Clear |
 
-### 4.2 Test Case 2: Incoming FETCH_REQUEST (2 stores)
+### 4.2 Test Case 2: Incoming FETCH_REQUEST (3 stores)
 
 | Cycle | Signal | Expected Value | Description |
 |-------|--------|----------------|-------------|
-| T+1   | rx_fetch_req_valid | 0 | Not ready yet (need 2 stores) |
-| T+3   | rx_fetch_req_valid | 1 | Both stores received |
-| T+3   | rx_fetch_req_target_node_id | 0x10 | Target node |
-| T+3   | rx_fetch_req_consumer_node_id | 0x20 | Consumer node |
-| T+3   | rx_fetch_req_is_factor | 0 | Variable |
-| T+3   | rx_fetch_req_src_pe | {3, 2} | Source PE |
-| T+4   | rx_fetch_req_valid | 0 | Clear |
+| T+1   | rx_fetch_req_valid | 0 | Not ready yet (need 3 stores) |
+| T+3   | rx_fetch_req_valid | 0 | Still waiting (2 of 3 stores) |
+| T+5   | rx_fetch_req_valid | 0 | Still waiting (3 of 3 stores, latch in progress) |
+| T+6   | rx_fetch_req_valid | 1 | All 3 stores received |
+| T+6   | rx_fetch_req_target_node_id | 0x10 | Target node |
+| T+6   | rx_fetch_req_consumer_node_id | 0x20 | Consumer node |
+| T+6   | rx_fetch_req_is_factor | 0 | Variable |
+| T+6   | rx_fetch_req_src_x | 3 | Source PE X |
+| T+6   | rx_fetch_req_src_y | 2 | Source PE Y |
+| T+7   | rx_fetch_req_valid | 0 | Clear |
 
 ### 4.3 Test Case 3: Outgoing NOTIFICATION
 
@@ -114,8 +128,8 @@ Verify that the NoC Adapter correctly:
 | T+2   | out_packet_i.addr | 0x1000 | MBX_NOTIFICATION |
 | T+2   | out_packet_i.op | e_remote_store | Store operation |
 | T+2   | out_packet_i.payload | {0, 0x10} | {is_factor, source_node_id} |
-| T+2   | out_packet_i.dst_x | target_pe_x | Target X coord |
-| T+2   | out_packet_i.dst_y | target_pe_y | Target Y coord |
+| T+2   | out_packet_i.dst_x | target_x | Target X coord |
+| T+2   | out_packet_i.dst_y | target_y | Target Y coord |
 | T+2   | out_packet_i.src_x | my_x | Source X coord |
 | T+2   | out_packet_i.src_y | my_y | Source Y coord |
 
@@ -127,6 +141,9 @@ Verify that the NoC Adapter correctly:
 | T+2   | tx_notif_ready | 0 | Still not ready |
 | T+3   | tx_notif_ready | 1 | Ready (credit available) |
 | T+4   | out_v_i | 1 | Packet sent |
+
+
+---
 
 ## 5. Timing Diagram
 
@@ -144,6 +161,9 @@ in_data   XXXX|  DATA |XXXXXXXXXXXXXXXXXX
 rx_notif  ____|        |__________________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Incoming stores decoded correctly by address
@@ -153,6 +173,9 @@ rx_notif  ____|        |__________________
 - [ ] Source coordinates extracted correctly from incoming requests
 - [ ] `tx_busy` asserted when any TX channel active
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Reset during transaction**: Verify clean state after reset
@@ -160,3 +183,21 @@ rx_notif  ____|        |__________________
 3. **Address decode error**: Store to unknown GBP address
 4. **Maximum outstanding credits**: Fill credit counter
 5. **Back-to-back requests**: No gap between incoming stores
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

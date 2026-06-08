@@ -1,0 +1,3 @@
+top: scoreboard_prefetcher_top
+top_sv: tops/unit/scoreboard_prefetcher_top.sv
+rtl_f: tests/unit/scoreboard_prefetcher.f

@@ -1,74 +1,43 @@
 module write_stream_engine_top
   import gbp_pkg::*;
 (
-    input logic clk,
-    input logic rst_n,
+    input  logic clk,
+    input  logic rst_n,
 
-    input logic i_desc_valid,
-    input logic i_desc_start,
-    input logic [SPM_ADDR_W-1:0] i_base_addr,
-    input logic [XFER_BYTES_W-1:0] i_xfer_bytes,
-    input logic [STEP_BYTES_W-1:0] i_addr_step_bytes,
-    output logic o_desc_ready,
+    // Descriptor in
+    input  logic                 i_desc_valid,
+    input  logic [SPM_ADDR_W-1:0] i_desc_base_addr,
+    input  logic [15:0]          i_desc_word_count,
+    output logic                 o_desc_ready,
 
-    input logic i_stream_valid,
-    input logic [31:0] i_stream_data,
-    output logic o_stream_ready,
+    // Word in
+    input  logic                 i_word_valid,
+    input  logic [FP32_W-1:0]    i_word_data,
+    output logic                 o_word_ready,
 
-    input logic i_spm_wr_req_ready,
-    output logic o_spm_wr_req_valid,
-    output logic [SPM_ADDR_W-1:0] o_spm_wr_req_addr,
-    output logic [BEAT_BITS-1:0] o_spm_wr_req_data,
-    output logic [WSTRB_W-1:0] o_spm_wr_req_wstrb,
-
-    output logic [7:0] o_occ,
-    output logic o_afull
+    // SPM write
+    output logic                 o_spm_wr_valid,
+    output logic [SPM_ADDR_W-1:0] o_spm_wr_addr,
+    output logic [BEAT_BITS-1:0] o_spm_wr_data,
+    output logic [BEAT_BYTES-1:0] o_spm_wr_wstrb,
+    input  logic                 i_spm_wr_ready
 );
 
-  logic reset_i;
-  assign reset_i = ~rst_n;
-
-  stream_dispatcher_if disp_if();
-  write_stream_if stream_if0();
-  stream_control_if ctrl_if();
-  mic_spm_arbiter_wr_if mic_if();
-
-  assign disp_if.valid = i_desc_valid;
-  assign disp_if.data.op = OP_WRITE;
-  assign disp_if.data.txn_id = '0;
-  assign disp_if.data.start = i_desc_start;
-  assign disp_if.data.base_addr = i_base_addr;
-  assign disp_if.data.xfer_bytes = i_xfer_bytes;
-  assign disp_if.data.addr_step_bytes = i_addr_step_bytes;
-  assign disp_if.data.operand_id = '0;
-  assign disp_if.data.wstrb_mode = WSTRB_FULL;
-  assign disp_if.data.dim = 1'b0;
-  assign disp_if.data.y_count = '0;
-  assign disp_if.data.y_stride_bytes = '0;
-  assign disp_if.data.addr_src = 1'b0;
-
-  assign o_desc_ready = disp_if.ready;
-
-  assign stream_if0.valid = i_stream_valid;
-  assign stream_if0.data = i_stream_data;
-  assign o_stream_ready = stream_if0.ready;
-
-  assign mic_if.spm_wr_req_ready = i_spm_wr_req_ready;
-  assign o_spm_wr_req_valid = mic_if.spm_wr_req_valid;
-  assign o_spm_wr_req_addr = mic_if.spm_wr_req_addr;
-  assign o_spm_wr_req_data = mic_if.spm_wr_req_data;
-  assign o_spm_wr_req_wstrb = mic_if.spm_wr_req_wstrb;
-
-  assign o_occ = ctrl_if.occ;
-  assign o_afull = ctrl_if.afull;
-
   write_stream_engine dut (
-      .clk_i(clk),
-      .reset_i(reset_i),
-      .if_stream_control_if_stream(ctrl_if),
-      .if_stream_dispatcher_if_stream(disp_if),
-      .if_stream_if_stream(stream_if0),
-      .mic_to_spm_arbiter(mic_if)
+    .clk            (clk),
+    .rst_n          (rst_n),
+    .desc_valid     (i_desc_valid),
+    .desc_ready     (o_desc_ready),
+    .desc_base_addr (i_desc_base_addr),
+    .desc_word_count(i_desc_word_count),
+    .word_valid     (i_word_valid),
+    .word_ready     (o_word_ready),
+    .word_data      (i_word_data),
+    .spm_wr_valid   (o_spm_wr_valid),
+    .spm_wr_ready   (i_spm_wr_ready),
+    .spm_wr_addr    (o_spm_wr_addr),
+    .spm_wr_data    (o_spm_wr_data),
+    .spm_wr_wstrb   (o_spm_wr_wstrb)
   );
 
 endmodule

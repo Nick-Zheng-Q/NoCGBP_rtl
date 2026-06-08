@@ -16,12 +16,41 @@ Clock/reset: all modules share `clk`, `rst_n`.
 
 ---
 
+## 1.5 Descriptor Format
+
+Read and write descriptors carry the information needed by the AGU to generate a sequence of SPM addresses.
+
+```systemverilog
+typedef struct packed {
+    logic [SPM_ADDR_W-1:0]       base_addr;     // start word address (STATE or STAGING region)
+    logic [15:0]                 word_count;    // number of 32-bit words to transfer
+    logic                        is_staging;    // 1 = STAGING region, 0 = STATE region
+} stream_descriptor_t;
+```
+
+**Field semantics:**
+
+| Field | Width | Description |
+|-------|-------|-------------|
+| `base_addr` | `SPM_ADDR_W` | Word address of the first word. Must be 8B-aligned (even word address). |
+| `word_count` | 16 | Number of 32-bit words. Max 65535 words (256KB). |
+| `is_staging` | 1 | Region select. Compute Unit reads remote neighbor states from STAGING, local states from STATE. |
+
+**Descriptor transfer:**
+- Descriptors are sent via dedicated valid/ready ports (not multiplexed onto data channels).
+- `desc_valid && desc_ready` latches the descriptor into the stream engine.
+- The stream engine ACKs the descriptor immediately and begins address generation.
+
+---
+
 ## 2. Module Port Definitions
 
 ### 2.1 Phase Controller
 
 ```systemverilog
-module phase_controller (
+module phase_controller #(
+    parameter NUM_NODES = 1024
+)(
     input  logic clk,
     input  logic rst_n,
 
@@ -34,14 +63,18 @@ module phase_controller (
 
     // Phase output
     output logic phase_factor_first,    // 1 = factor phase, 0 = variable phase
-    output logic phase_switch_pulse     // single-cycle pulse on phase switch
+    output logic phase_switch_pulse,    // single-cycle pulse on phase switch
+    output logic [NUM_NODES-1:0] visited_mask  // nodes already computed this phase
 );
 ```
 
 ### 2.2 Node Scheduler
 
 ```systemverilog
-module node_scheduler (
+module node_scheduler #(
+    parameter NUM_NODES = 1024,
+    parameter NODE_ID_W = 10
+)(
     input  logic clk,
     input  logic rst_n,
 
@@ -68,7 +101,14 @@ module node_scheduler (
 ### 2.3 Metadata Scanner
 
 ```systemverilog
-module metadata_scanner (
+module metadata_scanner #(
+    parameter NODE_ID_W     = 10,
+    parameter SPM_ADDR_W    = 18,   // word address for 1MB SPM (32-bit words)
+    parameter STATE_WORDS_W = 6,
+    parameter ADJ_COUNT_W   = 4,
+    parameter DOF_W         = 4,
+    parameter BEAT_BITS     = 64    // 8-byte beat
+)(
     input  logic clk,
     input  logic rst_n,
 
@@ -82,13 +122,14 @@ module metadata_scanner (
     output logic                 spm_rd_valid,
     output logic [SPM_ADDR_W-1:0] spm_rd_addr,
     input  logic                 spm_rd_ready,
-    input  logic [BEAT_BITS-1:0] spm_rd_data,
+    input  logic [BEAT_BITS-1:0]  spm_rd_data,
 
     // AdjEntry output stream
     output logic                 adj_valid,
     input  logic                 adj_ready,
     output logic [NODE_ID_W-1:0] adj_neighbor_id,
-    output logic [PE_ID_W-1:0]   adj_neighbor_pe_id,
+    output logic [X_CORD_W-1:0]   adj_neighbor_x,
+    output logic [Y_CORD_W-1:0]   adj_neighbor_y,
     output logic                 adj_is_local,
     output logic                 adj_last,       // last adjacency entry
     output logic [ADJ_COUNT_W-1:0] adj_edge_idx, // current edge index within node
@@ -113,12 +154,15 @@ module scoreboard_prefetcher #(
     input  logic rst_n,
 
     // Notification ingress (from NoC Adapter RX)
+    // The notification packet only carries the SOURCE node ID and its PE coordinates.
+    // The scoreboard matches all registered edges whose source_node equals the
+    // received source_node_id. There is no per-consumer target_node_id in the packet.
     input  logic                 rx_notif_valid,
     output logic                 rx_notif_ready,
     input  logic [NODE_ID_W-1:0] rx_notif_source_node_id,
-    input  logic [NODE_ID_W-1:0] rx_notif_target_node_id,
     input  logic                 rx_notif_is_factor,
-    input  logic [PE_ID_W-1:0]   rx_notif_source_pe,
+    input  logic [X_CORD_W-1:0]   rx_notif_source_x,
+    input  logic [Y_CORD_W-1:0]   rx_notif_source_y,
 
     // Fetch request output (to Pull Client, then to NoC Adapter TX)
     output logic                 fetch_req_valid,
@@ -126,12 +170,15 @@ module scoreboard_prefetcher #(
     output logic [NODE_ID_W-1:0] fetch_req_target_node_id,
     output logic [NODE_ID_W-1:0] fetch_req_consumer_node_id,
     output logic                 fetch_req_is_factor,
-    output logic [PE_ID_W-1:0]   fetch_req_target_pe,
+    output logic [X_CORD_W-1:0]   fetch_req_target_x,
+    output logic [Y_CORD_W-1:0]   fetch_req_target_y,
     output logic [TXN_ID_W-1:0]  fetch_req_txn_id,       // edge_index, used for response matching
 
     // Fetch response completion (from Response Collector)
     input  logic                 complete_valid,
     input  logic [TXN_ID_W-1:0]  complete_txn_id,        // direct edge match via txn_id
+    input  logic [NODE_ID_W-1:0] complete_node_id,       // reserved for debug/monitoring (unused in logic)
+    input  logic [NODE_ID_W-1:0] complete_consumer_node_id, // used to decrement node_pending count
 
     // STAGING Allocator coordination (to/from Response Collector)
     output logic                 staging_reserve_valid,
@@ -143,9 +190,11 @@ module scoreboard_prefetcher #(
     output logic [NUM_NODES-1:0] node_ready,
 
     // Edge classification from Metadata Scanner (adj stream → local edge READY)
+    output logic                 adj_ready,          // backpressure to Metadata Scanner (deasserted when batch full)
     input  logic                 adj_valid,
     input  logic [NODE_ID_W-1:0] adj_neighbor_id,
-    input  logic [PE_ID_W-1:0]   adj_neighbor_pe_id,
+    input  logic [X_CORD_W-1:0]   adj_neighbor_x,
+    input  logic [Y_CORD_W-1:0]   adj_neighbor_y,
     input  logic                 adj_is_local,
     input  logic                 adj_last,
     input  logic [ADJ_COUNT_W-1:0] adj_edge_idx,          // current edge index within node
@@ -179,7 +228,8 @@ module pull_client #(
     input  logic [NODE_ID_W-1:0] req_target_node_id,
     input  logic [NODE_ID_W-1:0] req_consumer_node_id,
     input  logic                 req_is_factor,
-    input  logic [PE_ID_W-1:0]   req_target_pe,
+    input  logic [X_CORD_W-1:0]   req_target_x,
+    input  logic [Y_CORD_W-1:0]   req_target_y,
     input  logic [TXN_ID_W-1:0]  req_txn_id,
 
     // To NoC Adapter (FETCH_REQUEST TX, 3-store sequence)
@@ -188,7 +238,8 @@ module pull_client #(
     output logic [NODE_ID_W-1:0] tx_fetch_req_target_node_id,
     output logic [NODE_ID_W-1:0] tx_fetch_req_consumer_node_id,
     output logic                 tx_fetch_req_is_factor,
-    output logic [PE_ID_W-1:0]   tx_fetch_req_target_pe,
+    output logic [X_CORD_W-1:0]   tx_fetch_req_target_x,
+    output logic [Y_CORD_W-1:0]   tx_fetch_req_target_y,
     output logic [TXN_ID_W-1:0]  tx_fetch_req_txn_id
 );
 ```
@@ -200,7 +251,10 @@ Responds to FETCH_REQUEST from other PEs, sends FETCH_RESPONSE via NoC Adapter. 
 ```systemverilog
 module pull_server #(
     parameter SCOREBOARD_DEPTH = 64,
-    parameter TXN_ID_W = $clog2(SCOREBOARD_DEPTH)
+    parameter TXN_ID_W         = $clog2(SCOREBOARD_DEPTH),
+    parameter SPM_ADDR_W       = 18,   // word address
+    parameter BEAT_BITS        = 64,   // 8-byte beat
+    parameter DATA_WIDTH       = 32    // NoC data width
 )(
     input  logic clk,
     input  logic rst_n,
@@ -211,7 +265,8 @@ module pull_server #(
     input  logic [NODE_ID_W-1:0] req_target_node_id,
     input  logic [NODE_ID_W-1:0] req_consumer_node_id,
     input  logic                 req_is_factor,
-    input  logic [PE_ID_W-1:0]   req_fetch_src_pe,
+    input  logic [X_CORD_W-1:0]   req_fetch_src_x,
+    input  logic [Y_CORD_W-1:0]   req_fetch_src_y,
     input  logic [TXN_ID_W-1:0]  req_txn_id,           // echoed from FETCH_REQUEST store 3
 
     // SPM read port (to SPM Arbiter)
@@ -241,11 +296,12 @@ Receives FETCH_RESPONSE data from NoC Adapter, writes to STAGING region, and not
 
 ```systemverilog
 module response_collector #(
-    parameter STATE_WORDS_W    = 4,
+    parameter STATE_WORDS_W    = 6,
     parameter SCOREBOARD_DEPTH = 64,
     parameter TXN_ID_W         = $clog2(SCOREBOARD_DEPTH),
-    parameter SPM_ADDR_W       = 16,
-    parameter DATA_WIDTH       = 32
+    parameter SPM_ADDR_W       = 18,   // word address
+    parameter BEAT_BITS        = 64,   // 8-byte beat
+    parameter DATA_WIDTH       = 32    // NoC data width
 )(
     input  logic clk,
     input  logic rst_n,
@@ -254,6 +310,7 @@ module response_collector #(
     // Receives 3 types of stores: metadata (MBX_RESP_META), data (MBX_RESP_DATA × N), done (MBX_RESP_DONE)
     input  logic                     rx_fetch_resp_valid,
     output logic                     rx_fetch_resp_ready,
+    input  logic                     rx_fetch_resp_is_factor,
     input  logic [STATE_WORDS_W-1:0] rx_fetch_resp_state_words,
     input  logic [DATA_WIDTH-1:0]    rx_fetch_resp_data,
     input  logic                     rx_fetch_resp_data_valid,
@@ -264,12 +321,22 @@ module response_collector #(
     // STAGING write port (to SPM Arbiter)
     output logic                 staging_wr_valid,
     input  logic                 staging_wr_ready,
-    output logic [SPM_ADDR_W-1:0] staging_wr_addr,
-    output logic [DATA_WIDTH-1:0] staging_wr_data,
+    output logic [SPM_ADDR_W-1:0]  staging_wr_addr,
+    output logic [BEAT_BITS-1:0]   staging_wr_data,    // 64-bit SPM beat
+    output logic [BEAT_BYTES-1:0]  staging_wr_wstrb,   // byte mask (8B)
 
     // To ScoreboardPrefetcher (completion notification)
     output logic                 complete_valid,
     output logic [TXN_ID_W-1:0] complete_txn_id,      // edge_index for edge matching
+    output logic [NODE_ID_W-1:0] complete_node_id,     // producer node ID (from done store, for debug)
+    output logic [NODE_ID_W-1:0] complete_consumer_node_id, // consumer node ID (from done store, for debug)
+
+    // Remote neighbor state stream to Accumulator
+    // Streams pull response data as it arrives (also writes to STAGING in parallel)
+    output logic                 remote_valid,
+    input  logic                 remote_ready,
+    output logic [FP32_W-1:0]    remote_data,
+    output logic                 remote_last,
 
     // STAGING Allocator coordination (internal sub-component)
     // Reservation interface (from ScoreboardPrefetcher)
@@ -279,24 +346,28 @@ module response_collector #(
 
     // Batch control
     output logic                 staging_batch_closed,
-    input  logic                 staging_batch_done
+    input  logic                 batch_done  // batch compute complete, trigger STAGING reset
 );
 ```
 
 ### 2.8 Neighbor State Accumulator
 
 ```systemverilog
-module neighbor_state_accumulator (
+module neighbor_state_accumulator #(
+    parameter FP32_W = 32
+)(
     input  logic clk,
     input  logic rst_n,
 
-    // Local SPM read
+    // Local SPM read (from top-level PE controller, which reads STATE via SPM Arbiter)
+    // The upstream control subsystem unpacks 64-bit SPM beats into 32-bit FP32 words
+    // before presenting them to the accumulator.
     input  logic                 local_valid,
     output logic                 local_ready,
-    input  logic [BEAT_BITS-1:0] local_data,
+    input  logic [FP32_W-1:0]    local_data,   // 32-bit FP32 word
     input  logic                 local_last,
 
-    // Remote response (from Response Collector)
+    // Remote response (from Response Collector, streaming pull data)
     input  logic                 remote_valid,
     output logic                 remote_ready,
     input  logic [FP32_W-1:0]    remote_data,
@@ -308,7 +379,7 @@ module neighbor_state_accumulator (
     output logic [FP32_W-1:0]    out_data,
     output logic                 out_last,
 
-    // Pipeline control
+    // Pipeline control (consumed by top-level PE controller)
     output logic                 accumulator_done  // all neighbors consumed, triggers COMPUTE
 );
 ```
@@ -317,8 +388,11 @@ module neighbor_state_accumulator (
 
 ```systemverilog
 module spm_arbiter #(
-    parameter NUM_BANKS = 8,
-    parameter NUM_CLIENTS = 7  // MetadataScanner, CU_state_rd, CU_staging_rd, CU_wb, PullServer, RespCollector, DMA
+    parameter NUM_BANKS   = 8,
+    parameter NUM_CLIENTS = 7,   // MetadataScanner, CU_state_rd, CU_staging_rd, CU_wb, PullServer, RespCollector, DMA
+    parameter SPM_ADDR_W  = 18,  // word address width
+    parameter BEAT_BITS   = 64,  // 8-byte beat
+    parameter ROW_ADDR_W  = 14   // bank row address (for 1MB SPM)
 )(
     input  logic clk,
     input  logic rst_n,
@@ -348,8 +422,18 @@ module spm_arbiter #(
 
 ### 2.10 Compute Unit (PEComputeEngine)
 
+Stream-based architecture. SPM access is through descriptor-driven stream engines, not direct ports.
+
 ```systemverilog
-module compute_unit (
+module compute_unit #(
+    parameter NODE_ID_W     = 10,
+    parameter DOF_W         = 4,
+    parameter ADJ_COUNT_W   = 4,
+    parameter STATE_WORDS_W = 6,
+    parameter SPM_ADDR_W    = 18,   // word address
+    parameter BEAT_BITS     = 64,   // 8-byte beat
+    parameter FP32_W        = 32
+)(
     input  logic clk,
     input  logic rst_n,
 
@@ -360,7 +444,6 @@ module compute_unit (
     input  logic                 cmd_is_factor,
     input  logic [DOF_W-1:0]     cmd_dof,
     input  logic [ADJ_COUNT_W-1:0] cmd_adj_count,
-    input  logic [SPM_ADDR_W-1:0] cmd_state_base,
     input  logic [STATE_WORDS_W-1:0] cmd_state_words,
 
     // Neighbor state input (from Accumulator)
@@ -369,20 +452,28 @@ module compute_unit (
     input  logic [FP32_W-1:0]    ns_data,
     input  logic                 ns_last,
 
-    // Own state read (from SPM via Arbiter)
-    output logic                 self_rd_valid,
-    input  logic                 self_rd_ready,
-    output logic [SPM_ADDR_W-1:0] self_rd_addr,
-    input  logic [BEAT_BITS-1:0] self_rd_data,
+    // Read Stream Engine interface (descriptor + data)
+    // Compute Unit issues read descriptors; Read Stream Engine returns 64-bit SPM beats
+    output logic                 rd_desc_valid,
+    input  logic                 rd_desc_ready,
+    output logic [SPM_ADDR_W-1:0] rd_desc_base_addr,  // word address
+    output logic [15:0]              rd_desc_word_count,  // number of 32-bit words to read
+    output logic                 rd_desc_is_staging, // 1=STAGING region, 0=STATE region
 
-    // State writeback (to SPM via Arbiter)
-    output logic                 wb_valid,
-    input  logic                 wb_ready,
-    output logic [SPM_ADDR_W-1:0] wb_addr,
-    output logic [BEAT_BITS-1:0] wb_data,
+    input  logic                 rd_beat_valid,
+    output logic                 rd_beat_ready,
+    input  logic [BEAT_BITS-1:0] rd_beat_data,        // 64-bit SPM beat
 
-    // Staging buffer (for MAT_INV, internal)
-    // Not exposed as external port — internal SRAM
+    // Write Stream Engine interface (descriptor + data)
+    // Compute Unit issues write descriptors and streams 32-bit FP32 words
+    output logic                 wr_desc_valid,
+    input  logic                 wr_desc_ready,
+    output logic [SPM_ADDR_W-1:0] wr_desc_base_addr,  // word address
+    output logic [15:0]              wr_desc_word_count,  // number of 32-bit words to write
+
+    output logic                 wr_word_valid,
+    input  logic                 wr_word_ready,
+    output logic [FP32_W-1:0]    wr_word_data         // 32-bit FP32 word
 
     // Completion
     output logic                 done_valid,
@@ -394,12 +485,132 @@ module compute_unit (
 );
 ```
 
-### 2.11 Writeback Controller
+Note: The compute_unit issues read/write descriptors to stream engines. The stream engines contain AGUs that translate descriptors into per-beat SPM addresses and drive the SPM Arbiter. The compute_unit does not directly access SPM.
+
+### 2.11 Read Stream Engine
+
+Receives read descriptors from Compute Unit, generates SPM addresses via AGU, reads 64-bit beats from SPM, and returns them to Compute Unit.
+
+```systemverilog
+module read_stream_engine #(
+    parameter SPM_ADDR_W    = 18,
+    parameter BEAT_BITS     = 64,
+    parameter STATE_WORDS_W = 6
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // Descriptor from Compute Unit
+    input  logic                 desc_valid,
+    output logic                 desc_ready,
+    input  logic [SPM_ADDR_W-1:0] desc_base_addr,    // word address
+    input  logic [STATE_WORDS_W-1:0] desc_word_count,
+    input  logic                 desc_is_staging,    // 1=STAGING, 0=STATE
+
+    // Data to Compute Unit (64-bit beats)
+    output logic                 beat_valid,
+    input  logic                 beat_ready,
+    output logic [BEAT_BITS-1:0] beat_data,
+
+    // SPM read port (to SPM Arbiter)
+    output logic                 spm_rd_valid,
+    input  logic                 spm_rd_ready,
+    output logic [SPM_ADDR_W-1:0] spm_rd_addr,
+    input  logic [BEAT_BITS-1:0] spm_rd_data
+);
+```
+
+**Operation:**
+1. Accept descriptor when `desc_valid && desc_ready`.
+2. AGU generates sequential word addresses: `addr = base_addr, base_addr+1, base_addr+2, ...`
+3. Drive `spm_rd_valid` + `spm_rd_addr` to SPM Arbiter.
+4. Buffer returned `spm_rd_data` beats.
+5. Present `beat_valid` + `beat_data` to Compute Unit.
+6. Every 2 words = 1 beat (8 bytes). If `word_count` is odd, last beat contains only 1 valid word in `[31:0]`; Compute Unit handles unpacking.
+
+### 2.12 Write Stream Engine
+
+Receives write descriptors and 32-bit FP32 data words from Compute Unit, assembles into 64-bit beats, and writes to SPM.
+
+```systemverilog
+module write_stream_engine #(
+    parameter SPM_ADDR_W    = 18,
+    parameter BEAT_BITS     = 64,
+    parameter FP32_W        = 32,
+    parameter STATE_WORDS_W = 6
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // Descriptor from Compute Unit
+    input  logic                 desc_valid,
+    output logic                 desc_ready,
+    input  logic [SPM_ADDR_W-1:0] desc_base_addr,    // word address
+    input  logic [STATE_WORDS_W-1:0] desc_word_count,
+
+    // Data from Compute Unit (32-bit FP32 words)
+    input  logic                 word_valid,
+    output logic                 word_ready,
+    input  logic [FP32_W-1:0]    word_data,
+
+    // SPM write port (to SPM Arbiter)
+    output logic                 spm_wr_valid,
+    input  logic                 spm_wr_ready,
+    output logic [SPM_ADDR_W-1:0] spm_wr_addr,
+    output logic [BEAT_BITS-1:0] spm_wr_data,
+    output logic [7:0]           spm_wr_wstrb    // byte mask
+);
+```
+
+**Operation:**
+1. Accept descriptor when `desc_valid && desc_ready`.
+2. Accept 32-bit words from Compute Unit.
+3. Assemble 2 words into 1 64-bit beat: `{word_1, word_0}`.
+4. Write beat to SPM when 2 words received.
+5. If `word_count` is odd, last word writes with `wstrb = 8'b0000_1111` (only lower 4 bytes valid).
+
+### 2.13 Address Generation Unit (AGU)
+
+Simple linear address generator. Produces sequential word addresses from a descriptor.
+
+```systemverilog
+module agu #(
+    parameter SPM_ADDR_W = 18
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // Start trigger
+    input  logic                 start,
+    input  logic [SPM_ADDR_W-1:0] base_addr,
+    input  logic [15:0]          word_count,     // max 64K words per descriptor
+
+    // Address output (to SPM Arbiter or addr FIFO)
+    output logic                 addr_valid,
+    input  logic                 addr_ready,
+    output logic [SPM_ADDR_W-1:0] addr,
+    output logic                 last_addr        // last address of this descriptor
+);
+```
+
+**Operation:**
+1. On `start`, latch `base_addr` and `word_count`.
+2. Assert `addr_valid` with `addr = base_addr + i` for `i = 0 ... word_count-1`.
+3. `last_addr = 1` on the final address.
+4. Advance when `addr_valid && addr_ready`.
+
+### 2.14 Writeback Controller
 
 Sends NOTIFICATION to all consuming neighbors after compute completes.
 
 ```systemverilog
-module writeback_controller (
+module writeback_controller #(
+    parameter NODE_ID_W     = 10,
+    parameter ADJ_COUNT_W   = 4,
+    parameter MAX_ADJ_COUNT = 8,
+    parameter X_CORD_W      = 6,
+    parameter Y_CORD_W      = 5
+)(
     input  logic clk,
     input  logic rst_n,
 
@@ -412,16 +623,20 @@ module writeback_controller (
     // MAX_ADJ_COUNT is defined in 04_PE_MICROARCHITECTURE.md as a parameter
     input  logic [ADJ_COUNT_W-1:0] adj_count,
     input  logic [MAX_ADJ_COUNT-1:0][NODE_ID_W-1:0] adj_neighbor_ids,
-    input  logic [MAX_ADJ_COUNT-1:0][PE_ID_W-1:0]   adj_neighbor_pes,
+    input  logic [MAX_ADJ_COUNT-1:0][X_CORD_W-1:0]   adj_neighbor_xs,
+    input  logic [MAX_ADJ_COUNT-1:0][Y_CORD_W-1:0]   adj_neighbor_ys,
     input  logic [MAX_ADJ_COUNT-1:0]                 adj_is_local,
 
     // To NoC Adapter (NOTIFICATION TX)
+    // tx_notif_target_node_id is output for symmetry but not encoded into the
+    // notification packet; the destination PE is selected by (target_x, target_y).
     output logic                 tx_notif_valid,
     input  logic                 tx_notif_ready,
     output logic [NODE_ID_W-1:0] tx_notif_source_node_id,
-    output logic [NODE_ID_W-1:0] tx_notif_target_node_id,
+    output logic [NODE_ID_W-1:0] tx_notif_target_node_id,  // unused in packet payload
     output logic                 tx_notif_is_factor,
-    output logic [PE_ID_W-1:0]   tx_notif_target_pe,
+    output logic [X_CORD_W-1:0]   tx_notif_target_x,
+    output logic [Y_CORD_W-1:0]   tx_notif_target_y,
 
     // Scoreboard reset trigger (to ScoreboardPrefetcher)
     output logic                 reset_valid,
@@ -433,7 +648,7 @@ module writeback_controller (
 );
 ```
 
-### 2.12 NoC Adapter (noc_adapter)
+### 2.15 NoC Adapter (noc_adapter)
 
 Wraps `bsg_manycore_endpoint_standard` to bridge GBP internal interfaces with the manycore NoC.
 
@@ -443,11 +658,11 @@ module noc_adapter #(
     parameter ADDR_WIDTH     = 16,
     parameter X_CORD_WIDTH   = 6,
     parameter Y_CORD_WIDTH   = 5,
-    parameter NODE_ID_W      = 8,
-    parameter PE_ID_W        = 4,
+    parameter NODE_ID_W      = 10,
     parameter SCOREBOARD_DEPTH = 64,
     parameter TXN_ID_W       = $clog2(SCOREBOARD_DEPTH),
-    parameter GBP_BASE_ADDR  = 16'h1000
+    parameter STATE_WORDS_W  = 6,
+    parameter GBP_BASE_ADDR  = 16'h1000  // resolved: 0x1000, no conflict with existing PE address map
 )(
     input  logic clk,
     input  logic rst_n,
@@ -461,12 +676,14 @@ module noc_adapter #(
     input  logic [Y_CORD_WIDTH-1:0] my_y_i,
 
     // ── Internal TX: from Writeback Controller (NOTIFICATION) ──
+    // Notification packet carries {is_factor, source_node_id}. The destination
+    // PE is given by (target_x, target_y); there is no per-consumer target_node_id.
     input  logic                 tx_notif_valid,
     output logic                 tx_notif_ready,
     input  logic [NODE_ID_W-1:0] tx_notif_source_node_id,
-    input  logic [NODE_ID_W-1:0] tx_notif_target_node_id,
     input  logic                 tx_notif_is_factor,
-    input  logic [PE_ID_W-1:0]   tx_notif_target_pe,
+    input  logic [X_CORD_WIDTH-1:0] tx_notif_target_x,
+    input  logic [Y_CORD_WIDTH-1:0] tx_notif_target_y,
 
     // ── Internal TX: from Pull Client (FETCH_REQUEST, 3-store sequence) ──
     input  logic                 tx_fetch_req_valid,
@@ -474,7 +691,8 @@ module noc_adapter #(
     input  logic [NODE_ID_W-1:0] tx_fetch_req_target_node_id,
     input  logic [NODE_ID_W-1:0] tx_fetch_req_consumer_node_id,
     input  logic                 tx_fetch_req_is_factor,
-    input  logic [PE_ID_W-1:0]   tx_fetch_req_target_pe,
+    input  logic [X_CORD_WIDTH-1:0] tx_fetch_req_target_x,
+    input  logic [Y_CORD_WIDTH-1:0] tx_fetch_req_target_y,
     input  logic [TXN_ID_W-1:0]  tx_fetch_req_txn_id,
 
     // ── Internal TX: from Pull Server (FETCH_RESPONSE) ──
@@ -490,12 +708,15 @@ module noc_adapter #(
     input  logic [TXN_ID_W-1:0]      tx_fetch_resp_txn_id,
 
     // ── Internal RX: to ScoreboardPrefetcher (NOTIFICATION) ──
+    // Notification payload is {is_factor, source_node_id}. There is no
+    // per-consumer target_node_id in the packet; the destination PE is
+    // identified by the packet's (x_cord, y_cord).
     output logic                 rx_notif_valid,
     input  logic                 rx_notif_ready,
     output logic [NODE_ID_W-1:0] rx_notif_source_node_id,
-    output logic [NODE_ID_W-1:0] rx_notif_target_node_id,
     output logic                 rx_notif_is_factor,
-    output logic [PE_ID_W-1:0]   rx_notif_source_pe,
+    output logic [X_CORD_WIDTH-1:0] rx_notif_source_x,
+    output logic [Y_CORD_WIDTH-1:0] rx_notif_source_y,
 
     // ── Internal RX: to Pull Server (FETCH_REQUEST, 3-store latching) ──
     output logic                 rx_fetch_req_valid,
@@ -503,7 +724,8 @@ module noc_adapter #(
     output logic [NODE_ID_W-1:0] rx_fetch_req_target_node_id,
     output logic [NODE_ID_W-1:0] rx_fetch_req_consumer_node_id,
     output logic                 rx_fetch_req_is_factor,
-    output logic [PE_ID_W-1:0]   rx_fetch_req_src_pe,
+    output logic [X_CORD_WIDTH-1:0] rx_fetch_req_src_x,
+    output logic [Y_CORD_WIDTH-1:0] rx_fetch_req_src_y,
     output logic [TXN_ID_W-1:0]  rx_fetch_req_txn_id,
 
     // ── Internal RX: to Response Collector (FETCH_RESPONSE) ──
@@ -511,6 +733,7 @@ module noc_adapter #(
     // rx_fetch_resp_done_valid: asserted when MBX_RESP_DONE store is received
     output logic                     rx_fetch_resp_valid,
     input  logic                     rx_fetch_resp_ready,
+    output logic                     rx_fetch_resp_is_factor,
     output logic [STATE_WORDS_W-1:0] rx_fetch_resp_state_words,
     output logic [DATA_WIDTH-1:0]    rx_fetch_resp_data,
     output logic                     rx_fetch_resp_data_valid,
@@ -530,6 +753,263 @@ module noc_adapter #(
 3. RX path: decodes `in_addr_o` against `GBP_BASE_ADDR` to route to appropriate module
 4. Coordinate conversion: `(my_x_i, my_y_i)` used for `src_x_cord`/`src_y_cord` in outgoing packets
 5. `tx_busy` indicates any TX channel is active (for debugging)
+6. `tx_notif_target_node_id` is provided for symmetry but is not encoded into the notification packet.
+7. `rx_fetch_resp_ready` is not present because the downstream `response_collector` implements a pass-through on the RX path (data is forwarded regardless of `remote_ready`). NoC RX backpressure for fetch responses is therefore not implemented in this version.
+
+---
+
+## 2.16 Subsystem Wrappers
+
+The following wrappers group leaf modules defined in §2.1–2.15. They do not define new algorithms; they only hide intra-subsystem wiring and expose the minimal cross-subsystem interface required by `gbp_pe`.
+
+### 2.16.1 Control Subsystem (`gbp_pe_control_subsystem`)
+
+Encapsulates: `phase_controller`, `node_scheduler`, `metadata_scanner`.
+
+```systemverilog
+module gbp_pe_control_subsystem #(
+    parameter int NUM_NODES = 1024,
+    parameter int NODE_ID_W = 10,
+    parameter int SPM_ADDR_W = 18,
+    parameter int STATE_WORDS_W = 6,
+    parameter int ADJ_COUNT_W = 4,
+    parameter int DOF_W = 4,
+    parameter int BEAT_BITS = 64,
+    parameter int X_CORD_W = 6,
+    parameter int Y_CORD_W = 5
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // From fetch subsystem: node readiness
+    input  logic [NUM_NODES-1:0] node_ready_i,
+
+    // From writeback controller: completion pulse
+    input  logic wb_done_i,
+
+    // To compute subsystem: command + metadata
+    output logic                 cmd_valid_o,
+    input  logic                 cmd_ready_i,
+    output logic [NODE_ID_W-1:0] cmd_node_id_o,
+    output logic                 cmd_is_factor_o,
+    output logic [DOF_W-1:0]     cmd_dof_o,
+    output logic [ADJ_COUNT_W-1:0] cmd_adj_count_o,
+    output logic [STATE_WORDS_W-1:0] cmd_state_words_o,
+    output logic [SPM_ADDR_W-1:0]  cmd_state_base_o,
+
+    // Adjacency stream to fetch subsystem / accumulator
+    output logic                 adj_valid_o,
+    input  logic                 adj_ready_i,
+    output logic [NODE_ID_W-1:0] adj_neighbor_id_o,
+    output logic [X_CORD_W-1:0]  adj_neighbor_x_o,
+    output logic [Y_CORD_W-1:0]  adj_neighbor_y_o,
+    output logic                 adj_is_local_o,
+    output logic                 adj_last_o,
+    output logic [ADJ_COUNT_W-1:0] adj_edge_idx_o,
+
+    // Scoreboard reset from writeback controller
+    input  logic                 reset_valid_i,
+    input  logic [NODE_ID_W-1:0] reset_node_id_i,
+    input  logic                 reset_is_factor_i,
+
+    // SPM read port (to memory subsystem)
+    output logic                 spm_rd_valid_o,
+    input  logic                 spm_rd_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd_data_i,
+
+    // My coordinates (for local/remote classification)
+    input  logic [X_CORD_W-1:0] my_x_i,
+    input  logic [Y_CORD_W-1:0] my_y_i
+);
+```
+
+### 2.16.2 Compute Subsystem (`gbp_pe_compute_subsystem`)
+
+Encapsulates: `compute_unit`, `read_stream_engine`, `write_stream_engine`, internal `agu` instances.
+
+```systemverilog
+module gbp_pe_compute_subsystem #(
+    parameter int NODE_ID_W = 10,
+    parameter int SPM_ADDR_W = 18,
+    parameter int STATE_WORDS_W = 6,
+    parameter int ADJ_COUNT_W = 4,
+    parameter int DOF_W = 4,
+    parameter int BEAT_BITS = 64,
+    parameter int FP32_W = 32
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // Command from control subsystem
+    input  logic                 cmd_valid_i,
+    output logic                 cmd_ready_o,
+    input  logic [NODE_ID_W-1:0] cmd_node_id_i,
+    input  logic                 cmd_is_factor_i,
+    input  logic [DOF_W-1:0]     cmd_dof_i,
+    input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
+    input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
+    input  logic [SPM_ADDR_W-1:0]  cmd_state_base_i,
+
+    // Neighbor state from accumulator
+    input  logic                 ns_valid_i,
+    output logic                 ns_ready_o,
+    input  logic [FP32_W-1:0]    ns_data_i,
+    input  logic                 ns_last_i,
+
+    // SPM read/write ports (to memory subsystem)
+    // Two independent read ports: STATE and STAGING
+    output logic                 spm_rd0_valid_o,
+    input  logic                 spm_rd0_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd0_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd0_data_i,
+
+    output logic                 spm_rd1_valid_o,
+    input  logic                 spm_rd1_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd1_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd1_data_i,
+
+    output logic                 spm_wr_valid_o,
+    input  logic                 spm_wr_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_wr_addr_o,
+    output logic [BEAT_BITS-1:0]  spm_wr_data_o,
+    output logic [BEAT_BITS/8-1:0] spm_wr_wstrb_o,
+
+    // Completion
+    output logic                 done_valid_o,
+    output logic [NODE_ID_W-1:0] done_node_id_o,
+    output logic                 done_is_factor_o,
+
+    // Batch completion (to fetch subsystem / response collector)
+    output logic                 batch_done_o
+);
+```
+
+**Note:** `read_stream_engine` and `write_stream_engine` each instantiate their own `agu` internally; the AGU is not exposed outside this subsystem.
+
+### 2.16.3 Memory Subsystem (`gbp_pe_memory_subsystem`)
+
+Encapsulates: `spm_arbiter`, `spm_bank_array`.
+
+```systemverilog
+module gbp_pe_memory_subsystem #(
+    parameter int NUM_BANKS = 8,
+    parameter int NUM_CLIENTS = 7,
+    parameter int SPM_ADDR_W = 18,
+    parameter int BEAT_BITS = 64,
+    parameter int ROW_ADDR_W = 14
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // Client read ports
+    input  logic [NUM_CLIENTS-1:0]              rd_valid_i,
+    output logic [NUM_CLIENTS-1:0]              rd_ready_o,
+    input  logic [NUM_CLIENTS-1:0][SPM_ADDR_W-1:0] rd_addr_i,
+    output logic [NUM_CLIENTS-1:0][BEAT_BITS-1:0]   rd_data_o,
+
+    // Client write ports
+    input  logic [NUM_CLIENTS-1:0]              wr_valid_i,
+    output logic [NUM_CLIENTS-1:0]              wr_ready_o,
+    input  logic [NUM_CLIENTS-1:0][SPM_ADDR_W-1:0] wr_addr_i,
+    input  logic [NUM_CLIENTS-1:0][BEAT_BITS-1:0]   wr_data_i,
+    input  logic [NUM_CLIENTS-1:0][BEAT_BITS/8-1:0] wr_wstrb_i
+);
+```
+
+**Client index mapping (fixed):**
+
+| Index | Direction | Source Subsystem | Purpose |
+|-------|-----------|------------------|---------|
+| 0 | read | control | Metadata Scanner META reads |
+| 1 | read | compute | Read Stream Engine 0 (STATE) |
+| 2 | read | compute | Read Stream Engine 1 (STAGING) |
+| 3 | write | compute | Write Stream Engine (STATE writeback) |
+| 4 | read | fetch | Pull Server STATE reads |
+| 5 | write | fetch | Response Collector STAGING writes |
+| 6 | read+write | external | DMA / loader |
+
+### 2.16.4 Fetch Subsystem (`gbp_pe_fetch_subsystem`)
+
+Encapsulates: `scoreboard_prefetcher`, `pull_client`, `response_collector`.
+
+```systemverilog
+module gbp_pe_fetch_subsystem #(
+    parameter int NODE_ID_W = 10,
+    parameter int X_CORD_W = 6,
+    parameter int Y_CORD_W = 5,
+    parameter int ADJ_COUNT_W = 4,
+    parameter int STATE_WORDS_W = 6,
+    parameter int TXN_ID_W = 6,
+    parameter int SCOREBOARD_DEPTH = 64,
+    parameter int NUM_NODES = 1024,
+    parameter int SPM_ADDR_W = 18,
+    parameter int BEAT_BITS = 64
+)(
+    input  logic clk,
+    input  logic rst_n,
+
+    // Adjacency stream from control subsystem
+    input  logic                 adj_valid_i,
+    output logic                 adj_ready_o,
+    input  logic [NODE_ID_W-1:0] adj_neighbor_id_i,
+    input  logic [X_CORD_W-1:0]  adj_neighbor_x_i,
+    input  logic [Y_CORD_W-1:0]  adj_neighbor_y_i,
+    input  logic                 adj_is_local_i,
+    input  logic                 adj_last_i,
+    input  logic [ADJ_COUNT_W-1:0] adj_edge_idx_i,
+    input  logic [NODE_ID_W-1:0] adj_current_node_id_i,
+
+    // Node readiness to control subsystem
+    output logic [NUM_NODES-1:0] node_ready_o,
+
+    // Scoreboard reset from writeback controller
+    input  logic                 reset_valid_i,
+    input  logic [NODE_ID_W-1:0] reset_node_id_i,
+    input  logic                 reset_is_factor_i,
+
+    // NoC fetch request TX (to noc_adapter)
+    output logic                 tx_fetch_req_valid_o,
+    input  logic                 tx_fetch_req_ready_i,
+    output logic [NODE_ID_W-1:0] tx_fetch_req_target_node_id_o,
+    output logic [NODE_ID_W-1:0] tx_fetch_req_consumer_node_id_o,
+    output logic                 tx_fetch_req_is_factor_o,
+    output logic [X_CORD_W-1:0]  tx_fetch_req_target_x_o,
+    output logic [Y_CORD_W-1:0]  tx_fetch_req_target_y_o,
+    output logic [TXN_ID_W-1:0]  tx_fetch_req_txn_id_o,
+
+    // NoC fetch response RX (from noc_adapter)
+    input  logic                     rx_fetch_resp_valid_i,
+    input  logic                     rx_fetch_resp_is_factor_i,
+    input  logic [STATE_WORDS_W-1:0] rx_fetch_resp_state_words_i,
+    input  logic [31:0]              rx_fetch_resp_data_i,
+    input  logic                     rx_fetch_resp_data_valid_i,
+    input  logic                     rx_fetch_resp_last_i,
+    input  logic                     rx_fetch_resp_done_valid_i,
+    input  logic [TXN_ID_W-1:0]      rx_fetch_resp_txn_id_i,
+
+    // SPM read/write ports (to memory subsystem)
+    output logic                 spm_rd_valid_o,
+    input  logic                 spm_rd_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd_data_i,
+
+    output logic                 spm_wr_valid_o,
+    input  logic                 spm_wr_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_wr_addr_o,
+    output logic [BEAT_BITS-1:0]  spm_wr_data_o,
+    output logic [BEAT_BITS/8-1:0] spm_wr_wstrb_o,
+
+    // Remote neighbor data to accumulator
+    output logic                 remote_valid_o,
+    input  logic                 remote_ready_i,
+    output logic [31:0]          remote_data_o,
+    output logic                 remote_last_o,
+
+    // Batch completion (from compute subsystem)
+    input  logic                 batch_done_i
+);
+```
 
 ---
 
@@ -614,16 +1094,13 @@ READY → IDLE:       reset_valid && matches node (remote edges only; local edge
              │ spm_rd_data valid            │
              ▼                              │
         ┌──────────┐                       │
-        │ SEND_HDR │ (send header)         │
-        └────┬─────┘                       │
-             │ tx_fetch_resp_ready          │
-             ▼                              │
-        ┌──────────┐                       │
         │ SEND_DATA│ (stream data words)   │
         └────┬─────┘                       │
              │ all words sent               │
              └──────────────────────────────┘
 ```
+
+Note: Metadata store (`MBX_RESP_META`) is inserted automatically by the NoC Adapter TX Response FSM, not by the Pull Server.
 
 ### 3.4 Response Collector FSM
 

@@ -1,0 +1,3 @@
+top: phase_controller_top
+top_sv: tops/unit/phase_controller_top.sv
+rtl_f: tests/unit/phase_controller.f

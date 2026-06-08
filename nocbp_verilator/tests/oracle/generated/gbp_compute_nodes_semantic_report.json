@@ -5,24 +5,24 @@
     "pass_rule": "abs_err<=abs_tol"
   },
   "compute_variable_node": {
-    "status": "FAIL",
+    "status": "PASS",
     "summary": {
       "total_cases": 2,
-      "failed_cases": 1
+      "failed_cases": 0
     },
     "cases": [
       {
         "vector_id": 0,
         "scenario": "compute_variable_node_staged_case_0",
-        "status": "FAIL",
+        "status": "PASS",
         "state_semantics_pass": true,
         "fields": {
           "belief_eta_0": {
-            "observed": -1.69232,
+            "observed": -1.69342,
             "expected": -1.69342,
-            "abs_err": 0.0011,
+            "abs_err": 0,
             "abs_tol": 0.0001,
-            "status": "FAIL"
+            "status": "PASS"
           },
           "belief_lam_00": {
             "observed": 1.47106,
@@ -72,10 +72,10 @@
     ]
   },
   "compute_factor_node": {
-    "status": "FAIL",
+    "status": "PASS",
     "summary": {
       "total_cases": 2,
-      "failed_cases": 1
+      "failed_cases": 0
     },
     "cases": [
       {
@@ -140,7 +140,7 @@
       {
         "vector_id": 1,
         "scenario": "compute_factor_node_staged_case_1",
-        "status": "FAIL",
+        "status": "PASS",
         "prior_fallback": false,
         "relin_gate_taken": false,
         "damping_gate_taken": true,
@@ -175,10 +175,10 @@
           },
           "belief_eta_0": {
             "observed": 1.94186,
-            "expected": 1.94296,
-            "abs_err": 0.0011,
+            "expected": 1.94186,
+            "abs_err": 0,
             "abs_tol": 0.0001,
-            "status": "FAIL"
+            "status": "PASS"
           },
           "belief_lam_00": {
             "observed": 3.40284,

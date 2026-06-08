@@ -1,0 +1,3 @@
+top: spm_bank_array_top
+top_sv: tops/unit/spm_bank_array_top.sv
+rtl_f: tests/unit/spm_bank_array.f

@@ -1,0 +1,3 @@
+top: pull_server_top
+top_sv: tops/unit/pull_server_top.sv
+rtl_f: tests/unit/pull_server.f

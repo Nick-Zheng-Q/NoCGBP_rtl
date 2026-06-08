@@ -1,3 +1,0 @@
-top: endpoint_rx_top
-top_sv: tops/unit/endpoint_rx_top.sv
-rtl_f: tests/unit/endpoint_rx.f

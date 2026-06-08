@@ -1,6 +1,6 @@
 # Architecture Document Writing Guide
 
-Purpose: Guide for agents writing RTL architecture documents in `v/gbp_pe/doc/`.
+Purpose: Guide for agents writing RTL architecture documents in `docs/gbp_pe/`.
 
 ---
 
@@ -107,7 +107,8 @@ Ask these questions to calibrate granularity:
 ```systemverilog
 typedef struct packed {
     logic [NODE_ID_W-1:0]  neighbor_id;
-    logic [PE_ID_W-1:0]    neighbor_pe_id;
+    logic [X_CORD_W-1:0]   neighbor_x;
+    logic [Y_CORD_W-1:0]   neighbor_y;
 } adj_entry_t;
 ```
 
@@ -244,7 +245,7 @@ Always include all sibling documents in this table, even if not directly referen
 | Section title | `## N. Title Case` | `## 1. Design Goals` |
 | Subsection title | `### N.M Title Case` | `### 2.1 NodeHeader` |
 | Type name | `snake_case_t` | `node_header_t` |
-| Signal name | `snake_case` | `neighbor_pe_id` |
+| Signal name | `snake_case` | `neighbor_x` |
 | Module name | `snake_case` | `pull_server` |
 | Parameter name | `UPPER_SNAKE_CASE` | `OUTSTANDING_DEPTH` |
 

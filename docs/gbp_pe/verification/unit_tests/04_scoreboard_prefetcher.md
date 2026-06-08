@@ -8,13 +8,19 @@ Verify that the ScoreboardPrefetcher correctly:
 - Reports node readiness when all edges are ready
 - Resets edges after compute
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `scoreboard_prefetcher`
-- Parameters: `SCOREBOARD_DEPTH = 64`
+- Parameters: `SCOREBOARD_DEPTH = 64`, `NUM_NODES = 1024`
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: All edges IDLE, scoreboard empty
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -28,12 +34,12 @@ Verify that the ScoreboardPrefetcher correctly:
 | T+1   | rx_notif_valid | 1 | Notification received |
 | T+1   | rx_notif_source_node_id | 0x10 | Producer node ID |
 | T+1   | rx_notif_target_node_id | 0x20 | Consumer node ID |
-| T+1   | rx_notif_source_pe | 0x02 | Producer PE ID |
+| T+1   | rx_notif_source_x | 0x02 | Producer X coord |
+| T+1   | rx_notif_source_y | 0x00 | Producer Y coord |
 | T+2   | rx_notif_valid | 0 | Clear notification |
 | T+3   | fetch_req_ready | 1 | Pull Client ready |
 | T+5   | complete_valid | 1 | Fetch response complete |
-| T+5   | resp_producer_node_id | 0x10 | Match producer |
-| T+5   | resp_consumer_node_id | 0x20 | Match consumer |
+| T+5   | complete_txn_id | 0x03 | Match edge by txn_id |
 | T+6   | complete_valid | 0 | Clear completion |
 
 ### 3.2 Test Case 2: Multiple Edges, Node Readiness
@@ -50,9 +56,9 @@ Verify that the ScoreboardPrefetcher correctly:
 | T+3   | rx_notif_source_node_id | 0x11 | Producer 2 |
 | T+3   | rx_notif_target_node_id | 0x20 | Consumer (same) |
 | T+5   | complete_valid | 1 | Edge 1 complete |
-| T+5   | resp_producer_node_id | 0x10 | Match producer 1 |
+| T+5   | complete_txn_id | 0x00 | Match edge 0 by txn_id |
 | T+7   | complete_valid | 1 | Edge 2 complete |
-| T+7   | resp_producer_node_id | 0x11 | Match producer 2 |
+| T+7   | complete_txn_id | 0x01 | Match edge 1 by txn_id |
 
 ### 3.3 Test Case 3: Scoreboard Full
 
@@ -64,6 +70,9 @@ Verify that the ScoreboardPrefetcher correctly:
 | T+1..T+64 | rx_notif_valid | 1 | Fill scoreboard |
 | T+65  | rx_notif_valid | 1 | Notification when full |
 | T+65  | scoreboard_full | 1 | Scoreboard at capacity |
+
+
+---
 
 ## 4. Expected Output
 
@@ -98,6 +107,9 @@ Verify that the ScoreboardPrefetcher correctly:
 | T+65  | scoreboard_full | 1 | Full flag asserted |
 | T+65  | fetch_req_valid | 0 | No new fetches issued |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -114,6 +126,9 @@ complete  _____________________________|        |___________
 ready     ________________________|    |____________________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Edge transitions: IDLE → NOTIFIED → IN_FLIGHT → READY → IDLE
@@ -123,9 +138,30 @@ ready     ________________________|    |____________________
 - [ ] Scoreboard full blocks new fetches
 - [ ] Edges reset after `reset_valid` assertion
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Reset during in-flight**: Verify clean state after reset
 2. **Duplicate notification**: Same edge notified while IN_FLIGHT
 3. **Out-of-order responses**: Responses arrive in different order than requests
 4. **Local edges**: Always READY, never leave READY state
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

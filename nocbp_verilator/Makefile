@@ -39,12 +39,12 @@ RUN_ENV = LEVEL='$(LEVEL)' TEST='$(TEST)' TOP='$(TOP)' RUN_CONFIG='$(RUN_CONFIG)
 ifeq ($(VERILATOR_WARNINGS), strict)
 VFLAGS += --cc --exe --build -O2 -Wall -Werror
 else ifeq ($(VERILATOR_WARNINGS), minimal)
-VFLAGS += --cc --exe --build -O2 -Wall -Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-UNOPTFLAT -Wno-WIDTHCONCAT -Wno-EOFNEWLINE
+VFLAGS += --cc --exe --build -O2 -Wall -Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-UNOPTFLAT -Wno-IMPORTSTAR -Wno-WIDTHCONCAT -Wno-EOFNEWLINE
 else ifeq ($(VERILATOR_WARNINGS), none)
-VFLAGS += --cc --exe --build -O2 -Wno-fatal
+VFLAGS += --cc --exe --build -O2 -Wno-fatal -Wno-lint
 else
 # Default configuration - suppress common warnings but keep others
-VFLAGS += --cc --exe --build -O2 -Wall -Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-UNOPTFLAT
+VFLAGS += --cc --exe --build -O2 -Wall -Wno-UNDRIVEN -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-PINCONNECTEMPTY -Wno-DECLFILENAME -Wno-UNOPTFLAT -Wno-IMPORTSTAR
 endif
 VFLAGS += --top-module $(TOP)
 VFLAGS += --Mdir $(OBJ_DIR)
@@ -61,14 +61,34 @@ ifeq ($(TRACE),1)
 VFLAGS += --trace
 endif
 
-.PHONY: all build run clean show show-config list-tests clean-all
+.PHONY: all build lint run clean show show-config list-tests clean-all
 
 all: build
 
-build:
+# Extract RTL source files from .f file (exclude flags/lines starting with -)
+RTL_F_SRCS := $(if $(RTL_F),$(shell sed '/^-/d;/^$$/d' $(call abs_path,$(RTL_F))),)
+RTL_ALL_SRCS := $(call abs_list,$(RTL_F_SRCS)) $(call abs_list,$(RTL_SV)) $(if $(TOP_SV),$(call abs_path,$(TOP_SV)),)
+
+$(EXE): $(RTL_ALL_SRCS) $(call abs_path,$(TB)) $(call abs_path,common/sim_main.cc)
 	mkdir -p $(OBJ_DIR)
 	python3 common/update_clangd_includes.py .clangd $(abspath $(OBJ_DIR))
 	$(VERILATOR) $(VFLAGS)
+
+build: $(EXE)
+
+# Syntax-only lint (no C++ compilation). Reuses the same file list / include dirs
+# as a normal build but skips the testbench and sim_main.cc.
+# Example: make lint LEVEL=integration TEST=new_pe_integration
+# Example: make lint TOP=pe_top RTL_F=tests/integration/new_pe_integration.f
+lint:
+	mkdir -p $(OBJ_DIR)
+	$(VERILATOR) --lint-only --top-module $(TOP) \
+		$(if $(RTL_F),-f $(call abs_path,$(RTL_F)),) \
+		$(call abs_list,$(RTL_SV)) \
+		$(if $(TOP_SV),$(call abs_path,$(TOP_SV)),) \
+		$(addprefix -I, $(call abs_list,$(INCDIRS))) \
+		$(addprefix +define+, $(DEFINES)) \
+		--Mdir $(OBJ_DIR)
 
 run: build
 	@if command -v timeout >/dev/null 2>&1; then \
@@ -110,6 +130,41 @@ clean-all:
 	rm -rf build/
 	rm -f tests/**/*.yaml.mk
 	rm -f .clangd
+
+# ── Regression suite: all verified tests ──
+REGRESSION_UNIT_TESTS := agu compute_unit gbp_pe_compute_subsystem gbp_pe_control_subsystem gbp_pe_fetch_subsystem gbp_pe_memory_subsystem metadata_scanner neighbor_state_accumulator noc_adapter node_scheduler phase_controller pull_client pull_server read_stream_engine_top response_collector scoreboard_prefetcher spm_arbiter spm_bank spm_bank_array writeback_controller write_stream_engine_top
+REGRESSION_INTEG_TESTS := control_subsystem fetch_request_flow fetch_response_flow fetch_subsystem full_pull_cycle multi_node_concurrent notification_flow phase_scheduling
+
+.PHONY: regression
+regression:
+	@echo "========================================"
+	@echo "  GBP PE Regression Suite"
+	@echo "========================================"
+	@PASS=0; FAIL=0; \
+UNIT_LIST="$(REGRESSION_UNIT_TESTS)"; \
+for t in $$UNIT_LIST; do \
+	printf "  UNIT  %-40s " "$$t ..."; \
+	if $(MAKE) LEVEL=unit TEST=$$t VERILATOR_WARNINGS=none run >/tmp/reg_$$t.log 2>&1; then \
+		echo "PASS"; PASS=$$((PASS+1)); \
+	else \
+		echo "FAIL"; FAIL=$$((FAIL+1)); \
+		tail -5 /tmp/reg_$$t.log | sed 's/^/    /'; \
+	fi; \
+done; \
+INTEG_LIST="$(REGRESSION_INTEG_TESTS)"; \
+for t in $$INTEG_LIST; do \
+	printf "  INTEG %-40s " "$$t ..."; \
+	if $(MAKE) LEVEL=integration TEST=$$t VERILATOR_WARNINGS=none run >/tmp/reg_$$t.log 2>&1; then \
+		echo "PASS"; PASS=$$((PASS+1)); \
+	else \
+		echo "FAIL"; FAIL=$$((FAIL+1)); \
+		tail -5 /tmp/reg_$$t.log | sed 's/^/    /'; \
+	fi; \
+done; \
+echo "========================================"; \
+echo "  PASSED: $$PASS  FAILED: $$FAIL"; \
+echo "========================================"; \
+if [ $$FAIL -gt 0 ]; then exit 1; fi
 
 list-tests:
 	@echo "=== Unit Tests ==="

@@ -1,0 +1,2 @@
+top: fetch_subsystem_top
+rtl_f: tests/integration/fetch_subsystem.f

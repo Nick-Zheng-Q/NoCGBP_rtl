@@ -1,117 +1,107 @@
-# gbp_pe Unit Test (Top-Level Shell)
+# gbp_pe Unit Test (Top-Level)
+
+> **Status**: 🟡 **Partially implemented** — `gbp_pe.sv` RTL is complete (noc_adapter + 4 subsystems + pull_server + accumulator + writeback_controller). Top-level functional test is not yet written.
 
 ## 1. Test Objective
 
 Verify that the `gbp_pe` top-level module correctly:
-- Wraps `gbp_pe_endpoint_adapter` and `pe_top`
-- Connects to manycore `link_sif` interface
-- Handles incoming requests from NoC
-- Sends outgoing responses/completions
-- Manages barrier synchronization
+- Instantiates `noc_adapter` and connects to manycore `link_sif` interface
+- Integrates 4 subsystems (`control`, `compute`, `memory`, `fetch`) with `pull_server`
+- Handles incoming NoC stores (NOTIFICATION, FETCH_REQUEST, FETCH_RESPONSE)
+- Sends outgoing NoC stores (FETCH_REQUEST, FETCH_RESPONSE, NOTIFICATION)
+- Manages the foreground compute pipeline (schedule → scan → compute → writeback)
 
 ## 2. Preconditions
 
 - Module: `gbp_pe`
 - Clock: 100MHz (10ns period)
-- Reset: Active high (`reset_i`)
+- Reset: Active low (`rst_n`)
 - Initial state: Reset, all outputs deasserted
 
-## 3. Test Stimulus
+## 3. Architecture Under Test
 
-### 3.1 Test Case 1: Incoming Store Request
+```
+gbp_pe
+├── noc_adapter (link_sif_i/o)
+├── gbp_pe_control_subsystem
+│   ├── phase_controller
+│   ├── node_scheduler
+│   └── metadata_scanner
+├── gbp_pe_compute_subsystem
+│   ├── compute_unit
+│   ├── read_stream_engine (×2)
+│   └── write_stream_engine
+├── gbp_pe_memory_subsystem
+│   ├── spm_arbiter
+│   └── spm_bank_array (8 banks)
+├── gbp_pe_fetch_subsystem
+│   ├── scoreboard_prefetcher
+│   ├── pull_client
+│   └── response_collector
+├── pull_server
+├── neighbor_state_accumulator
+└── writeback_controller
+```
 
-**Scenario**: External PE sends a store to this PE's address space.
+## 4. Test Stimulus (Planned)
+
+### 4.1 Test Case 1: NoC Store Ingress
+
+**Scenario**: External PE sends NOTIFICATION store to this PE.
 
 | Cycle | Signal | Value | Description |
 |-------|--------|-------|-------------|
-| T+0   | reset_i | 0 | Reset deasserted |
-| T+1   | link_sif_i.fwd.v | 1 | Forward packet valid |
-| T+1   | link_sif_i.fwd.data | PACKET | Store packet |
-| T+1   | link_sif_i.fwd.data.addr | 0x1000 | Target address |
-| T+1   | link_sif_i.fwd.data.op_v2 | e_remote_store | Store operation |
-| T+1   | link_sif_i.fwd.data.payload | 0xDEAD | Store data |
-| T+1   | link_sif_i.fwd.data.src_x_cord | 3 | Source X |
-| T+1   | link_sif_i.fwd.data.src_y_cord | 2 | Source Y |
+| T+0   | rst_n | 1 | Reset deasserted |
+| T+1   | link_sif_i | NOTIF_STORE | NoC forward packet |
+| T+1   | store_addr | MBX_NOTIFICATION | Mailbox address |
+| T+1   | store_data | {is_factor, src_node} | Payload |
 | T+2   | link_sif_i.fwd.v | 0 | Clear |
 
-### 3.2 Test Case 2: Compute Done Response
+**Expected**: `rx_notif_valid_o` asserted to `gbp_pe_fetch_subsystem`.
 
-**Scenario**: Internal compute completes, sends done packet to NoC.
+### 4.2 Test Case 2: Compute Pipeline End-to-End
 
-| Cycle | Signal | Value | Description |
-|-------|--------|-------|-------------|
-| T+0   | reset_i | 0 | Reset deasserted |
-| T+1   | wb_cmd_valid_i | 1 | Whitebox command (if enabled) |
-| T+1   | wb_cmd_kind_i | 2'b01 | Compute done kind |
-| T+2   | wb_cmd_valid_i | 0 | Clear |
-
-### 3.3 Test Case 3: Barrier Synchronization
-
-**Scenario**: Barrier signal propagation across PEs.
+**Scenario**: One full node update cycle.
 
 | Cycle | Signal | Value | Description |
 |-------|--------|-------|-------------|
-| T+0   | reset_i | 0 | Reset deasserted |
-| T+1   | barrier_data_i | 1 | Barrier signal from neighbor |
-| T+2   | barrier_data_i | 0 | Clear barrier |
+| T+1   | node_ready[0x10] | 1 | Node ready (from scoreboard) |
+| T+N   | cmd_valid | 1 | Control → Compute command |
+| T+N+M | done_valid | 1 | Compute done |
+| T+N+M+1 | wb_done | 1 | Writeback complete |
 
-## 4. Expected Output
+### 4.3 Test Case 3: Fetch Request Egress
 
-### 4.1 Test Case 1: Incoming Store Request
+**Scenario**: Remote adjacency triggers fetch request to NoC.
 
-| Cycle | Signal | Expected Value | Description |
-|-------|--------|----------------|-------------|
-| T+1   | link_sif_o.fwd.ready_and_rev | 1 | Ready to accept |
-| T+2   | core_req_v_o | 1 | Request to PE logic |
-| T+2   | core_req_addr_o | 0x1000 | Request address |
-| T+2   | core_req_data_o | 0xDEAD | Request data |
-| T+2   | core_req_we_o | 1 | Write enable |
+| Cycle | Signal | Value | Description |
+|-------|--------|-------|-------------|
+| T+1   | adj_valid (remote) | 1 | Register remote edge |
+| T+2   | rx_notif_valid | 1 | Notification arrives |
+| T+5   | tx_fetch_req_valid | 1 | Fetch request to NoC |
 
-### 4.2 Test Case 2: Compute Done Response
+## 5. Pass/Fail Criteria
 
-| Cycle | Signal | Expected Value | Description |
-|-------|--------|----------------|-------------|
-| T+2   | link_sif_o.fwd.v | 1 | Response packet valid |
-| T+2   | link_sif_o.fwd.data.op_v2 | e_remote_store | Store operation |
-| T+2   | out_credit_or_ready_o | 1 | Credits available |
-
-### 4.3 Test Case 3: Barrier Synchronization
-
-| Cycle | Signal | Expected Value | Description |
-|-------|--------|----------------|-------------|
-| T+1   | barrier_data_o | 1 | Barrier propagated |
-| T+1   | barrier_src_r_o | DIR | Source direction |
-| T+1   | barrier_dest_r_o | DIR | Destination direction |
-
-## 5. Timing Diagram
-
-```
-Test Case 1:
-           ___     ___     ___     ___
-clk_i    _|   |___|   |___|   |___|   |___
-         _____
-reset_i      |___________________________________
-              ________
-link_fwd  ___|        |__________________________
-              ________
-link_ready|        |__________________________
-                  ________
-core_req  _______|        |______________________
-```
-
-## 6. Pass/Fail Criteria
-
-- [ ] Incoming stores decoded correctly
-- [ ] `core_req_yumi_i` handshake works
-- [ ] Response packets formed correctly
+- [ ] NoC stores correctly decoded to subsystem inputs
+- [ ] Compute pipeline completes without deadlock
+- [ ] Fetch request issued for remote edges
+- [ ] Writeback sends NOTIFICATION to consuming neighbors
 - [ ] Credit-based flow control respected
-- [ ] Barrier propagation correct
-- [ ] Coordinate extraction from incoming requests
+- [ ] Phase switching occurs when all nodes visited
 
-## 7. Corner Cases
+## 6. Corner Cases
 
-1. **Reset during transaction**: Verify clean state
-2. **Back-to-back requests**: No gap between packets
-3. **Credit exhaustion**: NoC backpressure
-4. **Simultaneous fwd and rev**: Both directions active
-5. **Invalid address decode**: Error handling
+1. **Reset during active compute**: Clean abort, no SPM corruption
+2. **NoC TX backpressure**: All 3 TX sources (notif, fetch_req, fetch_resp) stall correctly
+3. **Bank conflict under full load**: All 7 clients access SPM simultaneously
+4. **Scoreboard full**: New remote edges blocked until completions free slots
+5. **Empty queue**: No schedulable nodes, idle state
+
+## 7. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../04_PE_MICROARCHITECTURE.md` | Module hierarchy |
+| `../../05_INTERFACES.md` | Port definitions |
+| `../../06_PE_CONTROL_FLOW.md` | Control flow |
+| `../subsystem_tests/` | Subsystem integration tests (prerequisite) |

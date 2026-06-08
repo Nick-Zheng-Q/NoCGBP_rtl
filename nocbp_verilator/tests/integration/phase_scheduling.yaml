@@ -1,0 +1,3 @@
+top: phase_scheduling_top
+top_sv: tops/integration/phase_scheduling_top.sv
+rtl_f: tests/integration/phase_scheduling.f

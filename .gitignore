@@ -51,3 +51,8 @@ slpp_unit/
 .sisyphus/
 .cache/
 ppa/
+
+# Verilator build artifacts
+nocbp_verilator/build/
+nocbp_verilator/.clangd
+*.yaml.mk

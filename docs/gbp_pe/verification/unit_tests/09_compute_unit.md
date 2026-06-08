@@ -1,5 +1,8 @@
 # Compute Unit Unit Test
 
+> **Status:** ❌ **编译失败** (待修复)
+> **Root cause:** `BEAT_BITS` 改回 64 后，Verilator 将 64-bit 信号从数组（`CData[8]`）编译为标量（`QData`）。旧 C++ 测试代码仍使用数组下标访问（如 `beat_data[0]`），导致编译错误。
+
 ## 1. Test Objective
 
 Verify that the Compute Unit correctly:
@@ -10,6 +13,9 @@ Verify that the Compute Unit correctly:
 - Writes back results to SPM
 - Signals completion
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `compute_unit`
@@ -17,6 +23,9 @@ Verify that the Compute Unit correctly:
 - Reset: Active low (`rst_n`)
 - Initial state: IDLE
 - SPM contains valid node state data
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -39,10 +48,10 @@ Verify that the Compute Unit correctly:
 | T+4   | ns_valid | 1 | More neighbor data |
 | T+4   | ns_data | NEIGHBOR_WORD_1 | Neighbor data |
 | T+4   | ns_last | 1 | Last word |
-| T+5   | self_rd_ready | 1 | SPM read ready |
-| T+5   | self_rd_data | SELF_WORD_0 | Own state data |
-| T+6   | self_rd_ready | 1 | SPM read ready |
-| T+6   | self_rd_data | SELF_WORD_1 | Own state data |
+| T+5   | rd_beat_ready | 1 | Ready for SPM beat |
+| T+5   | rd_beat_data | {SELF_WORD_1, SELF_WORD_0} | Own state beat (64-bit) |
+| T+6   | rd_beat_ready | 1 | Ready for SPM beat |
+| T+6   | rd_beat_data | {SELF_WORD_3, SELF_WORD_2} | Own state beat (64-bit) |
 
 ### 3.2 Test Case 2: Backpressure Handling
 
@@ -57,6 +66,9 @@ Verify that the Compute Unit correctly:
 | T+4   | out_ready | 0 | Still not ready |
 | T+5   | out_ready | 1 | Ready again |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Variable Node Update (Simple)
@@ -66,14 +78,18 @@ Verify that the Compute Unit correctly:
 | T+1   | cmd_ready | 1 | Accept command |
 | T+3   | ns_ready | 1 | Accept neighbor data |
 | T+4   | ns_ready | 1 | Accept neighbor data |
-| T+5   | self_rd_valid | 1 | Request own state |
-| T+5   | self_rd_addr | SELF_ADDR | Own state address |
-| T+6   | self_rd_valid | 1 | Continue read |
-| T+6   | self_rd_addr | SELF_ADDR + 4 | Next word address |
-| T+N   | wb_valid | 1 | Writeback result |
-| T+N   | wb_addr | RESULT_ADDR | Result address |
-| T+N   | wb_data | RESULT_DATA | Computed result |
-| T+N+1 | done_valid | 1 | Completion signal |
+| T+5   | rd_desc_valid | 1 | Issue read descriptor |
+| T+5   | rd_desc_base_addr | SELF_ADDR | Own state word address |
+| T+5   | rd_desc_word_count | N | Number of state words |
+| T+5   | rd_desc_is_staging | 0 | STATE region |
+| T+N   | wr_desc_valid | 1 | Issue write descriptor |
+| T+N   | wr_desc_base_addr | RESULT_ADDR | Result word address |
+| T+N   | wr_desc_word_count | M | Number of result words |
+| T+N   | wr_word_valid | 1 | Writeback word 0 |
+| T+N   | wr_word_data | RESULT_WORD_0 | Computed result |
+| T+N+1 | wr_word_valid | 1 | Writeback word 1 |
+| T+N+1 | wr_word_data | RESULT_WORD_1 | Computed result |
+| T+N+2 | done_valid | 1 | Completion signal |
 | T+N+1 | done_node_id | 0x10 | Node ID |
 | T+N+1 | done_is_factor | 0 | Variable |
 
@@ -84,7 +100,10 @@ Verify that the Compute Unit correctly:
 | T+3   | ns_ready | 0 | Backpressure from output |
 | T+4   | ns_ready | 0 | Still backpressured |
 | T+5   | ns_ready | 1 | Ready |
-| T+6   | wb_valid | 1 | Writeback |
+| T+6   | wr_word_valid | 1 | Writeback word |
+
+
+---
 
 ## 5. Timing Diagram
 
@@ -97,12 +116,17 @@ cmd       ___|        |_________________________________________________
                       ________    ________
 ns        ___________|        |__|        |________________________________
                           ________    ________
-self_rd   _______________|        |__|        |____________________________
-                                                      ________
-wb        ___________________________________________|        |____________
-                                                      ________
-done      ___________________________________________|        |____________
+rd_beat   _______________|        |__|        |____________________________
+                          ________
+rd_desc   _______________|        |________________________________________
+                                                              ________
+wr_word   ___________________________________________________|        |____
+                                                                      ________
+done      ___________________________________________________________|        |
 ```
+
+
+---
 
 ## 6. Pass/Fail Criteria
 
@@ -114,6 +138,9 @@ done      ___________________________________________|        |____________
 - [ ] `done_valid` asserted after writeback complete
 - [ ] Backpressure handled correctly
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Reset during compute**: Verify clean state after reset
@@ -122,3 +149,21 @@ done      ___________________________________________|        |____________
 4. **Factor node schedule**: Different operation sequence
 5. **SPM read error**: Invalid data in SPM
 6. **Simultaneous command and data**: Both arrive same cycle
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

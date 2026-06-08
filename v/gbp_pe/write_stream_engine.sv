@@ -1,131 +1,190 @@
-import gbp_pkg::*;
+// write_stream_engine.sv
+// New-architecture write stream engine.
+// Accepts a stream_descriptor_t plus 32-bit FP32 words from the compute
+// unit, assembles them into 64-bit beats, and writes beats to SPM via
+// the arbiter.
+//
+// No SystemVerilog interfaces — all explicit valid/ready ports.
+
 module write_stream_engine
+  import gbp_pkg::*;
 (
-    input logic clk_i,
-    input logic reset_i,
-    stream_control_if.master if_stream_control_if_stream,
-    stream_dispatcher_if.slave if_stream_dispatcher_if_stream,
-    write_stream_if.master if_stream_if_stream,
-    mic_spm_arbiter_wr_if.master mic_to_spm_arbiter
+    input  logic clk,
+    input  logic rst_n,
+
+    // ── Descriptor from Compute Unit ──
+    input  logic                 desc_valid,
+    output logic                 desc_ready,
+    input  logic [SPM_ADDR_W-1:0] desc_base_addr,
+    input  logic [15:0]          desc_word_count,
+
+    // ── Data words from Compute Unit ──
+    input  logic                 word_valid,
+    output logic                 word_ready,
+    input  logic [FP32_W-1:0]    word_data,
+
+    // ── SPM write port (to SPM Arbiter) ──
+    output logic                 spm_wr_valid,
+    input  logic                 spm_wr_ready,
+    output logic [SPM_ADDR_W-1:0] spm_wr_addr,
+    output logic [BEAT_BITS-1:0] spm_wr_data,
+    output logic [BEAT_BYTES-1:0] spm_wr_wstrb
 );
 
-  desc_t desc_r;
-  desc_t desc_to_agu;
-  logic  desc_active_r;
-  logic  desc_active_n;
-  logic  agu_start_r;
-  logic  agu_start_n;
+  localparam int WORDS_PER_BEAT  = BEAT_BITS / FP32_W;
+  localparam int BEAT_ADDR_SHIFT = $clog2(WORDS_PER_BEAT);
+  localparam int WORD_IDX_W      = $clog2(WORDS_PER_BEAT);
 
-  logic [SPM_ADDR_W-1:0] agu_addr_lo;
-  logic                  agu_valid_lo;
-  logic                  agu_next_desc_lo;
+  // ------------------------------------------------------------------
+  // Descriptor latch
+  // ------------------------------------------------------------------
+  logic [SPM_ADDR_W-1:0] desc_base_r;
+  logic [15:0]           desc_count_r;
 
-  logic                  addr_fifo_ready_lo;
-  logic                  addr_fifo_valid_lo;
-  logic [SPM_ADDR_W-1:0] addr_fifo_data_lo;
-  logic                  addr_fifo_unqueue_lo;
+  // ------------------------------------------------------------------
+  // Activity tracking
+  // ------------------------------------------------------------------
+  logic active_r;
+  logic all_words_received_r;
+  logic all_beats_written_r;
 
-  logic                  data_fifo_ready_lo;
-  logic                  data_fifo_valid_lo;
-  logic [BEAT_BITS-1:0]  data_fifo_data_lo;
-  logic                  data_fifo_unqueue_lo;
-  logic [7:0]            data_fifo_occ_lo;
-  logic                  data_fifo_afull_lo;
-  logic                 desc_accept;
+  assign desc_ready = ~active_r;
 
-  assign desc_accept = if_stream_dispatcher_if_stream.valid & if_stream_dispatcher_if_stream.ready;
-  assign if_stream_dispatcher_if_stream.ready = ~desc_active_r;
-
-  always_ff @(posedge clk_i) begin
-    if (reset_i) begin
-      desc_r <= '0;
-      desc_active_r <= 1'b0;
-      agu_start_r <= 1'b0;
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      active_r             <= 1'b0;
+      all_words_received_r <= 1'b0;
+      all_beats_written_r  <= 1'b0;
     end else begin
-      desc_active_r <= desc_active_n;
-      agu_start_r <= agu_start_n;
-      if (desc_accept) begin
-        desc_r <= if_stream_dispatcher_if_stream.data;
+      if (desc_valid && desc_ready) begin
+        active_r             <= 1'b1;
+        all_words_received_r <= 1'b0;
+        all_beats_written_r  <= 1'b0;
+        desc_base_r          <= desc_base_addr;
+        desc_count_r         <= desc_word_count;
+      end else begin
+        if (word_valid && word_ready &&
+            (word_cnt_r + 16'd1 == desc_count_r)) begin
+          all_words_received_r <= 1'b1;
+        end
+        if (agu_last_addr && agu_addr_ready) begin
+          all_beats_written_r <= 1'b1;
+        end
+        if (all_beats_written_r && !spm_wr_valid) begin
+          active_r <= 1'b0;
+        end
       end
     end
   end
 
-  always_comb begin
-    desc_active_n = desc_active_r;
-    agu_start_n = agu_start_r;
+  // ------------------------------------------------------------------
+  // Word assembler (32b → 64b)
+  // ------------------------------------------------------------------
+  logic [WORDS_PER_BEAT-1:0][FP32_W-1:0] beat_assembler_r;
+  logic [WORD_IDX_W-1:0]                 word_idx_r;
+  logic [15:0]                           word_cnt_r;
+  logic                                  beat_full;
+  logic                                  partial_beat_trigger;
 
-    if (desc_accept) begin
-      desc_active_n = 1'b1;
-      agu_start_n = 1'b1;
+  assign word_ready = active_r && ~all_words_received_r;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      word_idx_r   <= '0;
+      word_cnt_r   <= '0;
+      beat_assembler_r <= '0;
     end else begin
-      if (agu_start_r & addr_fifo_ready_lo) begin
-        agu_start_n = 1'b0;
-      end
-      if (desc_active_r & agu_next_desc_lo) begin
-        desc_active_n = 1'b0;
-        agu_start_n = 1'b0;
+      if (desc_valid && desc_ready) begin
+        word_idx_r   <= '0;
+        word_cnt_r   <= '0;
+        beat_assembler_r <= '0;
+      end else if (word_valid && word_ready) begin
+        beat_assembler_r[word_idx_r] <= word_data;
+        word_idx_r <= word_idx_r + 1'b1;
+        word_cnt_r <= word_cnt_r + 16'd1;
+        if (word_idx_r == WORDS_PER_BEAT[WORD_IDX_W-1:0] - 1'b1) begin
+          word_idx_r <= '0;
+        end
       end
     end
   end
 
-  always_comb begin
-    desc_to_agu = desc_r;
-    desc_to_agu.start = agu_start_r;
+  assign beat_full = (word_valid && word_ready) &&
+                     (word_idx_r == WORDS_PER_BEAT[WORD_IDX_W-1:0] - 1'b1);
+
+  assign partial_beat_trigger = (word_valid && word_ready) &&
+                                (word_cnt_r + 16'd1 == desc_count_r) &&
+                                (word_idx_r != WORDS_PER_BEAT[WORD_IDX_W-1:0] - 1'b1);
+
+  // ------------------------------------------------------------------
+  // Write-pending flag (one per beat)
+  // ------------------------------------------------------------------
+  logic write_pending_r;
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      write_pending_r <= 1'b0;
+    end else begin
+      if (beat_full || partial_beat_trigger) begin
+        write_pending_r <= 1'b1;
+      end else if (spm_wr_valid && spm_wr_ready) begin
+        write_pending_r <= 1'b0;
+      end
+    end
   end
 
-  agu u_agu (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .descriptor_i(desc_to_agu),
-      .ready_i(addr_fifo_ready_lo),
-      .agu_addr(agu_addr_lo),
-      .valid_o(agu_valid_lo),
-      .next_desc_o(agu_next_desc_lo)
+  // ------------------------------------------------------------------
+  // Flatten assembler to beat vector
+  // ------------------------------------------------------------------
+  generate
+    for (genvar i = 0; i < WORDS_PER_BEAT; i++) begin : g_beat
+      assign spm_wr_data[i*FP32_W +: FP32_W] = beat_assembler_r[i];
+    end
+  endgenerate
+
+  // ------------------------------------------------------------------
+  // AGU (beat-level addressing)
+  // ------------------------------------------------------------------
+  logic                 agu_start;
+  logic [SPM_ADDR_W-1:0] agu_base_addr;
+  logic [15:0]          agu_beat_count;
+  logic                 agu_addr_valid;
+  logic                 agu_addr_ready;
+  logic [SPM_ADDR_W-1:0] agu_addr;
+  logic                 agu_last_addr;
+
+  assign agu_start      = desc_valid && desc_ready;
+  assign agu_base_addr  = desc_base_addr >> BEAT_ADDR_SHIFT;
+  assign agu_beat_count = (desc_word_count + WORDS_PER_BEAT[15:0] - 16'd1) >> BEAT_ADDR_SHIFT;
+
+  agu #(.SPM_ADDR_W(SPM_ADDR_W)) u_agu (
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .start      (agu_start),
+    .base_addr  (agu_base_addr),
+    .word_count (agu_beat_count),
+    .addr_valid (agu_addr_valid),
+    .addr_ready (agu_addr_ready),
+    .addr       (agu_addr),
+    .last_addr  (agu_last_addr)
   );
 
-  addr_fifo u_addr_fifo (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .data_i(agu_addr_lo),
-      .valid_i(desc_active_r & agu_valid_lo),
-      .ready_o(addr_fifo_ready_lo),
-      .valid_o(addr_fifo_valid_lo),
-      .data_o(addr_fifo_data_lo),
-      .unqueue_i(addr_fifo_unqueue_lo)
-  );
+  // ------------------------------------------------------------------
+  // SPM write issue
+  // ------------------------------------------------------------------
+  assign spm_wr_valid = active_r && agu_addr_valid && write_pending_r;
+  assign spm_wr_addr  = agu_addr << BEAT_ADDR_SHIFT;
+  assign agu_addr_ready = spm_wr_valid && spm_wr_ready;
 
-  data_fifo #(
-      .width_p(BEAT_BITS)
-  ) u_data_fifo (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .data_i(if_stream_if_stream.data),
-      .valid_i(if_stream_if_stream.valid),
-      .ready_o(data_fifo_ready_lo),
-      .valid_o(data_fifo_valid_lo),
-      .data_o(data_fifo_data_lo),
-      .unqueue_i(data_fifo_unqueue_lo),
-      .occ(data_fifo_occ_lo),
-      .afull(data_fifo_afull_lo)
-  );
-
-  assign if_stream_if_stream.ready = data_fifo_ready_lo;
-
-  mic_write u_mic_write (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .addr_valid_i(addr_fifo_valid_lo),
-      .addr_data_i(addr_fifo_data_lo),
-      .addr_unqueue_o(addr_fifo_unqueue_lo),
-      .data_valid_i(data_fifo_valid_lo),
-      .data_data_i(data_fifo_data_lo),
-      .data_unqueue_o(data_fifo_unqueue_lo),
-      .mic_to_spm_arbiter(mic_to_spm_arbiter)
-  );
-
-  assign if_stream_control_if_stream.occ = data_fifo_occ_lo;
-  assign if_stream_control_if_stream.afull = data_fifo_afull_lo;
-  assign if_stream_control_if_stream.meta_valid = 1'b0;
-  assign if_stream_control_if_stream.meta_data = '0;
+  // Byte-enable: full beat unless last partial beat
+  always_comb begin
+    spm_wr_wstrb = {BEAT_BYTES{1'b1}};
+    // Partial beat: only lower (word_idx_r * WORD_BYTES) bytes valid.
+    // word_idx_r reflects how many words were assembled BEFORE wrapping.
+    if (write_pending_r && all_words_received_r && (word_idx_r != '0)) begin
+      for (int b = 0; b < BEAT_BYTES; b++) begin
+        spm_wr_wstrb[b] = (b < int'(word_idx_r) * int'(WORD_BYTES));
+      end
+    end
+  end
 
 endmodule

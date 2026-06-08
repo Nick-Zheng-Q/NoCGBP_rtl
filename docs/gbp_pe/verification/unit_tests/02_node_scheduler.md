@@ -7,13 +7,19 @@ Verify that the Node Scheduler correctly:
 - Applies scheduling policies (round-robin, dirty-age, etc.)
 - Reports when no schedulable nodes are available
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `node_scheduler`
-- Parameters: `NUM_NODES = 16`
+- Parameters: `NUM_NODES = 1024`
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: No nodes ready
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -43,6 +49,9 @@ Verify that the Node Scheduler correctly:
 | T+1   | node_ready | 0xF000 | Only variable nodes ready |
 | T+1   | visited_mask | 0x0000 | No nodes visited |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Round-Robin Scheduling
@@ -65,6 +74,9 @@ Verify that the Node Scheduler correctly:
 | T+1   | sched_valid | 0 | No factor nodes selected |
 | T+1   | no_schedulable_nodes | 1 | No schedulable nodes |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -81,6 +93,9 @@ valid     ___|        |__|        |__|        |__
 node_id   XXXX|  0   |XX|  1   |XX|  2   |XXXXXX
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Round-robin selects nodes in order
@@ -89,9 +104,30 @@ node_id   XXXX|  0   |XX|  1   |XX|  2   |XXXXXX
 - [ ] `visited_mask` updated correctly after each selection
 - [ ] Node ID within valid range (0 to NUM_NODES-1)
 
+
+---
+
 ## 7. Corner Cases
 
 1. **All nodes ready**: Verify round-robin wraps around
 2. **No nodes ready**: Verify `no_schedulable_nodes` asserted
 3. **Single node ready**: Verify correct selection
 4. **Phase change during selection**: Verify clean transition
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

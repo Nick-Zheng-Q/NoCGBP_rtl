@@ -1,0 +1,4 @@
+top: compute_unit
+rtl_f: tests/unit/compute_unit.f
+cpp:
+  - tests/unit/compute_unit.cc

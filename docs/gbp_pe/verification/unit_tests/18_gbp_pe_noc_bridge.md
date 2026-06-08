@@ -1,5 +1,7 @@
 # gbp_pe_noc_bridge Unit Test
 
+> **DEPRECATED**: This module has been replaced by `noc_adapter` + `noc_adapter_tx` + `noc_adapter_rx`. See `12_noc_adapter.md` for the new verification plan. This document is retained for reference only.
+
 ## 1. Test Objective
 
 Verify that `gbp_pe_noc_bridge` correctly:
@@ -8,12 +10,18 @@ Verify that `gbp_pe_noc_bridge` correctly:
 - Handles MMIO register reads/writes
 - Manages ordering constraints
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `gbp_pe_noc_bridge`
 - Clock: 100MHz (10ns period)
 - Reset: Active high (`reset_i`)
 - Initial state: IDLE, no pending requests
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -55,6 +63,9 @@ Verify that `gbp_pe_noc_bridge` correctly:
 | T+1   | core_req_we_i | 0 | Read |
 | T+2   | core_req_v_i | 0 | Clear |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Sideband Command
@@ -87,6 +98,9 @@ Verify that `gbp_pe_noc_bridge` correctly:
 | T+2   | core_rsp_v_o | 1 | Response valid |
 | T+2   | core_rsp_data_o | STATUS | Status data |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -107,6 +121,9 @@ cmd_valid _______|        |_________________________________
 cmd_kind  XXXXXXX| 0x01 |XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Requests decoded correctly by address
@@ -116,6 +133,9 @@ cmd_kind  XXXXXXX| 0x01 |XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 - [ ] Ordering constraints respected
 - [ ] `core_req_yumi_o` handshake correct
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Reset during decode**: Clean state
@@ -123,3 +143,21 @@ cmd_kind  XXXXXXX| 0x01 |XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 3. **Invalid address**: `decode_error_o` asserted
 4. **Ordering violation**: Payload before tail
 5. **Simultaneous sideband and ingress**: Arbitration
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

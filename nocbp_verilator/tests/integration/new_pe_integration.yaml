@@ -1,0 +1,5 @@
+top: new_pe_integration_top
+top_sv: tops/integration/new_pe_integration_top.sv
+rtl_f: tests/integration/new_pe_integration.f
+cpp:
+  - tests/integration/new_pe_integration.cc

@@ -1,0 +1,3 @@
+top: noc_adapter_top
+top_sv: tops/unit/noc_adapter_top.sv
+rtl_f: tests/unit/noc_adapter.f

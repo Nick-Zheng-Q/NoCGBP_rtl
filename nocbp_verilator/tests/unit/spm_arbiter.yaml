@@ -1,0 +1,3 @@
+top: spm_arbiter_top
+top_sv: tops/unit/spm_arbiter_top.sv
+rtl_f: tests/unit/spm_arbiter.f

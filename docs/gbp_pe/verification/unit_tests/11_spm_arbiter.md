@@ -1,5 +1,8 @@
 # SPM Arbiter Unit Test
 
+> **Status:** ❌ **编译失败** (待修复)
+> **Root cause:** `BEAT_BITS=64` 后 Verilator 将 `wr_data_N` / `rd_data_N` 从结构体数组编译为标量 `QData`。旧 C++ 代码访问 `.data` 成员（如 `wr_data_0.data`），但标量无此成员。
+
 ## 1. Test Objective
 
 Verify that the SPM Arbiter correctly:
@@ -8,13 +11,19 @@ Verify that the SPM Arbiter correctly:
 - Handles bank conflicts with round-robin arbitration
 - Returns read data to correct client
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `spm_arbiter`
-- Parameters: `NUM_BANKS = 8`, `NUM_CLIENTS = 6`
+- Parameters: `NUM_BANKS = 8`, `NUM_CLIENTS = 7`
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: All ports idle
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -73,6 +82,9 @@ Verify that the SPM Arbiter correctly:
 | T+2   | rd_valid[0] | 0 | Clear |
 | T+2   | wr_valid[2] | 0 | Clear |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Single Client Read
@@ -118,6 +130,9 @@ Verify that the SPM Arbiter correctly:
 | T+1   | bank_wr_en[0] | 1 | Bank 0 write |
 | T+2   | rd_data[0] | DATA | Read data |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -138,6 +153,9 @@ bank_en   ____|   0   |__|   0   |__________________________
 rd_data0  _______________________| DATA0|____| DATA1|________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Round-robin arbitration for bank conflicts
@@ -147,6 +165,9 @@ rd_data0  _______________________| DATA0|____| DATA1|________
 - [ ] Read data returned to correct client
 - [ ] No data corruption from concurrent access
 
+
+---
+
 ## 7. Corner Cases
 
 1. **All clients active**: Maximum contention
@@ -154,3 +175,21 @@ rd_data0  _______________________| DATA0|____| DATA1|________
 3. **Reset during arbitration**: Verify clean state
 4. **Back-to-back requests**: Continuous arbitration
 5. **Single bank**: All access to one bank
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

@@ -1,202 +1,155 @@
-import gbp_pkg::*;
+// read_stream_engine.sv
+// New-architecture read stream engine.
+// Accepts a stream_descriptor_t, drives an internal AGU to generate beat
+// addresses, issues SPM reads via the arbiter, and returns 64-bit beats
+// to the compute unit.
+//
+// No META handling — metadata is read independently by metadata_scanner.
+// No SystemVerilog interfaces — all explicit valid/ready ports.
+
 module read_stream_engine
+  import gbp_pkg::*;
 (
-    input logic clk_i,
-    input logic reset_i,
-    input logic meta_consume_i,
-    stream_dispatcher_if.slave if_stream_dispatcher_if_stream,
-    read_stream_if.slave if_stream_if_stream,
-    stream_control_if.master if_stream_control_if_stream,
-    mic_spm_arbiter_if.master mic_to_spm_arbiter,
-    output logic meta_valid_o,  // Explicit output for meta_valid to work around Verilator issue
-    output logic [BEAT_BITS-1:0] meta_data_o,
-    output logic [15:0] meta_seq_o
+    input  logic clk,
+    input  logic rst_n,
+
+    // ── Descriptor from Compute Unit ──
+    input  logic                 desc_valid,
+    output logic                 desc_ready,
+    input  logic [SPM_ADDR_W-1:0] desc_base_addr,
+    input  logic [15:0]          desc_word_count,
+    input  logic                 desc_is_staging,   // informational, unused internally
+
+    // ── Data beats to Compute Unit ──
+    output logic                 beat_valid,
+    input  logic                 beat_ready,
+    output logic [BEAT_BITS-1:0] beat_data,
+
+    // ── SPM read port (to SPM Arbiter) ──
+    output logic                 spm_rd_valid,
+    input  logic                 spm_rd_ready,
+    output logic [SPM_ADDR_W-1:0] spm_rd_addr,
+    input  logic [BEAT_BITS-1:0] spm_rd_data
 );
-  localparam int unsigned READ_DATA_FIFO_DEPTH_LP = 64;
-  desc_t desc_r;
-  desc_t desc_to_agu;
-  logic  desc_loaded_r;
-  logic  desc_loaded_n;
-  logic  desc_inflight_r;
-  logic  desc_inflight_n;
-  logic  agu_start_r;
-  logic  agu_start_n;
 
-  logic [SPM_ADDR_W-1:0] agu_addr_lo;
-  logic                  agu_valid_lo;
-  logic                  agu_next_desc_lo;
+  localparam int WORDS_PER_BEAT = BEAT_BITS / FP32_W;
+  localparam int BEAT_ADDR_SHIFT = $clog2(WORDS_PER_BEAT);
 
-  logic                  addr_fifo_ready_lo;
-  logic                  addr_fifo_valid_lo;
-  logic [SPM_ADDR_W-1:0] addr_fifo_data_lo;
-  logic                  addr_fifo_unqueue_lo;
+  // ------------------------------------------------------------------
+  // Descriptor latch
+  // ------------------------------------------------------------------
+  logic [SPM_ADDR_W-1:0] desc_base_r;
+  logic [15:0]           desc_count_r;
+  logic                  desc_staging_r;
 
-  logic                  mic_data_valid_lo;
-  logic [BEAT_BITS-1:0]  mic_data_lo;
-  logic                  mic_busy_lo;
+  // ------------------------------------------------------------------
+  // Activity / completion tracking
+  // ------------------------------------------------------------------
+  logic active_r;
+  logic all_issued_r;
 
-  logic                  data_fifo_ready_lo;
-  logic                  data_fifo_valid_lo;
-  logic [ BEAT_BITS-1:0] data_fifo_data_lo;
-  logic [7:0]            data_fifo_occ_lo;
-  logic                  data_fifo_afull_lo;
-  logic                  data_fifo_unqueue_lo;
-  logic                  meta_capture_valid_lo;
-  logic [BEAT_BITS-1:0]  meta_capture_data_lo;
-  logic                  data_fifo_push_valid_lo;
-  logic                  meta_hold_valid_r;
-  logic [BEAT_BITS-1:0]  meta_hold_data_r;
-  logic [15:0]           meta_seq_r;
-  logic                  meta_desc_pending_r;
+  assign desc_ready = ~active_r;
 
-  logic desc_accept;
-
-  assign desc_accept = if_stream_dispatcher_if_stream.valid & if_stream_dispatcher_if_stream.ready;
-
-  // 必须等上一条 descriptor 的地址/响应/数据路径都完全排空，才能接受下一条。
-  // 否则前一条非 META 的返回 beat 会在 meta_desc_pending 置位后被错误采样成 META。
-  assign if_stream_dispatcher_if_stream.ready =
-      ~desc_loaded_r & ~desc_inflight_r & ~addr_fifo_valid_lo & ~mic_busy_lo;
-
-  always_ff @(posedge clk_i) begin
-    if (reset_i) begin
-      desc_r <= '0;
-      desc_loaded_r <= 1'b0;
-      desc_inflight_r <= 1'b0;
-      agu_start_r <= 1'b0;
-      meta_hold_valid_r <= 1'b0;
-      meta_hold_data_r <= '0;
-      meta_seq_r <= '0;
-      meta_desc_pending_r <= 1'b0;
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      active_r     <= 1'b0;
+      all_issued_r <= 1'b0;
     end else begin
-      desc_loaded_r <= desc_loaded_n;
-      desc_inflight_r <= desc_inflight_n;
-      agu_start_r <= agu_start_n;
-      if (desc_accept) begin
-        desc_r <= if_stream_dispatcher_if_stream.data;
-        $display("RSE_DESC_ACCEPT %m mode=%0d base=%h xfer=%0d",
-                 if_stream_dispatcher_if_stream.data.operand_id[1:0],
-                 if_stream_dispatcher_if_stream.data.base_addr,
-                 if_stream_dispatcher_if_stream.data.xfer_bytes);
-        // 新 descriptor 被接受时，上一条 META 快照失效。
-        meta_hold_valid_r <= 1'b0;
-        meta_desc_pending_r <= (if_stream_dispatcher_if_stream.data.operand_id[1:0] == STREAM_META);
-        if (if_stream_dispatcher_if_stream.data.operand_id[1:0] == STREAM_META) begin
-          $display("RSE_META_REQ %m addr=%h xfer=%0d seq=%0d",
-                   if_stream_dispatcher_if_stream.data.base_addr,
-                   if_stream_dispatcher_if_stream.data.xfer_bytes,
-                   meta_seq_r);
+      if (desc_valid && desc_ready) begin
+        active_r     <= 1'b1;
+        all_issued_r <= 1'b0;
+        desc_base_r  <= desc_base_addr;
+        desc_count_r <= desc_word_count;
+        desc_staging_r <= desc_is_staging;
+      end else begin
+        if (agu_last_addr && agu_addr_ready) begin
+          all_issued_r <= 1'b1;
         end
-      end else if (meta_consume_i) begin
-        // control_unit 已完成对当前 META 的消费，释放 sticky 标志，等待下一条真正的新 META。
-        meta_hold_valid_r <= 1'b0;
-        $display("RSE_META_CONSUME %m seq=%0d data=%h", meta_seq_r, meta_hold_data_r);
-      end
-      if (meta_capture_valid_lo) begin
-        meta_hold_valid_r <= 1'b1;
-        meta_hold_data_r <= mic_data_lo;
-        meta_seq_r <= meta_seq_r + 16'd1;
-        meta_desc_pending_r <= 1'b0;
-        $display("RSE_META_CAPTURE %m seq_next=%0d data=%h",
-                 meta_seq_r + 16'd1, mic_data_lo);
+        if (all_issued_r && !beat_valid) begin
+          active_r <= 1'b0;
+        end
       end
     end
   end
 
-  always_comb begin
-    desc_loaded_n = desc_loaded_r;
-    desc_inflight_n = desc_inflight_r;
-    agu_start_n = agu_start_r;
+  // ------------------------------------------------------------------
+  // AGU (beat-level addressing)
+  // ------------------------------------------------------------------
+  logic                 agu_start;
+  logic [SPM_ADDR_W-1:0] agu_base_addr;
+  logic [15:0]          agu_beat_count;
+  logic                 agu_addr_valid;
+  logic                 agu_addr_ready;
+  logic [SPM_ADDR_W-1:0] agu_addr;
+  logic                 agu_last_addr;
 
-    if (desc_accept) begin
-      desc_loaded_n = 1'b1;
-      agu_start_n = 1'b1;
+  // AGU inputs are driven combinationally from the descriptor ports so that
+  // the AGU samples the correct base_addr in the same cycle that start is
+  // asserted (when desc_valid && desc_ready).
+  assign agu_start      = desc_valid && desc_ready;
+  assign agu_base_addr  = desc_base_addr >> BEAT_ADDR_SHIFT;
+  assign agu_beat_count = (desc_word_count + WORDS_PER_BEAT[15:0] - 16'd1) >> BEAT_ADDR_SHIFT;
+
+  agu #(.SPM_ADDR_W(SPM_ADDR_W)) u_agu (
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .start      (agu_start),
+    .base_addr  (agu_base_addr),
+    .word_count (agu_beat_count),
+    .addr_valid (agu_addr_valid),
+    .addr_ready (agu_addr_ready),
+    .addr       (agu_addr),
+    .last_addr  (agu_last_addr)
+  );
+
+  // ------------------------------------------------------------------
+  // SPM read issue
+  // ------------------------------------------------------------------
+  // Back-pressure: stop issuing if output skid is full.
+  logic can_issue_read;
+  assign can_issue_read = ~skid_valid_r & ~(spm_rd_issued_r & ~beat_ready);
+
+  assign spm_rd_valid = can_issue_read & agu_addr_valid;
+  assign spm_rd_addr  = agu_addr << BEAT_ADDR_SHIFT;
+  assign agu_addr_ready = spm_rd_valid & spm_rd_ready;
+
+  // Delayed read-issue flag: data returns 1 cycle after issue
+  logic spm_rd_issued_r;
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      spm_rd_issued_r <= 1'b0;
     end else begin
-      if (agu_start_r & addr_fifo_ready_lo) begin
-        agu_start_n = 1'b0;
-        desc_inflight_n = 1'b1;
+      spm_rd_issued_r <= spm_rd_valid & spm_rd_ready;
+    end
+  end
+
+  // ------------------------------------------------------------------
+  // Skid buffer (1-entry) — holds beat when beat_ready is low
+  // ------------------------------------------------------------------
+  logic skid_valid_r;
+  logic [BEAT_BITS-1:0] skid_data_r;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      skid_valid_r <= 1'b0;
+    end else begin
+      if (spm_rd_issued_r) begin
+        if (!beat_valid || beat_ready) begin
+          // Output path consumed or not valid — no need to skid
+          skid_valid_r <= 1'b0;
+        end else begin
+          // Output blocked — store in skid
+          skid_valid_r <= 1'b1;
+          skid_data_r  <= spm_rd_data;
+        end
       end
-      if (desc_inflight_r & agu_next_desc_lo) begin
-        desc_loaded_n = 1'b0;
-        desc_inflight_n = 1'b0;
-        agu_start_n = 1'b0;
+      if (beat_valid & beat_ready) begin
+        skid_valid_r <= 1'b0;
       end
     end
   end
 
-  always_comb begin
-    desc_to_agu = desc_r;
-    desc_to_agu.start = agu_start_r;
-  end
+  assign beat_valid = skid_valid_r | spm_rd_issued_r;
+  assign beat_data  = skid_valid_r ? skid_data_r : spm_rd_data;
 
-  agu u_agu (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .descriptor_i(desc_to_agu),
-      .ready_i(addr_fifo_ready_lo),
-      .agu_addr(agu_addr_lo),
-      .valid_o(agu_valid_lo),
-      .next_desc_o(agu_next_desc_lo)
-  );
-
-  addr_fifo u_addr_fifo (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .data_i(agu_addr_lo),
-      .valid_i(desc_inflight_r & agu_valid_lo),
-      .ready_o(addr_fifo_ready_lo),
-      .valid_o(addr_fifo_valid_lo),
-      .data_o(addr_fifo_data_lo),
-      .unqueue_i(addr_fifo_unqueue_lo)
-  );
-
-  mic_read u_mic_read (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .valid_i(addr_fifo_valid_lo),
-      .data_i(addr_fifo_data_lo),
-      .unqueue_o(addr_fifo_unqueue_lo),
-      .mic_to_spm_arbiter(mic_to_spm_arbiter),
-      .ready_i(data_fifo_ready_lo),
-      .valid_o(mic_data_valid_lo),
-      .data_o(mic_data_lo),
-      .busy_o(mic_busy_lo)
-  );
-
-  assign data_fifo_unqueue_lo = data_fifo_valid_lo & if_stream_if_stream.ready;
-
-  assign data_fifo_push_valid_lo = mic_data_valid_lo & ~meta_capture_valid_lo;
-
-  data_fifo #(
-      .width_p(BEAT_BITS),
-      .depth_p(READ_DATA_FIFO_DEPTH_LP)
-  ) u_data_fifo (
-      .clk_i(clk_i),
-      .reset_i(reset_i),
-      .data_i(mic_data_lo),
-      .valid_i(data_fifo_push_valid_lo),
-      .ready_o(data_fifo_ready_lo),
-      .valid_o(data_fifo_valid_lo),
-      .data_o(data_fifo_data_lo),
-      .unqueue_i(data_fifo_unqueue_lo),
-      .occ(data_fifo_occ_lo),
-      .afull(data_fifo_afull_lo)
-  );
-
-  assign if_stream_if_stream.valid = data_fifo_valid_lo;
-  assign if_stream_if_stream.data = data_fifo_data_lo;
-
-  assign if_stream_control_if_stream.occ = data_fifo_occ_lo;
-  assign if_stream_control_if_stream.afull = data_fifo_afull_lo;
-  assign meta_capture_valid_lo = mic_data_valid_lo & meta_desc_pending_r;
-  
-  assign meta_capture_data_lo = mic_data_lo;
-  
-  // Combine assignments to work around Verilator optimization issue
-  assign meta_valid_o = meta_hold_valid_r;
-  assign meta_data_o = meta_hold_data_r;
-  assign meta_seq_o = meta_seq_r;
-  assign if_stream_control_if_stream.meta_valid = meta_valid_o;
-  assign if_stream_control_if_stream.meta_data = meta_hold_data_r;
-  
 endmodule

@@ -15,9 +15,7 @@
 
 ../v/bsg_manycore_pkg.sv
 ../v/gbp_pe/gbp_pkg.sv
-../v/gbp_pe/interfaces.sv
 
-../v/gbp_pe/compute_unit_wrapper.sv
 tops/integration/wrapper_test_top.sv
 ../v/gbp_pe/compute/gbp_compute_engine.sv
 ../v/gbp_pe/compute/gbp_control_fsm.sv

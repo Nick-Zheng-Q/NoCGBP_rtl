@@ -3,8 +3,10 @@
 // Simple dual-port memory with byte-enable write
 
 import gbp_pkg::*;
-module spm_bank
-(
+module spm_bank #(
+    parameter int BANK_ID = 0,
+    parameter string INIT_FILE = ""
+)(
     input logic clk_i,
     input logic reset_i,
 
@@ -22,6 +24,17 @@ module spm_bank
 
   // Memory array
   logic [BEAT_BITS-1:0] mem_r [(1<<ROW_ADDR_W)-1:0];
+
+  initial begin
+    string file_to_load;
+    if (INIT_FILE != "") begin
+      file_to_load = INIT_FILE;
+    end else begin
+      // Default naming convention: spm_init_bank<N>.hex in working directory
+      file_to_load = $sformatf("spm_init_bank%0d.hex", BANK_ID);
+    end
+    $readmemh(file_to_load, mem_r);
+  end
 
   // Read logic
   always_ff @(posedge clk_i) begin

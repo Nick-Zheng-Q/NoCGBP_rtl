@@ -97,17 +97,19 @@ Each adjacency entry identifies a neighbor and its owning PE:
 
 ```systemverilog
 typedef struct packed {
-    logic [NODE_ID_W-1:0]  neighbor_id;
-    logic [PE_ID_W-1:0]    neighbor_pe_id;
+    logic [NODE_ID_W-1:0]      neighbor_id;
+    logic [X_CORD_W-1:0]       neighbor_x;    // NoC x coordinate of neighbor's PE
+    logic [Y_CORD_W-1:0]       neighbor_y;    // NoC y coordinate of neighbor's PE
 } adj_entry_t;
 ```
 
 | Field | Meaning |
 |-------|---------|
 | `neighbor_id` | ID of adjacent node (factor or variable) |
-| `neighbor_pe_id` | PE that owns this neighbor |
+| `neighbor_x` | NoC x coordinate of the PE that owns this neighbor |
+| `neighbor_y` | NoC y coordinate of the PE that owns this neighbor |
 
-`neighbor_id + neighbor_pe_id` is sufficient for pull routing. Whether neighbor is local is determined by `neighbor_pe_id == self_pe_id`. Remote state address is looked up by the remote PE itself; consumer PE does not need to store it.
+`neighbor_id + (neighbor_x, neighbor_y)` is sufficient for pull routing. Whether neighbor is local is determined by `(neighbor_x, neighbor_y) == (my_x, my_y)`. Remote state address is looked up by the remote PE itself; consumer PE does not need to store it.
 
 Not included: flags, edge_id, remote address, state_words, message slot.
 
@@ -137,6 +139,8 @@ compact_words(dof) = dof + dof*(dof+1)/2
 ```
 
 (eta vector + upper-triangular Lambda matrix)
+
+> **Bit-width constraint**: `STATE_WORDS_W` must be ≥ `$clog2(compact_words(MAX_DOF) + 1)`. For MAX_DOF = 8, `compact_words(8) = 44`, so `STATE_WORDS_W` ≥ 6.
 
 ### 4.2 Factor Node STATE
 
@@ -195,15 +199,22 @@ Two separate counters:
 - `staging_reserved`: conservative budget reserved before issuing pull requests
 - `staging_bump`: actual write pointer after response arrives
 
+Hardware lifecycle (one node update, potentially multiple batches):
+
 ```
-begin_node_update:
+begin_node_update:                      // Metadata Scanner starts scanning adjacency list
     staging_bump = staging_base
     staging_reserved = 0
     accumulator_clear()
+    scan AdjEntry[0], AdjEntry[1], ...
 
-begin_batch:
-    staging_bump = staging_base
-    staging_reserved = 0
+    // For each remote edge, ScoreboardPrefetcher issues FETCH_REQUEST
+    // (gated by OUTSTANDING_DEPTH and STAGING capacity)
+    // When either limit is hit, or all edges scanned → batch is "closed"
+
+begin_batch:                            // STAGING resources reset for next batch
+    staging_bump = staging_base         // (same reset as begin_node_update;
+    staging_reserved = 0                //  this repeats for each batch within one node update)
     batch_outstanding_count = 0
 
 before_issue_pull:
@@ -230,13 +241,14 @@ on_pull_resp_data(txn_id, word_idx, data):
     SPM[txn_table[txn_id].base + word_idx] = data
     txn_table[txn_id].received_words++
 
-after_all_batch_responses_arrive:   // batch_outstanding_count == 0
+after_all_batch_responses_arrive:       // batch_outstanding_count == 0
     compute reads STAGING blocks
     accumulator_update()
 
-after_batch_compute_done:
-    staging_bump = staging_base
+after_batch_compute_done:               // Compute Unit signals batch_done
+    staging_bump = staging_base         // reset for next batch
     staging_reserved = 0
+    → resume scanning remaining AdjEntry (begin next batch)
 
 after_all_neighbors_processed:
     finalize update
@@ -323,7 +335,7 @@ input  logic                 staging_reserve_ready,      // reservation granted
 output logic                 staging_batch_closed,       // batch is full, stop issuing
 
 // Compute Unit → STAGING Allocator
-input  logic                 staging_batch_done,         // batch compute complete, reset
+input  logic                 batch_done,                 // batch compute complete, reset
 ```
 
 ### 6.3 Pull Request Issuance Flow
@@ -347,7 +359,7 @@ STAGING Allocator asserts staging_batch_closed.
 ScoreboardPrefetcher stops issuing new pulls (holds NOTIFIED edges).
 
 After batch compute completes:
-  Foreground asserts staging_batch_done.
+  Foreground asserts batch_done.
   STAGING Allocator resets: staging_bump = staging_base, staging_reserved = 0.
   ScoreboardPrefetcher resumes issuing pulls for remaining NOTIFIED edges.
 ```
@@ -375,7 +387,8 @@ typedef struct packed {
     logic        notification;    // NOTIFICATION received from producer
     logic        in_flight;       // FETCH_REQUEST sent, waiting for response
     logic        ready;           // FETCH_RESPONSE received, data available
-    logic [PE_ID_W-1:0] source_pe; // PE that owns the producer node
+    logic [X_CORD_W-1:0] source_x; // NoC x coordinate of producer's PE
+    logic [Y_CORD_W-1:0] source_y; // NoC y coordinate of producer's PE
 } edge_scoreboard_t;
 ```
 
@@ -397,18 +410,80 @@ The Scoreboard has a fixed capacity (`SCOREBOARD_DEPTH`). When full, no new fetc
 
 Pull Server must locate the local NodeHeader from `neighbor_id` upon receiving a FETCH_REQUEST.
 
-First version: graph compiler / mapper ensures each PE's local node id range is contiguous.
+Graph compiler / mapper ensures each PE's local node id range is contiguous.
 
 ```
 local_index  = node_id - local_node_base
 header_addr  = header_base + local_index * HEADER_WORDS
 ```
 
-If mapping cannot guarantee contiguity, a local lookup table (`node_id -> header_addr`) is needed.
+One subtract + one multiply. No lookup table needed.
 
 ---
 
-## 9. Related Documents
+## 9. NoC ↔ SPM Width Conversion and Byte Order
+
+NoC data width (`DATA_WIDTH`) is 32 bits. SPM beat width (`BEAT_BITS`) is 64 bits (8 bytes). All modules that cross this boundary must perform width conversion.
+
+### 9.1 Byte Order within a 64-bit Beat
+
+Little-endian word order:
+
+```
+64-bit SPM beat:
+  [63:32]  word 1  (fp32_1)
+  [31: 0]  word 0  (fp32_0)   ← lower address
+```
+
+`fp32_0` at `beat[31:0]` is the lower-address word. `fp32_1` at `beat[63:32]` is the higher-address word.
+
+### 9.2 Pull Server: SPM 64-bit → NoC 32-bit
+
+Pull Server reads 64-bit beats from SPM STATE and sends 32-bit stores to NoC Adapter.
+
+```
+Cycle 0: SPM read returns beat = {fp32_1, fp32_0}
+Cycle 1: NoC store 0 = fp32_0  (beat[31:0])
+Cycle 2: NoC store 1 = fp32_1  (beat[63:32])
+```
+
+- `state_words` counts 32-bit words.
+- Even `state_words`: every beat is fully utilized.
+- Odd `state_words`: the last beat's `beat[63:32]` is not sent. Pull Server stops after `state_words` stores.
+
+### 9.3 Response Collector: NoC 32-bit → SPM 64-bit
+
+Response Collector receives 32-bit data words from NoC and writes 64-bit beats to SPM STAGING.
+
+```
+NoC word 0  → buffer[31:0]
+NoC word 1  → buffer[63:32]; write beat to SPM
+NoC word 2  → buffer[31:0]
+NoC word 3  → buffer[63:32]; write beat to SPM
+...
+```
+
+- Internal 32→64 assembly buffer (1-entry register + valid flag).
+- Even word count: last word pairs with previous word, writes full beat.
+- Odd word count: last word sits in buffer alone. Write final beat with `wstrb = 8'b0000_1111` (only lower 4 bytes valid).
+
+### 9.4 Write Stream Engine: Compute 32-bit → SPM 64-bit
+
+Same pattern as Response Collector. Compute Unit outputs 32-bit FP32 words. Write Stream Engine assembles into 64-bit beats before writing to SPM.
+
+### 9.5 Read Stream Engine: SPM 64-bit → Compute 32-bit
+
+Read Stream Engine reads 64-bit beats from SPM and presents them to Compute Unit.
+
+Option A (recommended): `read_stream_if.data` is 64-bit. Compute Unit internally unpacks `beat[31:0]` then `beat[63:32]`.
+
+Option B: `read_stream_if.data` is 32-bit. Read Stream Engine internally unpacks 64-bit beat into two 32-bit cycles.
+
+**Decision: Option A.** `read_stream_if.data` width = `BEAT_BITS = 64`. Compute Unit has simpler timing control when it manages its own word-level unpacking.
+
+---
+
+## 10. Related Documents
 
 | Document | Content |
 |----------|---------|

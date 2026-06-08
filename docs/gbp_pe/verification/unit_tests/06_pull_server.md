@@ -8,12 +8,18 @@ Verify that the Pull Server correctly:
 - Streams FETCH_RESPONSE (metadata + data + done) via NoC Adapter
 - Handles backpressure from NoC Adapter
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `pull_server`
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: IDLE, SPM contains valid NodeHeader and STATE data
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -28,7 +34,8 @@ Verify that the Pull Server correctly:
 | T+1   | req_target_node_id | 0x10 | Target node |
 | T+1   | req_consumer_node_id | 0x20 | Consumer node |
 | T+1   | req_is_factor | 0 | Variable node |
-| T+1   | req_fetch_src_pe | 0x02 | Source PE |
+| T+1   | req_fetch_src_x | 0x02 | Source X coord |
+| T+1   | req_fetch_src_y | 0x00 | Source Y coord |
 | T+2   | req_valid | 0 | Clear request |
 | T+3   | spm_rd_ready | 1 | SPM read ready |
 | T+3   | spm_rd_data | HEADER_DATA | NodeHeader data |
@@ -50,6 +57,9 @@ Verify that the Pull Server correctly:
 | T+4   | tx_fetch_resp_ready | 0 | NoC Adapter not ready |
 | T+5   | tx_fetch_resp_ready | 0 | Still not ready |
 | T+6   | tx_fetch_resp_ready | 1 | Ready again |
+
+
+---
 
 ## 4. Expected Output
 
@@ -88,6 +98,9 @@ Verify that the Pull Server correctly:
 | T+7   | tx_fetch_resp_valid | 1 | Can send now |
 | T+7   | tx_fetch_resp_data | STATE_WORD_0 | Data sent |
 
+
+---
+
 ## 5. Timing Diagram
 
 ```
@@ -106,6 +119,9 @@ tx_data   XXXXXXXXXXX| META  |XX| WORD0 |XXXXXXXXXXXXXXXXXXXXXXXX
 tx_last   _______________________________|        |________________
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] Request accepted only when `req_valid && req_ready`
@@ -116,6 +132,9 @@ tx_last   _______________________________|        |________________
 - [ ] Backpressure: data held stable when `tx_fetch_resp_ready = 0`
 - [ ] FSM returns to IDLE after done store
 
+
+---
+
 ## 7. Corner Cases
 
 1. **Reset during response**: Verify clean state after reset
@@ -123,3 +142,21 @@ tx_last   _______________________________|        |________________
 3. **Maximum state_words**: Test with large state (e.g., 64 words)
 4. **Zero state_words**: Edge case with no data words
 5. **Multiple requests**: Verify requests are queued correctly
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

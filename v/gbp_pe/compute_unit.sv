@@ -1,264 +1,271 @@
-`include "bsg_defines.sv"
-`include "bsg_fpu_defines.svh"
-`include "HardFloat_consts.vi"
-`include "HardFloat_specialize.vi"
+// compute_unit.sv
+// New-architecture compute unit.
+// Wraps gbp_compute_engine with the interface from 05_INTERFACES.md §2.10.
+// Performs all width conversion internally:
+//   - External rd_beat is 64-bit (per spec BEAT_BITS=64)
+//   - gbp_compute_engine stream_in/stream_out is 256-bit
+//   - External wr_word is 32-bit
+//
+// Data flow:
+//   rd_beat (64b) ──► [assemble 4 beats → 256b] ──► stream_in_data
+//   ns_data (32b) ──► [assemble 8 words → 256b] ──► stream_in_data
+//   stream_out_data (256b) ──► [disassemble to 32b words] ──► wr_word
 
 module compute_unit
-  import bsg_manycore_pkg::*;
   import gbp_pkg::*;
-#(
-    parameter int GBP_CORE_PER_PE = 16
-    , parameter int FP_EXP_WIDTH_P = 8
-    , parameter int FP_MANT_WIDTH_P = 23
-    , parameter int DIV_BITS_PER_ITER_P = 1
-) (
-    input logic clk_i,
-    input logic reset_i,
-    input logic cmd_valid_i,
-    input logic cmd_kind_i,
-    output logic cmd_ready_o,
-    output logic compute_done_o,
-    output logic rsp_done_o,
-    input logic force_persistence_stall_i,
-    read_stream_if.master if_stream_if_stream,
-    write_stream_if.slave if_write_stream_if_stream,
-    input logic [GBP_CORE_PER_PE-1:0][31:0] data_a_i,
-    input logic [GBP_CORE_PER_PE-1:0][31:0] data_b_i,
-    input logic [1:0] op_i,
-    input logic valid_i,
-    output logic [GBP_CORE_PER_PE-1:0][31:0] data_o,
-    output logic valid_o
+(
+    input  logic clk,
+    input  logic rst_n,
+
+    // ── Command (from Node Scheduler + Metadata Scanner) ──
+    input  logic                 cmd_valid,
+    output logic                 cmd_ready,
+    input  logic [NODE_ID_W-1:0] cmd_node_id,
+    input  logic                 cmd_is_factor,
+    input  logic [DOF_W-1:0]     cmd_dof,
+    input  logic [ADJ_COUNT_W-1:0] cmd_adj_count,
+    input  logic [STATE_WORDS_W-1:0] cmd_state_words,
+
+    // ── Neighbor state (from Accumulator) ──
+    input  logic                 ns_valid,
+    output logic                 ns_ready,
+    input  logic [FP32_W-1:0]    ns_data,
+    input  logic                 ns_last,
+
+    // ── Read Stream Engine interface ──
+    output logic                 rd_desc_valid,
+    input  logic                 rd_desc_ready,
+    output logic [SPM_ADDR_W-1:0] rd_desc_base_addr,
+    output logic [15:0]          rd_desc_word_count,
+    output logic                 rd_desc_is_staging,
+
+    input  logic                 rd_beat_valid,
+    output logic                 rd_beat_ready,
+    input  logic [BEAT_BITS-1:0] rd_beat_data,
+
+    // ── Write Stream Engine interface ──
+    output logic                 wr_desc_valid,
+    input  logic                 wr_desc_ready,
+    output logic [SPM_ADDR_W-1:0] wr_desc_base_addr,
+    output logic [15:0]          wr_desc_word_count,
+
+    output logic                 wr_word_valid,
+    input  logic                 wr_word_ready,
+    output logic [FP32_W-1:0]    wr_word_data,
+
+    // ── Completion ──
+    output logic                 done_valid,
+    output logic [NODE_ID_W-1:0] done_node_id,
+    output logic                 done_is_factor,
+    output logic                 batch_done
 );
 
-  localparam logic [1:0] OP_ADD = 2'b00;
-  localparam logic [1:0] OP_SUB = 2'b01;
-  localparam logic [1:0] OP_MUL = 2'b10;
-  localparam logic [1:0] OP_DIV = 2'b11;
+  localparam int GBP_IN_BITS = 256;
+  localparam int GBP_OUT_BITS = 256;
+  localparam int WORDS_PER_GBP_IN = GBP_IN_BITS / FP32_W;  // 8
+  localparam int WORDS_PER_GBP_OUT = GBP_OUT_BITS / FP32_W; // 8
+  localparam int BEATS_PER_GBP_IN = GBP_IN_BITS / BEAT_BITS; // 4 for 64b beat
 
-  localparam int REC_W = FP_EXP_WIDTH_P + FP_MANT_WIDTH_P + 2;
+  // ------------------------------------------------------------------
+  // Internal command latches (for done_node_id/done_is_factor)
+  // ------------------------------------------------------------------
+  logic [NODE_ID_W-1:0] cmd_node_id_r;
+  logic                 cmd_is_factor_r;
 
-  logic [GBP_CORE_PER_PE-1:0][REC_W-1:0] rec_a;
-  logic [GBP_CORE_PER_PE-1:0][REC_W-1:0] rec_b;
-  logic [GBP_CORE_PER_PE-1:0][REC_W-1:0] add_rec_z;
-  logic [GBP_CORE_PER_PE-1:0][REC_W-1:0] sub_rec_z;
-  logic [GBP_CORE_PER_PE-1:0][REC_W-1:0] mul_rec_z;
-
-  logic [GBP_CORE_PER_PE-1:0][31:0] add_z;
-  logic [GBP_CORE_PER_PE-1:0][31:0] sub_z;
-  logic [GBP_CORE_PER_PE-1:0][31:0] mul_z;
-  logic [GBP_CORE_PER_PE-1:0][31:0] div_z;
-
-  logic [GBP_CORE_PER_PE-1:0] div_v;
-  logic [GBP_CORE_PER_PE-1:0] div_done_r;
-  logic [GBP_CORE_PER_PE-1:0][31:0] div_result_r;
-
-  logic wr_pending_r;
-  logic [BEAT_BITS-1:0] wr_data_r;
-  logic [31:0] lane0_result_r;
-  logic busy_r;
-  logic done_pulse_r;
-  logic valid_exec_i;
-  logic valid_r;
-  logic div_active_r;
-  logic write_ready_lo;
-
-  assign cmd_ready_o = ~busy_r;
-  assign valid_exec_i = valid_i & busy_r;
-  assign write_ready_lo = if_write_stream_if_stream.ready & ~force_persistence_stall_i;
-
-  assign if_stream_if_stream.ready = 1'b1;
-
-  for (genvar i = 0; i < GBP_CORE_PER_PE; i++) begin : lanes
-    logic add_invalid_lo;
-    logic sub_invalid_lo;
-    logic mul_invalid_lo;
-    logic [4:0] add_fflags_lo;
-    logic [4:0] sub_fflags_lo;
-    logic [4:0] mul_fflags_lo;
-    logic div_ready_lo;
-    logic [4:0] div_fflags_lo;
-
-    fNToRecFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) a_to_rec (
-        .in(data_a_i[i])
-        , .out(rec_a[i])
-    );
-
-    fNToRecFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) b_to_rec (
-        .in(data_b_i[i])
-        , .out(rec_b[i])
-    );
-
-    addRecFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) add_op (
-        .control(`flControl_default)
-        , .subOp(1'b0)
-        , .a(rec_a[i])
-        , .b(rec_b[i])
-        , .roundingMode(3'b000)
-        , .out(add_rec_z[i])
-        , .exceptionFlags(add_fflags_lo)
-    );
-
-    addRecFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) sub_op (
-        .control(`flControl_default)
-        , .subOp(1'b1)
-        , .a(rec_a[i])
-        , .b(rec_b[i])
-        , .roundingMode(3'b000)
-        , .out(sub_rec_z[i])
-        , .exceptionFlags(sub_fflags_lo)
-    );
-
-    mulRecFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) mul_op (
-        .control(`flControl_default)
-        , .a(rec_a[i])
-        , .b(rec_b[i])
-        , .roundingMode(3'b000)
-        , .out(mul_rec_z[i])
-        , .exceptionFlags(mul_fflags_lo)
-    );
-
-    recFNToFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) add_to_fn (
-        .in(add_rec_z[i])
-        , .out(add_z[i])
-    );
-
-    recFNToFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) sub_to_fn (
-        .in(sub_rec_z[i])
-        , .out(sub_z[i])
-    );
-
-    recFNToFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-    ) mul_to_fn (
-        .in(mul_rec_z[i])
-        , .out(mul_z[i])
-    );
-
-    divSqrtFN #(
-        .expWidth(FP_EXP_WIDTH_P)
-        , .sigWidth(FP_MANT_WIDTH_P + 1)
-        , .bits_per_iter_p(DIV_BITS_PER_ITER_P)
-    ) div (
-        .nReset(~reset_i)
-        , .clock(clk_i)
-        , .control(`flControl_default)
-        , .inReady(div_ready_lo)
-        , .inValid(valid_exec_i & ~div_active_r & (op_i == OP_DIV))
-        , .sqrtOp(1'b0)
-        , .a(data_a_i[i])
-        , .b(data_b_i[i])
-        , .roundingMode(3'b000)
-        , .outValid(div_v[i])
-        , .sqrtOpOut()
-        , .out(div_z[i])
-        , .exceptionFlags(div_fflags_lo)
-    );
-
-    assign add_invalid_lo = add_fflags_lo[3];
-    assign sub_invalid_lo = sub_fflags_lo[3];
-    assign mul_invalid_lo = mul_fflags_lo[3];
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      cmd_node_id_r  <= '0;
+      cmd_is_factor_r <= 1'b0;
+    end else if (cmd_valid && cmd_ready) begin
+      cmd_node_id_r   <= cmd_node_id;
+      cmd_is_factor_r <= cmd_is_factor;
+    end
   end
 
-  assign valid_o = valid_r;
+  // ------------------------------------------------------------------
+  // GBP compute engine instantiation
+  // ------------------------------------------------------------------
+  logic               gbp_cmd_valid;
+  logic               gbp_cmd_ready;
+  logic               gbp_cmd_is_factor;
+  logic [7:0]         gbp_cmd_node_idx;
+  logic [2:0]         gbp_cmd_dofs;
+  logic [3:0]         gbp_cmd_adj_count;
+  logic [3:0]         gbp_cmd_msg_count;
+  logic               gbp_compute_done;
+  logic               gbp_rsp_done;
 
-  always_ff @(posedge clk_i) begin
-    if (reset_i) begin
-      wr_pending_r <= 1'b0;
-      wr_data_r <= '0;
-      lane0_result_r <= '0;
-      busy_r <= 1'b0;
-      done_pulse_r <= 1'b0;
-      valid_r <= 1'b0;
-      div_active_r <= 1'b0;
-      div_done_r <= '0;
-      div_result_r <= '0;
-      data_o <= '0;
+  logic               stream_in_ready;
+  logic               stream_in_valid;
+  logic [GBP_IN_BITS-1:0] stream_in_data;
+
+  logic               stream_out_ready;
+  logic               stream_out_valid;
+  logic [GBP_OUT_BITS-1:0] stream_out_data;
+
+  gbp_compute_engine #(
+    .LANES(16),
+    .MAX_DOFS(6),
+    .MAX_ADJACENT(8),
+    .STAGING_DEPTH(128)
+  ) u_engine (
+    .clk_i(clk),
+    .reset_i(~rst_n),
+    .cmd_valid_i(gbp_cmd_valid),
+    .cmd_is_factor_i(gbp_cmd_is_factor),
+    .cmd_node_idx_i(gbp_cmd_node_idx),
+    .cmd_dofs_i(gbp_cmd_dofs),
+    .cmd_adj_count_i(gbp_cmd_adj_count),
+    .cmd_msg_count_i(gbp_cmd_msg_count),
+    .cmd_wr_xfer_bytes_i(16'd0),
+    .cmd_ready_o(gbp_cmd_ready),
+    .compute_done_o(gbp_compute_done),
+    .rsp_done_o(gbp_rsp_done),
+    .stream_in_ready(stream_in_ready),
+    .stream_in_valid(stream_in_valid),
+    .stream_in_data(stream_in_data),
+    .stream_out_ready(stream_out_ready),
+    .stream_out_valid(stream_out_valid),
+    .stream_out_data(stream_out_data),
+    .damping_factor_i(32'h3E99999A)
+  );
+
+  // ------------------------------------------------------------------
+  // Command mapping
+  // ------------------------------------------------------------------
+  assign gbp_cmd_valid     = cmd_valid;
+  assign cmd_ready         = gbp_cmd_ready;
+  assign gbp_cmd_is_factor = cmd_is_factor;
+  assign gbp_cmd_node_idx  = cmd_node_id[7:0];
+  assign gbp_cmd_dofs      = cmd_dof;
+  assign gbp_cmd_adj_count = cmd_adj_count;
+  // For variable node: msg_count = adj_count (one message per adjacent factor)
+  // For factor node: msg_count = adj_count (one belief per adjacent variable)
+  assign gbp_cmd_msg_count = cmd_adj_count;
+
+  // ------------------------------------------------------------------
+  // Read descriptor: issue once on cmd_valid
+  // ------------------------------------------------------------------
+  assign rd_desc_valid      = cmd_valid & cmd_ready;
+  assign rd_desc_base_addr  = SPM_ADDR_W'(cmd_node_id) << 4;  // simplified addr
+  assign rd_desc_word_count = {10'b0, cmd_state_words};
+  assign rd_desc_is_staging = 1'b0;
+
+  // ------------------------------------------------------------------
+  // Input assembler 64b beat / 32b word → 256b engine word
+  // ------------------------------------------------------------------
+  // Two input sources share one 256b engine input:
+  //   Source A: rd_beat (64b SPM beats)   → 4 beats assemble to 1 engine word
+  //   Source B: ns_data (32b words)       → 8 words assemble to 1 engine word
+  // Priority: rd_beat first, then ns_data.
+
+  // Source A: 64b beat assembler
+  logic [BEATS_PER_GBP_IN-1:0][BEAT_BITS-1:0] rd_beat_buffer_r;
+  logic [$clog2(BEATS_PER_GBP_IN)-1:0]        rd_beat_idx_r;
+  logic                                       rd_word_valid_r;
+  logic [GBP_IN_BITS-1:0]                     rd_word_data_r;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      rd_beat_idx_r   <= '0;
+      rd_word_valid_r <= 1'b0;
     end else begin
-      done_pulse_r <= 1'b0;
-      valid_r <= 1'b0;
-
-      if (cmd_valid_i && cmd_ready_o) begin
-        busy_r <= 1'b1;
-      end
-
-      if (valid_exec_i && ~div_active_r && (op_i != OP_DIV)) begin
-        for (int i = 0; i < GBP_CORE_PER_PE; i++) begin
-          unique case (op_i)
-            OP_SUB: data_o[i] <= sub_z[i];
-            OP_MUL: data_o[i] <= mul_z[i];
-            default: data_o[i] <= add_z[i];
-          endcase
-        end
-        unique case (op_i)
-          OP_SUB: lane0_result_r <= sub_z[0];
-          OP_MUL: lane0_result_r <= mul_z[0];
-          default: lane0_result_r <= add_z[0];
-        endcase
-        valid_r <= 1'b1;
-      end
-
-      if (valid_exec_i && ~div_active_r && (op_i == OP_DIV)) begin
-        div_active_r <= 1'b1;
-        div_done_r <= '0;
-      end
-
-      if (div_active_r) begin
-        for (int i = 0; i < GBP_CORE_PER_PE; i++) begin
-          if (div_v[i]) begin
-            div_done_r[i] <= 1'b1;
-            div_result_r[i] <= div_z[i];
-          end
-        end
-
-        if (&(div_done_r | div_v)) begin
-          for (int i = 0; i < GBP_CORE_PER_PE; i++) begin
-            data_o[i] <= div_v[i] ? div_z[i] : div_result_r[i];
-          end
-          lane0_result_r <= div_v[0] ? div_z[0] : div_result_r[0];
-          valid_r <= 1'b1;
-          div_active_r <= 1'b0;
-          div_done_r <= '0;
+      if (rd_beat_valid && rd_beat_ready) begin
+        rd_beat_buffer_r[rd_beat_idx_r] <= rd_beat_data;
+        if (rd_beat_idx_r == $clog2(BEATS_PER_GBP_IN)'(BEATS_PER_GBP_IN - 1)) begin
+          rd_beat_idx_r   <= '0;
+          rd_word_valid_r <= 1'b1;
+        end else begin
+          rd_beat_idx_r <= rd_beat_idx_r + 1'b1;
         end
       end
-
-      if (wr_pending_r && write_ready_lo) begin
-        wr_pending_r <= 1'b0;
-        busy_r <= 1'b0;
-        done_pulse_r <= 1'b1;
-      end
-
-      if (!wr_pending_r && valid_o) begin
-        wr_pending_r <= 1'b1;
-        wr_data_r <= {{(BEAT_BITS-32){1'b0}}, lane0_result_r};
+      if (stream_in_valid && stream_in_ready && rd_word_valid_r) begin
+        rd_word_valid_r <= 1'b0;
       end
     end
   end
 
-  assign if_write_stream_if_stream.valid = wr_pending_r & ~force_persistence_stall_i;
-  assign if_write_stream_if_stream.data = wr_data_r;
-  assign compute_done_o = valid_r;
-  assign rsp_done_o = done_pulse_r;
+  // Source B: 32b ns word assembler
+  logic [WORDS_PER_GBP_IN-1:0][FP32_W-1:0] ns_word_buffer_r;
+  logic [$clog2(WORDS_PER_GBP_IN)-1:0]     ns_word_idx_r;
+  logic                                    ns_word_valid_r;
+  logic [GBP_IN_BITS-1:0]                  ns_word_data_r;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      ns_word_idx_r   <= '0;
+      ns_word_valid_r <= 1'b0;
+    end else begin
+      if (ns_valid && ns_ready) begin
+        ns_word_buffer_r[ns_word_idx_r] <= ns_data;
+        if (ns_word_idx_r == $clog2(WORDS_PER_GBP_IN)'(WORDS_PER_GBP_IN - 1) || ns_last) begin
+          ns_word_idx_r   <= '0;
+          ns_word_valid_r <= 1'b1;
+        end else begin
+          ns_word_idx_r <= ns_word_idx_r + 1'b1;
+        end
+      end
+      if (stream_in_valid && stream_in_ready && ns_word_valid_r && !rd_word_valid_r) begin
+        ns_word_valid_r <= 1'b0;
+      end
+    end
+  end
+
+  // Flatten assembled buffers to 256b words (generate blocks for tool compatibility)
+  generate
+    for (genvar i = 0; i < BEATS_PER_GBP_IN; i++) begin : g_rd_flat
+      assign rd_word_data_r[i*BEAT_BITS +: BEAT_BITS] = rd_beat_buffer_r[i];
+    end
+    for (genvar i = 0; i < WORDS_PER_GBP_IN; i++) begin : g_ns_flat
+      assign ns_word_data_r[i*FP32_W +: FP32_W] = ns_word_buffer_r[i];
+    end
+  endgenerate
+
+  assign ns_ready = ~ns_word_valid_r;
+  assign rd_beat_ready = ~rd_word_valid_r;
+
+  assign stream_in_valid = rd_word_valid_r | ns_word_valid_r;
+  assign stream_in_data  = rd_word_valid_r ? rd_word_data_r : ns_word_data_r;
+
+  // ------------------------------------------------------------------
+  // Output disassembly: 256b engine word → 32b words
+  // ------------------------------------------------------------------
+  logic [GBP_OUT_BITS-1:0] out_word_buffer_r;
+  logic [$clog2(WORDS_PER_GBP_OUT)-1:0] out_word_idx_r;
+  logic out_active_r;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      out_active_r    <= 1'b0;
+      out_word_idx_r  <= '0;
+    end else begin
+      if (stream_out_valid && stream_out_ready && !out_active_r) begin
+        out_word_buffer_r <= stream_out_data;
+        out_active_r   <= 1'b1;
+        out_word_idx_r <= '0;
+      end else if (wr_word_valid && wr_word_ready) begin
+        out_word_idx_r <= out_word_idx_r + 1'b1;
+        if (out_word_idx_r == $clog2(WORDS_PER_GBP_OUT)'(WORDS_PER_GBP_OUT - 1)) begin
+          out_active_r <= 1'b0;
+        end
+      end
+    end
+  end
+
+  assign stream_out_ready = ~out_active_r;
+
+  assign wr_desc_valid      = out_active_r;
+  assign wr_desc_base_addr  = '0;  // TODO: track actual write address
+  assign wr_desc_word_count = '0;  // TODO: track actual write count
+  assign wr_word_valid      = out_active_r;
+  assign wr_word_data       = out_word_buffer_r[out_word_idx_r * FP32_W +: FP32_W];
+
+  // ------------------------------------------------------------------
+  // Completion
+  // ------------------------------------------------------------------
+  assign done_valid     = gbp_rsp_done;
+  assign done_node_id   = cmd_node_id_r;
+  assign done_is_factor = cmd_is_factor_r;
+  assign batch_done     = gbp_compute_done;
 
 endmodule

@@ -1,0 +1,3 @@
+top: response_collector_top
+top_sv: tops/unit/response_collector_top.sv
+rtl_f: tests/unit/response_collector.f

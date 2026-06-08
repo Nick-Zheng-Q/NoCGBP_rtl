@@ -1,0 +1,3 @@
+top: node_scheduler_top
+top_sv: tops/unit/node_scheduler_top.sv
+rtl_f: tests/unit/node_scheduler.f

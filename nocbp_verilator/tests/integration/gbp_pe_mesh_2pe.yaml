@@ -1,3 +1,0 @@
-top: gbp_pe_mesh_2pe
-top_sv: tops/integration/gbp_pe_mesh_2pe.sv
-rtl_f: tests/integration/gbp_pe_mesh_2pe.f

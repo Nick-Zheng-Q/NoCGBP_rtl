@@ -10,6 +10,9 @@
 -I../basejump_stl/bsg_fpu
 -I../imports/HardFloat/source
 -I../imports/HardFloat/source/RISCV
+-I../v/gbp_pe/compute/include
+-I../v/gbp_pe/compute
+-I../v/gbp_pe/compute/matrix_alu
 
 ../basejump_stl/bsg_misc/bsg_defines.sv
 ../basejump_stl/bsg_dataflow/bsg_fifo_1r1w_large.sv
@@ -23,25 +26,12 @@
 ../v/bsg_manycore_endpoint_fc.sv
 ../v/bsg_manycore_endpoint_standard.sv
 ../v/gbp_pe/gbp_pkg.sv
-../v/gbp_pe/interfaces.sv
 ../v/gbp_pe/gbp_pe_endpoint_adapter.sv
 ../v/gbp_pe/gbp_pe_noc_bridge.sv
-../v/gbp_pe/control_unit.sv
-../v/gbp_pe/stream_dispatcher.sv
-../v/gbp_pe/agu.sv
-../v/gbp_pe/addr_fifo.sv
-../v/gbp_pe/data_fifo.sv
-../v/gbp_pe/mic_read.sv
-../v/gbp_pe/mic_write.sv
 ../v/gbp_pe/read_stream_engine.sv
 ../v/gbp_pe/write_stream_engine.sv
 ../v/gbp_pe/compute_unit.sv
-../v/gbp_pe/spm_rd_arbiter.sv
-../v/gbp_pe/spm_wr_arbiter.sv
 ../v/gbp_pe/spm_bank.sv
-../v/gbp_pe/spm_bank_array.sv
-../v/gbp_pe/spm_subsystem.sv
-../v/gbp_pe/pe_top.sv
 ../v/gbp_pe/gbp_pe.sv
 
 ../basejump_stl/bsg_noc/bsg_noc_pkg.sv

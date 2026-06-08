@@ -1,0 +1,2 @@
+top: control_subsystem_top
+rtl_f: tests/integration/control_subsystem.f

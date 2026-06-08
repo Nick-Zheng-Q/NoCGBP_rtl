@@ -8,12 +8,18 @@ Verify that the Metadata Scanner correctly:
 - Scans AdjEntry list
 - Classifies neighbors as local vs remote
 
+
+---
+
 ## 2. Preconditions
 
 - Module: `metadata_scanner`
 - Clock: 100MHz (10ns period)
 - Reset: Active low (`rst_n`)
 - Initial state: IDLE, SPM contains valid NodeHeader and AdjEntry data
+
+
+---
 
 ## 3. Test Stimulus
 
@@ -35,6 +41,9 @@ Verify that the Metadata Scanner correctly:
 | T+5   | spm_rd_ready | 1 | SPM read ready |
 | T+5   | spm_rd_data | ADJ_ENTRY_1 | Second AdjEntry |
 
+
+---
+
 ## 4. Expected Output
 
 ### 4.1 Test Case 1: Single Node Scan
@@ -51,14 +60,19 @@ Verify that the Metadata Scanner correctly:
 | T+3   | info_state_words | STATE_WORDS | State word count |
 | T+4   | adj_valid | 1 | AdjEntry valid |
 | T+4   | adj_neighbor_id | NEIGHBOR_0 | First neighbor ID |
-| T+4   | adj_neighbor_pe_id | PE_ID_0 | First neighbor PE |
+| T+4   | adj_neighbor_x | PE_ID_0 | First neighbor X coord |
+| T+4   | adj_neighbor_y | 0x00 | First neighbor Y coord |
 | T+4   | adj_is_local | 1 | Local neighbor |
 | T+4   | adj_last | 0 | Not last |
 | T+5   | adj_valid | 1 | AdjEntry valid |
 | T+5   | adj_neighbor_id | NEIGHBOR_1 | Second neighbor ID |
-| T+5   | adj_neighbor_pe_id | PE_ID_1 | Second neighbor PE |
+| T+5   | adj_neighbor_x | PE_ID_1 | Second neighbor X coord |
+| T+5   | adj_neighbor_y | 0x00 | Second neighbor Y coord |
 | T+5   | adj_is_local | 0 | Remote neighbor |
 | T+5   | adj_last | 1 | Last AdjEntry |
+
+
+---
 
 ## 5. Timing Diagram
 
@@ -77,14 +91,20 @@ adj       ___________________________|        |____|        |____
 last      _______________________________________|        |____
 ```
 
+
+---
+
 ## 6. Pass/Fail Criteria
 
 - [ ] NodeHeader read within 1 cycle of command
 - [ ] All metadata fields extracted correctly
 - [ ] AdjEntry scan completes in adj_count cycles
 - [ ] `adj_last` asserted on last AdjEntry
-- [ ] `adj_is_local` correct based on `neighbor_pe_id == self_pe_id`
+- [ ] `adj_is_local` correct based on `(neighbor_x == self_x) && (neighbor_y == self_y)`
 - [ ] FSM returns to IDLE after scan complete
+
+
+---
 
 ## 7. Corner Cases
 
@@ -93,3 +113,21 @@ last      _______________________________________|        |____
 3. **All local neighbors**: No remote edges
 4. **All remote neighbors**: No local edges
 5. **SPM read error**: Invalid data in SPM
+
+---
+
+
+---
+
+## 8. Related Documents
+
+| Document | Content |
+|----------|---------|
+| `../../00_WRITING_GUIDE.md` | How to write architecture documents |
+| `../../01_ARCHITECTURE.md` | Design goals, core rules, overall data flow |
+| `../../02_SPM_AND_METADATA.md` | SPM layout, metadata structures |
+| `../../03_NOC_PROTOCOL.md` | NoC adaptation layer, mailbox encoding |
+| `../../04_PE_MICROARCHITECTURE.md` | Module descriptions, parameters |
+| `../../05_INTERFACES.md` | Port-level interfaces, state machines |
+| `../../06_PE_CONTROL_FLOW.md` | PE-level control flow, pipeline stages |
+| `../README.md` | Verification documentation index |

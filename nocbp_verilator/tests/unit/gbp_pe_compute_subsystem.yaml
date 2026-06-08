@@ -1,0 +1,4 @@
+top: gbp_pe_compute_subsystem_top
+top_sv: tops/unit/gbp_pe_compute_subsystem_top.sv
+rtl_f: tests/unit/gbp_pe_compute_subsystem.f
+tb: tests/unit/gbp_pe_compute_subsystem.cc

@@ -1,0 +1,3 @@
+top: fetch_response_flow_top
+top_sv: tops/integration/fetch_response_flow_top.sv
+rtl_f: tests/integration/fetch_response_flow.f
