@@ -13,7 +13,7 @@ module gbp_control_fsm #(
     parameter int ADDR_W = $clog2(STAGING_DEPTH)
 )(
     input  logic clk_i,
-    input  logic reset_i,
+    input  logic rst_n_i,
     
     // External command interface
     input  logic               cmd_valid,
@@ -61,6 +61,9 @@ module gbp_control_fsm #(
     // Configuration
     input  logic [31:0]        damping_factor     // FP32 damping (e.g., 0.4)
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   localparam int VAR_PAYLOAD_CHUNK_WORDS = 15;
 

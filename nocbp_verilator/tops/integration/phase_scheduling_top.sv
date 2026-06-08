@@ -116,8 +116,8 @@ module phase_scheduling_top (
   assign phase_factor_first_o = u_control.u_phase_controller.phase_factor_first_o;
   assign phase_switch_pulse_o = u_control.u_phase_controller.phase_switch_pulse_o;
   assign visited_mask_o       = u_control.u_phase_controller.visited_mask_o;
-  assign sched_valid_o        = u_control.u_node_scheduler.sched_valid;
-  assign sched_node_id_o      = u_control.u_node_scheduler.sched_node_id;
+  assign sched_valid_o        = u_control.u_node_scheduler.sched_valid_o;
+  assign sched_node_id_o      = u_control.u_node_scheduler.sched_node_id_o;
 
   // -------------------------------------------------------------------------
   // Compute Subsystem

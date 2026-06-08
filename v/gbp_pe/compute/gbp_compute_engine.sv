@@ -18,7 +18,7 @@ module gbp_compute_engine
     parameter int DIV_BITS_PER_ITER_P = 1
 )(
     input  logic clk_i,
-    input  logic reset_i,
+    input  logic rst_n_i,
     
     // Command interface (from control_unit)
     input  logic               cmd_valid_i,
@@ -46,6 +46,9 @@ module gbp_compute_engine
     // Configuration
     input  logic [31:0]        damping_factor_i   // FP32 damping (e.g., 0.4)
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   localparam int ADDR_W = $clog2(STAGING_DEPTH);
 
@@ -194,7 +197,7 @@ module gbp_compute_engine
     .LANES(LANES)
   ) u_staging_buffer (
     .clk_i(clk_i),
-    .reset_i(reset_i),
+    .rst_n_i(rst_n_i),
     
     .stream_wr_valid(buf_stream_wr_valid),
     .stream_wr_data(buf_stream_wr_data),
@@ -228,7 +231,7 @@ module gbp_compute_engine
     .DIV_BITS_PER_ITER_P(DIV_BITS_PER_ITER_P)
   ) u_simd_array (
     .clk_i(clk_i),
-    .reset_i(reset_i),
+    .rst_n_i(rst_n_i),
     
     .op_add_en(simd_op_add),
     .op_sub_en(simd_op_sub),
@@ -261,7 +264,7 @@ module gbp_compute_engine
     .ADDR_W(ADDR_W)
   ) u_matrix_fsm (
     .clk_i(clk_i),
-    .reset_i(reset_i),
+    .rst_n_i(rst_n_i),
     
     .cmd_valid(mat_cmd_valid_sampled),
     .cmd_op(mat_cmd_op),
@@ -304,7 +307,7 @@ module gbp_compute_engine
     .STAGING_DEPTH(STAGING_DEPTH)
   ) u_gbp_control_fsm (
     .clk_i(clk_i),
-    .reset_i(reset_i),
+    .rst_n_i(rst_n_i),
     
     .cmd_valid(cmd_valid_i),
     .cmd_is_factor(cmd_is_factor_i),

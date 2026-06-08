@@ -24,20 +24,20 @@ module write_stream_engine_top
 );
 
   write_stream_engine dut (
-    .clk            (clk),
-    .rst_n          (rst_n),
-    .desc_valid     (i_desc_valid),
-    .desc_ready     (o_desc_ready),
-    .desc_base_addr (i_desc_base_addr),
-    .desc_word_count(i_desc_word_count),
-    .word_valid     (i_word_valid),
-    .word_ready     (o_word_ready),
-    .word_data      (i_word_data),
-    .spm_wr_valid   (o_spm_wr_valid),
-    .spm_wr_ready   (i_spm_wr_ready),
-    .spm_wr_addr    (o_spm_wr_addr),
-    .spm_wr_data    (o_spm_wr_data),
-    .spm_wr_wstrb   (o_spm_wr_wstrb)
+    .clk_i            (clk),
+    .rst_n_i          (rst_n),
+    .desc_valid_i     (i_desc_valid),
+    .desc_ready_o     (o_desc_ready),
+    .desc_base_addr_i (i_desc_base_addr),
+    .desc_word_count_i(i_desc_word_count),
+    .word_valid_i     (i_word_valid),
+    .word_ready_o     (o_word_ready),
+    .word_data_i      (i_word_data),
+    .spm_wr_valid_o   (o_spm_wr_valid),
+    .spm_wr_ready_i   (i_spm_wr_ready),
+    .spm_wr_addr_o    (o_spm_wr_addr),
+    .spm_wr_data_o    (o_spm_wr_data),
+    .spm_wr_wstrb_o   (o_spm_wr_wstrb)
   );
 
 endmodule

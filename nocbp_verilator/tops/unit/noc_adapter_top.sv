@@ -162,7 +162,7 @@ module noc_adapter_top (
     ,.GBP_BASE_ADDR(32'h0000_1000)
   ) dut (
     .clk_i(clk)
-    ,.reset_i(reset_i)
+    ,.rst_n_i(rst_n)
     ,.link_sif_i(link_sif_i)
     ,.link_sif_o(link_sif_o)
     ,.my_x_i(x_cord_width_lp'(0))

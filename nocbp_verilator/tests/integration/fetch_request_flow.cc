@@ -248,6 +248,67 @@ static bool test_spm_read_triggered(Vfetch_request_flow_top* dut) {
   return pass;
 }
 
+// ── Test 4: Pull Client 3-Store MBX Addresses ──
+static bool test_three_store_mbx_addresses(Vfetch_request_flow_top* dut) {
+  printf("  Test 4: 3-store MBX addresses...");
+  reset_dut(dut);
+  bool pass = true;
+
+  // Register edge
+  dut->pe_b_adj_valid = 1;
+  dut->pe_b_adj_neighbor_id = 0x10;
+  dut->pe_b_adj_neighbor_x = 0;
+  dut->pe_b_adj_neighbor_y = 0;
+  dut->pe_b_adj_is_local = 0;
+  dut->pe_b_adj_current_node_id = 0x04;
+  tick(dut);
+  dut->pe_b_adj_valid = 0;
+
+  // Send notification
+  dut->pe_b_rx_notif_valid = 1;
+  dut->pe_b_rx_notif_source_node_id = 0x10;
+  dut->pe_b_rx_notif_is_factor = 0;
+  dut->pe_b_rx_notif_source_x = 0;
+  dut->pe_b_rx_notif_source_y = 0;
+  tick(dut);
+  dut->pe_b_rx_notif_valid = 0;
+
+  // Monitor PE_B NoC TX and capture 3-store addresses
+  int cycles = 0;
+  int stores_seen = 0;
+  uint16_t seen_addrs[3] = {0};
+  int max_cycles = 200;
+
+  while (cycles < max_cycles && stores_seen < 3) {
+    tick(dut);
+    if (dut->pe_b_noc_tx_out_v) {
+      if (stores_seen < 3) {
+        seen_addrs[stores_seen] = (uint16_t)dut->pe_b_noc_tx_out_addr;
+      }
+      stores_seen++;
+    }
+    cycles++;
+  }
+
+  if (stores_seen != 3) {
+    fprintf(stderr, "\n    FAIL: stores_seen=%d, expected 3", stores_seen);
+    pass = false;
+  }
+
+  // Verify addresses: 0x1004, 0x1008, 0x100C
+  const uint16_t expected_addrs[3] = {0x1004, 0x1008, 0x100C};
+  for (int i = 0; i < 3 && pass; ++i) {
+    if (seen_addrs[i] != expected_addrs[i]) {
+      fprintf(stderr, "\n    FAIL: store[%d] addr=0x%04x, expected 0x%04x",
+              i, seen_addrs[i], expected_addrs[i]);
+      pass = false;
+    }
+  }
+
+  printf("%s\n", pass ? "PASS" : "FAIL");
+  return pass;
+}
+
 int run_test(int argc, char** argv) {
   Verilated::commandArgs(argc, argv);
   auto* dut = new Vfetch_request_flow_top;
@@ -257,6 +318,7 @@ int run_test(int argc, char** argv) {
   pass &= test_fetch_request_arrives(dut);
   pass &= test_back_to_back_fetch_requests(dut);
   pass &= test_spm_read_triggered(dut);
+  pass &= test_three_store_mbx_addresses(dut);
 
   printf("\n%s\n", pass ? "All tests PASSED" : "Some tests FAILED");
 

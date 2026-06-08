@@ -10,7 +10,7 @@ module staging_buffer #(
     parameter int ADDR_W = $clog2(DEPTH)
 )(
     input  logic clk_i,
-    input  logic reset_i,
+    input  logic rst_n_i,
     
     // Stream write interface (256-bit = 8 floats per beat)
     input  logic               stream_wr_valid,
@@ -38,6 +38,9 @@ module staging_buffer #(
     // Status
     output logic [ADDR_W:0]              occupancy_o
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // ============================================================
   // Memory array: multi-ported register file

@@ -15,20 +15,20 @@ module response_collector
     , parameter int BEAT_WIDTH  = gbp_pkg::BEAT_BITS
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Fetch response ingress (from NoC Adapter RX)
-    , input  logic                     rx_valid_i
-    , output logic                     rx_ready_o
-    , input  logic                     rx_is_factor_i
-    , input  logic [STATE_WORDS_W-1:0] rx_state_words_i
-    , input  logic [DATA_WIDTH-1:0]    rx_data_i
-    , input  logic                     rx_data_valid_i
-    , input  logic                     rx_last_i
-    , input  logic                     rx_done_valid_i
-    , input  logic [TXN_ID_W-1:0]      rx_txn_id_i
-    , input  logic [NODE_ID_W-1:0]     rx_node_id_i
-    , input  logic [NODE_ID_W-1:0]     rx_consumer_node_id_i
+    , input  logic                     rx_fetch_resp_valid_i
+    , output logic                     rx_fetch_resp_ready_o
+    , input  logic                     rx_fetch_resp_is_factor_i
+    , input  logic [STATE_WORDS_W-1:0] rx_fetch_resp_state_words_i
+    , input  logic [DATA_WIDTH-1:0]    rx_fetch_resp_data_i
+    , input  logic                     rx_fetch_resp_data_valid_i
+    , input  logic                     rx_fetch_resp_last_i
+    , input  logic                     rx_fetch_resp_done_valid_i
+    , input  logic [TXN_ID_W-1:0]      rx_fetch_resp_txn_id_i
+    , input  logic [NODE_ID_W-1:0]     rx_fetch_resp_node_id_i
+    , input  logic [NODE_ID_W-1:0]     rx_fetch_resp_consumer_node_id_i
 
     // STAGING write port (to SPM Arbiter)
     , output logic                 staging_wr_valid_o
@@ -89,19 +89,22 @@ module response_collector
   localparam OUTSTANDING_DEPTH = 8;
   assign staging_batch_closed_o = (batch_outstanding_r >= OUTSTANDING_DEPTH);
 
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
+
   // Data pass-through to accumulator
-  assign remote_valid_o = rx_data_valid_i;
-  assign remote_data_o  = rx_data_i;
-  assign remote_last_o  = rx_last_i;
+  assign remote_valid_o = rx_fetch_resp_data_valid_i;
+  assign remote_data_o  = rx_fetch_resp_data_i;
+  assign remote_last_o  = rx_fetch_resp_last_i;
 
   // rx_ready: always ready
-  assign rx_ready_o = 1'b1;
+  assign rx_fetch_resp_ready_o = 1'b1;
 
   // Completion
-  assign complete_valid_o = rx_done_valid_i;
-  assign complete_txn_id_o = rx_txn_id_i;
-  assign complete_node_id_o = rx_node_id_i;
-  assign complete_consumer_node_id_o = rx_consumer_node_id_i;
+  assign complete_valid_o = rx_fetch_resp_done_valid_i;
+  assign complete_txn_id_o = rx_fetch_resp_txn_id_i;
+  assign complete_node_id_o = rx_fetch_resp_node_id_i;
+  assign complete_consumer_node_id_o = rx_fetch_resp_consumer_node_id_i;
 
   // STAGING write: output from beat assembly (registered)
   // beat_pending_r is set whenever a complete or final half-beat is ready.
@@ -140,33 +143,33 @@ module response_collector
       end
 
       // Handle response metadata
-      if (rx_valid_i && !rx_data_valid_i && !rx_done_valid_i) begin
+      if (rx_fetch_resp_valid_i && !rx_fetch_resp_data_valid_i && !rx_fetch_resp_done_valid_i) begin
         // Metadata store: allocate STAGING block
         txn_valid_r <= 1'b1;
         txn_base_r <= staging_bump_r;
-        txn_words_r <= rx_state_words_i;
+        txn_words_r <= rx_fetch_resp_state_words_i;
         txn_received_r <= '0;
-        txn_id_r <= rx_txn_id_i;
-        staging_bump_r <= staging_bump_r + SPM_ADDR_W'((rx_state_words_i + 1) >> 1); // beats = ceil(words/2)
+        txn_id_r <= rx_fetch_resp_txn_id_i;
+        staging_bump_r <= staging_bump_r + SPM_ADDR_W'((rx_fetch_resp_state_words_i + 1) >> 1); // beats = ceil(words/2)
         writing_r <= 1'b1;
       end
 
       // Handle data words
-      if (rx_data_valid_i && writing_r) begin
+      if (rx_fetch_resp_data_valid_i && writing_r) begin
         if (txn_received_r[0] == 1'b0) begin
           // First word of 64-bit beat
-          beat_hold_r <= rx_data_i;
+          beat_hold_r <= rx_fetch_resp_data_i;
           beat_addr_r <= txn_base_r + SPM_ADDR_W'(txn_received_r >> 1);
         end else begin
           // Second word: assemble full beat and mark ready
-          beat_hold_r <= {rx_data_i, beat_hold_r};
+          beat_hold_r <= {rx_fetch_resp_data_i, beat_hold_r};
           beat_pending_r <= 1'b1;
-          beat_last_r <= rx_last_i; // final beat if this is last word
+          beat_last_r <= rx_fetch_resp_last_i; // final beat if this is last word
         end
 
         txn_received_r <= txn_received_r + 1;
 
-        if (rx_last_i) begin
+        if (rx_fetch_resp_last_i) begin
           writing_r <= 1'b0;
           if (txn_received_r[0] == 1'b0) begin
             // Odd word count: flush single 32-bit word in lower half
@@ -177,7 +180,7 @@ module response_collector
       end
 
       // Handle done
-      if (rx_done_valid_i) begin
+      if (rx_fetch_resp_done_valid_i) begin
         txn_valid_r <= 1'b0;
         if (batch_outstanding_r > 0) begin
           batch_outstanding_r <= batch_outstanding_r - 1;

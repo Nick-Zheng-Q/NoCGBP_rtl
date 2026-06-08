@@ -23,12 +23,9 @@ module neighbor_state_accumulator_top (
     , output logic        remote_ready_o
 );
 
-  logic rst_i;
-  assign rst_i = ~rst_n;
-
   neighbor_state_accumulator dut (
     .clk_i(clk)
-    ,.rst_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.local_valid_i(local_valid_i)
     ,.local_ready_o(local_ready_o)
     ,.local_data_i(local_data_i)

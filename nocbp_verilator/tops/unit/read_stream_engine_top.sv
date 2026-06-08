@@ -24,20 +24,20 @@ module read_stream_engine_top
 );
 
   read_stream_engine dut (
-    .clk           (clk),
-    .rst_n         (rst_n),
-    .desc_valid    (i_desc_valid),
-    .desc_ready    (o_desc_ready),
-    .desc_base_addr(i_desc_base_addr),
-    .desc_word_count(i_desc_word_count),
-    .desc_is_staging(i_desc_is_staging),
-    .beat_valid    (o_beat_valid),
-    .beat_ready    (i_beat_ready),
-    .beat_data     (o_beat_data),
-    .spm_rd_valid  (o_spm_rd_valid),
-    .spm_rd_ready  (i_spm_rd_ready),
-    .spm_rd_addr   (o_spm_rd_addr),
-    .spm_rd_data   (i_spm_rd_data)
+    .clk_i           (clk),
+    .rst_n_i         (rst_n),
+    .desc_valid_i    (i_desc_valid),
+    .desc_ready_o    (o_desc_ready),
+    .desc_base_addr_i(i_desc_base_addr),
+    .desc_word_count_i(i_desc_word_count),
+    .desc_is_staging_i(i_desc_is_staging),
+    .beat_valid_o    (o_beat_valid),
+    .beat_ready_i    (i_beat_ready),
+    .beat_data_o     (o_beat_data),
+    .spm_rd_valid_o  (o_spm_rd_valid),
+    .spm_rd_ready_i  (i_spm_rd_ready),
+    .spm_rd_addr_o   (o_spm_rd_addr),
+    .spm_rd_data_i   (i_spm_rd_data)
   );
 
 endmodule

@@ -30,6 +30,7 @@ static void reset_dut(Vnotification_flow_top* dut) {
   dut->pe_b_adj_neighbor_y = 0;
   dut->pe_b_adj_is_local = 0;
   dut->pe_b_adj_current_node_id = 0;
+  dut->pe_a_tx_notif_ready_force_low = 0;
 
   for (int i = 0; i < 5; ++i) tick(dut);
   dut->rst_n = 1;
@@ -249,6 +250,179 @@ static bool test_scoreboard_occupancy_tracking(Vnotification_flow_top* dut) {
   return pass;
 }
 
+// ── Test 4: NoC Credit Exhaustion Backpressure ──
+static bool test_credit_exhaustion(Vnotification_flow_top* dut) {
+  printf("  Test 4: NoC credit exhaustion backpressure...");
+  reset_dut(dut);
+  bool pass = true;
+
+  // Register edge
+  dut->pe_b_adj_valid = 1;
+  dut->pe_b_adj_neighbor_id = 0x10;
+  dut->pe_b_adj_neighbor_x = 0;
+  dut->pe_b_adj_neighbor_y = 0;
+  dut->pe_b_adj_is_local = 0;
+  dut->pe_b_adj_current_node_id = 0x20;
+  tick(dut);
+  dut->pe_b_adj_valid = 0;
+
+  // Trigger compute done
+  dut->pe_a_done_valid = 1;
+  dut->pe_a_done_node_id = 0x10;
+  dut->pe_a_done_is_factor = 0;
+  dut->pe_a_adj_count = 1;
+  dut->pe_a_adj_neighbor_ids[0] = 0x20;
+  set_pe_a_adj_x(dut, 0, 1);
+  set_pe_a_adj_y(dut, 0, 0);
+  dut->pe_a_adj_is_local = 0;
+  tick(dut);
+  dut->pe_a_done_valid = 0;
+
+  // Force PE_A tx_ready low to simulate backpressure
+  dut->pe_a_tx_notif_ready_force_low = 1;
+  tick(dut);
+
+  // Wait until wb_controller is trying to send
+  int cycles = 0;
+  int wb_in_send = 0;
+  while (cycles < 50) {
+    tick(dut);
+    if (dut->pe_a_wb_tx_valid) {
+      wb_in_send = 1;
+    }
+    if (wb_in_send) break;
+    cycles++;
+  }
+
+  if (!wb_in_send) {
+    fprintf(stderr, "\n    FAIL: wb_controller never entered SEND state");
+    pass = false;
+  }
+
+  // Continue blocking; verify wb_done stays low
+  int blocked_cycles = 0;
+  while (blocked_cycles < 20 && pass) {
+    tick(dut);
+    if (dut->pe_a_wb_done) {
+      fprintf(stderr, "\n    FAIL: wb_done asserted while tx_ready forced low");
+      pass = false;
+      break;
+    }
+    blocked_cycles++;
+  }
+
+  // Release backpressure
+  dut->pe_a_tx_notif_ready_force_low = 0;
+
+  // Wait for notification to arrive and trigger fetch request
+  cycles = 0;
+  while (cycles < 100 && pass) {
+    tick(dut);
+    if (dut->pe_b_fetch_req_valid) break;
+    cycles++;
+  }
+
+  if (pass && !dut->pe_b_fetch_req_valid) {
+    fprintf(stderr, "\n    FAIL: fetch_req never arrived after credit release");
+    pass = false;
+  }
+
+  printf("%s\n", pass ? "PASS" : "FAIL");
+  return pass;
+}
+
+// ── Test 5: Reset During NoC Traversal ──
+static bool test_reset_during_traversal(Vnotification_flow_top* dut) {
+  printf("  Test 5: Reset during NoC traversal...");
+  reset_dut(dut);
+  bool pass = true;
+
+  // Register edge
+  dut->pe_b_adj_valid = 1;
+  dut->pe_b_adj_neighbor_id = 0x10;
+  dut->pe_b_adj_neighbor_x = 0;
+  dut->pe_b_adj_neighbor_y = 0;
+  dut->pe_b_adj_is_local = 0;
+  dut->pe_b_adj_current_node_id = 0x20;
+  tick(dut);
+  dut->pe_b_adj_valid = 0;
+
+  // Trigger compute done
+  dut->pe_a_done_valid = 1;
+  dut->pe_a_done_node_id = 0x10;
+  dut->pe_a_done_is_factor = 0;
+  dut->pe_a_adj_count = 1;
+  dut->pe_a_adj_neighbor_ids[0] = 0x20;
+  set_pe_a_adj_x(dut, 0, 1);
+  set_pe_a_adj_y(dut, 0, 0);
+  dut->pe_a_adj_is_local = 0;
+  tick(dut);
+  dut->pe_a_done_valid = 0;
+
+  // Wait until notification has been sent (wb_done high) but before scoreboard fully processes
+  int cycles = 0;
+  while (cycles < 50) {
+    tick(dut);
+    if (dut->pe_a_wb_done) break;
+    cycles++;
+  }
+
+  if (!dut->pe_a_wb_done) {
+    fprintf(stderr, "\n    FAIL: wb_done never asserted before reset");
+    pass = false;
+  }
+
+  // Issue reset
+  dut->rst_n = 0;
+  tick(dut);
+  dut->rst_n = 1;
+  for (int i = 0; i < 3; ++i) tick(dut);
+
+  // Verify scoreboard is clean after reset
+  if (dut->pe_b_scoreboard_occupancy != 0) {
+    fprintf(stderr, "\n    FAIL: occupancy=%d after reset, expected 0", dut->pe_b_scoreboard_occupancy);
+    pass = false;
+  }
+
+  // Re-run the full flow to verify clean recovery
+  if (pass) {
+    dut->pe_b_adj_valid = 1;
+    dut->pe_b_adj_neighbor_id = 0x10;
+    dut->pe_b_adj_neighbor_x = 0;
+    dut->pe_b_adj_neighbor_y = 0;
+    dut->pe_b_adj_is_local = 0;
+    dut->pe_b_adj_current_node_id = 0x20;
+    tick(dut);
+    dut->pe_b_adj_valid = 0;
+
+    dut->pe_a_done_valid = 1;
+    dut->pe_a_done_node_id = 0x10;
+    dut->pe_a_done_is_factor = 0;
+    dut->pe_a_adj_count = 1;
+    dut->pe_a_adj_neighbor_ids[0] = 0x20;
+    set_pe_a_adj_x(dut, 0, 1);
+    set_pe_a_adj_y(dut, 0, 0);
+    dut->pe_a_adj_is_local = 0;
+    tick(dut);
+    dut->pe_a_done_valid = 0;
+
+    cycles = 0;
+    while (cycles < 100) {
+      tick(dut);
+      if (dut->pe_b_fetch_req_valid) break;
+      cycles++;
+    }
+
+    if (!dut->pe_b_fetch_req_valid) {
+      fprintf(stderr, "\n    FAIL: fetch_req never arrived after reset+re-run");
+      pass = false;
+    }
+  }
+
+  printf("%s\n", pass ? "PASS" : "FAIL");
+  return pass;
+}
+
 int run_test(int argc, char** argv) {
   Verilated::commandArgs(argc, argv);
   auto* dut = new Vnotification_flow_top;
@@ -258,6 +432,8 @@ int run_test(int argc, char** argv) {
   pass &= test_notification_end_to_end(dut);
   pass &= test_multiple_notifications(dut);
   pass &= test_scoreboard_occupancy_tracking(dut);
+  pass &= test_credit_exhaustion(dut);
+  pass &= test_reset_during_traversal(dut);
 
   printf("\n%s\n", pass ? "All tests PASSED" : "Some tests FAILED");
 

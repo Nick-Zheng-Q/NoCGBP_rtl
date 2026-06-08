@@ -135,7 +135,7 @@ module metadata_scanner_top (
     ,.Y_CORD_W(5)
   ) dut (
     .clk_i(clk)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.cmd_valid_i(cmd_valid_i)
     ,.cmd_node_id_i(cmd_node_id_i)
     ,.cmd_is_factor_i(cmd_is_factor_i)

@@ -14,7 +14,7 @@ module simd_array #(
     parameter int DIV_BITS_PER_ITER_P = 1
 )(
     input  logic clk_i,
-    input  logic reset_i,
+    input  logic rst_n_i,
     
     // Operation control (per lane)
     input  logic [LANES-1:0]        op_add_en,      // Enable ADD
@@ -46,6 +46,9 @@ module simd_array #(
     input  logic [LANES-1:0]        acc_load,       // Load result to accumulator
     output logic [LANES-1:0][31:0]  acc_value_o     // Current accumulator value
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   localparam logic [1:0] SRC_BUFFER_A = 2'b00;
   localparam logic [1:0] SRC_BUFFER_B = 2'b01;

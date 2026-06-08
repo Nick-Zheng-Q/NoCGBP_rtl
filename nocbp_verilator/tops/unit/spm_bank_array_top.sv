@@ -173,7 +173,7 @@ module spm_bank_array_top
     .WSTRB_W(WSTRB_W)
   ) u_dut (
     .clk_i       (clk),
-    .reset_i     (reset_i),
+    .rst_n_i     (~reset_i),
     .bank_rd_en  (bank_rd_en),
     .bank_rd_addr(bank_rd_addr),
     .bank_rd_data(bank_rd_data),

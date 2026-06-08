@@ -8,56 +8,56 @@
 //
 // Data flow:
 //   rd_beat (64b) ──► [assemble 4 beats → 256b] ──► stream_in_data
-//   ns_data (32b) ──► [assemble 8 words → 256b] ──► stream_in_data
+//   ns_data_i (32b) ──► [assemble 8 words → 256b] ──► stream_in_data
 //   stream_out_data (256b) ──► [disassemble to 32b words] ──► wr_word
 
 module compute_unit
   import gbp_pkg::*;
 (
-    input  logic clk,
-    input  logic rst_n,
+    input  logic clk_i,
+    input  logic rst_n_i,
 
     // ── Command (from Node Scheduler + Metadata Scanner) ──
-    input  logic                 cmd_valid,
-    output logic                 cmd_ready,
-    input  logic [NODE_ID_W-1:0] cmd_node_id,
-    input  logic                 cmd_is_factor,
-    input  logic [DOF_W-1:0]     cmd_dof,
-    input  logic [ADJ_COUNT_W-1:0] cmd_adj_count,
-    input  logic [STATE_WORDS_W-1:0] cmd_state_words,
+    input  logic                 cmd_valid_i,
+    output logic                 cmd_ready_o,
+    input  logic [NODE_ID_W-1:0] cmd_node_id_i,
+    input  logic                 cmd_is_factor_i,
+    input  logic [DOF_W-1:0]     cmd_dof_i,
+    input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
+    input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
 
     // ── Neighbor state (from Accumulator) ──
-    input  logic                 ns_valid,
-    output logic                 ns_ready,
-    input  logic [FP32_W-1:0]    ns_data,
-    input  logic                 ns_last,
+    input  logic                 ns_valid_i,
+    output logic                 ns_ready_o,
+    input  logic [FP32_W-1:0]    ns_data_i,
+    input  logic                 ns_last_i,
 
     // ── Read Stream Engine interface ──
-    output logic                 rd_desc_valid,
-    input  logic                 rd_desc_ready,
-    output logic [SPM_ADDR_W-1:0] rd_desc_base_addr,
-    output logic [15:0]          rd_desc_word_count,
-    output logic                 rd_desc_is_staging,
+    output logic                 rd_desc_valid_o,
+    input  logic                 rd_desc_ready_i,
+    output logic [SPM_ADDR_W-1:0] rd_desc_base_addr_o,
+    output logic [15:0]          rd_desc_word_count_o,
+    output logic                 rd_desc_is_staging_o,
 
-    input  logic                 rd_beat_valid,
-    output logic                 rd_beat_ready,
-    input  logic [BEAT_BITS-1:0] rd_beat_data,
+    input  logic                 rd_beat_valid_i,
+    output logic                 rd_beat_ready_o,
+    input  logic [BEAT_BITS-1:0] rd_beat_data_i,
 
     // ── Write Stream Engine interface ──
-    output logic                 wr_desc_valid,
-    input  logic                 wr_desc_ready,
-    output logic [SPM_ADDR_W-1:0] wr_desc_base_addr,
-    output logic [15:0]          wr_desc_word_count,
+    output logic                 wr_desc_valid_o,
+    input  logic                 wr_desc_ready_i,
+    output logic [SPM_ADDR_W-1:0] wr_desc_base_addr_o,
+    output logic [15:0]          wr_desc_word_count_o,
 
-    output logic                 wr_word_valid,
-    input  logic                 wr_word_ready,
-    output logic [FP32_W-1:0]    wr_word_data,
+    output logic                 wr_word_valid_o,
+    input  logic                 wr_word_ready_i,
+    output logic [FP32_W-1:0]    wr_word_data_o,
 
     // ── Completion ──
-    output logic                 done_valid,
-    output logic [NODE_ID_W-1:0] done_node_id,
-    output logic                 done_is_factor,
-    output logic                 batch_done
+    output logic                 done_valid_o,
+    output logic [NODE_ID_W-1:0] done_node_id_o,
+    output logic                 done_is_factor_o,
+    output logic                 batch_done_o
 );
 
   localparam int GBP_IN_BITS = 256;
@@ -72,13 +72,13 @@ module compute_unit
   logic [NODE_ID_W-1:0] cmd_node_id_r;
   logic                 cmd_is_factor_r;
 
-  always_ff @(posedge clk) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
       cmd_node_id_r  <= '0;
       cmd_is_factor_r <= 1'b0;
-    end else if (cmd_valid && cmd_ready) begin
-      cmd_node_id_r   <= cmd_node_id;
-      cmd_is_factor_r <= cmd_is_factor;
+    end else if (cmd_valid_i && cmd_ready_o) begin
+      cmd_node_id_r   <= cmd_node_id_i;
+      cmd_is_factor_r <= cmd_is_factor_i;
     end
   end
 
@@ -109,8 +109,8 @@ module compute_unit
     .MAX_ADJACENT(8),
     .STAGING_DEPTH(128)
   ) u_engine (
-    .clk_i(clk),
-    .reset_i(~rst_n),
+    .clk_i(clk_i),
+    .rst_n_i(rst_n_i),
     .cmd_valid_i(gbp_cmd_valid),
     .cmd_is_factor_i(gbp_cmd_is_factor),
     .cmd_node_idx_i(gbp_cmd_node_idx),
@@ -133,31 +133,31 @@ module compute_unit
   // ------------------------------------------------------------------
   // Command mapping
   // ------------------------------------------------------------------
-  assign gbp_cmd_valid     = cmd_valid;
-  assign cmd_ready         = gbp_cmd_ready;
-  assign gbp_cmd_is_factor = cmd_is_factor;
-  assign gbp_cmd_node_idx  = cmd_node_id[7:0];
-  assign gbp_cmd_dofs      = cmd_dof;
-  assign gbp_cmd_adj_count = cmd_adj_count;
+  assign gbp_cmd_valid     = cmd_valid_i;
+  assign cmd_ready_o         = gbp_cmd_ready;
+  assign gbp_cmd_is_factor = cmd_is_factor_i;
+  assign gbp_cmd_node_idx  = cmd_node_id_i[7:0];
+  assign gbp_cmd_dofs      = cmd_dof_i;
+  assign gbp_cmd_adj_count = cmd_adj_count_i;
   // For variable node: msg_count = adj_count (one message per adjacent factor)
   // For factor node: msg_count = adj_count (one belief per adjacent variable)
-  assign gbp_cmd_msg_count = cmd_adj_count;
+  assign gbp_cmd_msg_count = cmd_adj_count_i;
 
   // ------------------------------------------------------------------
-  // Read descriptor: issue once on cmd_valid
+  // Read descriptor: issue once on cmd_valid_i
   // ------------------------------------------------------------------
-  assign rd_desc_valid      = cmd_valid & cmd_ready;
-  assign rd_desc_base_addr  = SPM_ADDR_W'(cmd_node_id) << 4;  // simplified addr
-  assign rd_desc_word_count = {10'b0, cmd_state_words};
-  assign rd_desc_is_staging = 1'b0;
+  assign rd_desc_valid_o      = cmd_valid_i & cmd_ready_o;
+  assign rd_desc_base_addr_o  = SPM_ADDR_W'(cmd_node_id_i) << 4;  // simplified addr
+  assign rd_desc_word_count_o = {10'b0, cmd_state_words_i};
+  assign rd_desc_is_staging_o = 1'b0;
 
   // ------------------------------------------------------------------
   // Input assembler 64b beat / 32b word → 256b engine word
   // ------------------------------------------------------------------
   // Two input sources share one 256b engine input:
   //   Source A: rd_beat (64b SPM beats)   → 4 beats assemble to 1 engine word
-  //   Source B: ns_data (32b words)       → 8 words assemble to 1 engine word
-  // Priority: rd_beat first, then ns_data.
+  //   Source B: ns_data_i (32b words)       → 8 words assemble to 1 engine word
+  // Priority: rd_beat first, then ns_data_i.
 
   // Source A: 64b beat assembler
   logic [BEATS_PER_GBP_IN-1:0][BEAT_BITS-1:0] rd_beat_buffer_r;
@@ -165,13 +165,13 @@ module compute_unit
   logic                                       rd_word_valid_r;
   logic [GBP_IN_BITS-1:0]                     rd_word_data_r;
 
-  always_ff @(posedge clk) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
       rd_beat_idx_r   <= '0;
       rd_word_valid_r <= 1'b0;
     end else begin
-      if (rd_beat_valid && rd_beat_ready) begin
-        rd_beat_buffer_r[rd_beat_idx_r] <= rd_beat_data;
+      if (rd_beat_valid_i && rd_beat_ready_o) begin
+        rd_beat_buffer_r[rd_beat_idx_r] <= rd_beat_data_i;
         if (rd_beat_idx_r == $clog2(BEATS_PER_GBP_IN)'(BEATS_PER_GBP_IN - 1)) begin
           rd_beat_idx_r   <= '0;
           rd_word_valid_r <= 1'b1;
@@ -191,14 +191,14 @@ module compute_unit
   logic                                    ns_word_valid_r;
   logic [GBP_IN_BITS-1:0]                  ns_word_data_r;
 
-  always_ff @(posedge clk) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
       ns_word_idx_r   <= '0;
       ns_word_valid_r <= 1'b0;
     end else begin
-      if (ns_valid && ns_ready) begin
-        ns_word_buffer_r[ns_word_idx_r] <= ns_data;
-        if (ns_word_idx_r == $clog2(WORDS_PER_GBP_IN)'(WORDS_PER_GBP_IN - 1) || ns_last) begin
+      if (ns_valid_i && ns_ready_o) begin
+        ns_word_buffer_r[ns_word_idx_r] <= ns_data_i;
+        if (ns_word_idx_r == $clog2(WORDS_PER_GBP_IN)'(WORDS_PER_GBP_IN - 1) || ns_last_i) begin
           ns_word_idx_r   <= '0;
           ns_word_valid_r <= 1'b1;
         end else begin
@@ -221,8 +221,8 @@ module compute_unit
     end
   endgenerate
 
-  assign ns_ready = ~ns_word_valid_r;
-  assign rd_beat_ready = ~rd_word_valid_r;
+  assign ns_ready_o = ~ns_word_valid_r;
+  assign rd_beat_ready_o = ~rd_word_valid_r;
 
   assign stream_in_valid = rd_word_valid_r | ns_word_valid_r;
   assign stream_in_data  = rd_word_valid_r ? rd_word_data_r : ns_word_data_r;
@@ -234,8 +234,8 @@ module compute_unit
   logic [$clog2(WORDS_PER_GBP_OUT)-1:0] out_word_idx_r;
   logic out_active_r;
 
-  always_ff @(posedge clk) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
       out_active_r    <= 1'b0;
       out_word_idx_r  <= '0;
     end else begin
@@ -243,7 +243,7 @@ module compute_unit
         out_word_buffer_r <= stream_out_data;
         out_active_r   <= 1'b1;
         out_word_idx_r <= '0;
-      end else if (wr_word_valid && wr_word_ready) begin
+      end else if (wr_word_valid_o && wr_word_ready_i) begin
         out_word_idx_r <= out_word_idx_r + 1'b1;
         if (out_word_idx_r == $clog2(WORDS_PER_GBP_OUT)'(WORDS_PER_GBP_OUT - 1)) begin
           out_active_r <= 1'b0;
@@ -254,18 +254,18 @@ module compute_unit
 
   assign stream_out_ready = ~out_active_r;
 
-  assign wr_desc_valid      = out_active_r;
-  assign wr_desc_base_addr  = '0;  // TODO: track actual write address
-  assign wr_desc_word_count = '0;  // TODO: track actual write count
-  assign wr_word_valid      = out_active_r;
-  assign wr_word_data       = out_word_buffer_r[out_word_idx_r * FP32_W +: FP32_W];
+  assign wr_desc_valid_o      = out_active_r;
+  assign wr_desc_base_addr_o  = '0;  // TODO: track actual write address
+  assign wr_desc_word_count_o = '0;  // TODO: track actual write count
+  assign wr_word_valid_o      = out_active_r;
+  assign wr_word_data_o       = out_word_buffer_r[out_word_idx_r * FP32_W +: FP32_W];
 
   // ------------------------------------------------------------------
   // Completion
   // ------------------------------------------------------------------
-  assign done_valid     = gbp_rsp_done;
-  assign done_node_id   = cmd_node_id_r;
-  assign done_is_factor = cmd_is_factor_r;
-  assign batch_done     = gbp_compute_done;
+  assign done_valid_o     = gbp_rsp_done;
+  assign done_node_id_o   = cmd_node_id_r;
+  assign done_is_factor_o = cmd_is_factor_r;
+  assign batch_done_o     = gbp_compute_done;
 
 endmodule

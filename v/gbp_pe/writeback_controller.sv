@@ -12,7 +12,7 @@ module writeback_controller
     , parameter int Y_CORD_W  = gbp_pkg::Y_CORD_W
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Compute completion (from Compute Unit)
     , input  logic                 done_valid_i
@@ -27,13 +27,13 @@ module writeback_controller
     , input  logic [MAX_ADJ_COUNT-1:0]                 adj_is_local_i
 
     // To NoC Adapter (NOTIFICATION TX)
-    , output logic                 tx_valid_o
-    , input  logic                 tx_ready_i
-    , output logic [NODE_ID_W-1:0] tx_source_node_id_o
-    , output logic [NODE_ID_W-1:0] tx_target_node_id_o
-    , output logic                 tx_is_factor_o
-    , output logic [X_CORD_W-1:0]  tx_target_x_o
-    , output logic [Y_CORD_W-1:0]  tx_target_y_o
+    , output logic                 tx_notif_valid_o
+    , input  logic                 tx_notif_ready_i
+    , output logic [NODE_ID_W-1:0] tx_notif_source_node_id_o
+    , output logic [NODE_ID_W-1:0] tx_notif_target_node_id_o
+    , output logic                 tx_notif_is_factor_o
+    , output logic [X_CORD_W-1:0]  tx_notif_target_x_o
+    , output logic [Y_CORD_W-1:0]  tx_notif_target_y_o
 
     // Scoreboard reset trigger (to ScoreboardPrefetcher)
     , output logic                 reset_valid_o
@@ -49,6 +49,9 @@ module writeback_controller
   localparam S_SEND = 2'd1;  // sending notifications
   localparam S_DONE = 2'd2;
 
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
+
   logic [1:0] state_r;
 
   // Latched node info
@@ -59,12 +62,12 @@ module writeback_controller
   logic [ADJ_COUNT_W-1:0] adj_idx_r;
 
   // Output assignments
-  assign tx_valid_o = (state_r == S_SEND);
-  assign tx_source_node_id_o = node_id_r;
-  assign tx_target_node_id_o = adj_neighbor_ids_i[adj_idx_r];
-  assign tx_is_factor_o = is_factor_r;
-  assign tx_target_x_o = adj_neighbor_xs_i[adj_idx_r];
-  assign tx_target_y_o = adj_neighbor_ys_i[adj_idx_r];
+  assign tx_notif_valid_o = (state_r == S_SEND);
+  assign tx_notif_source_node_id_o = node_id_r;
+  assign tx_notif_target_node_id_o = adj_neighbor_ids_i[adj_idx_r];
+  assign tx_notif_is_factor_o = is_factor_r;
+  assign tx_notif_target_x_o = adj_neighbor_xs_i[adj_idx_r];
+  assign tx_notif_target_y_o = adj_neighbor_ys_i[adj_idx_r];
 
   assign reset_valid_o = done_valid_i && (state_r == S_IDLE);
   assign reset_node_id_o = done_node_id_i;
@@ -121,7 +124,7 @@ module writeback_controller
             end
           end else begin
             // Send notification
-            if (tx_ready_i) begin
+            if (tx_notif_ready_i) begin
               if (adj_idx_r == adj_count_i - 1) begin
                 state_r <= S_DONE;
               end else begin

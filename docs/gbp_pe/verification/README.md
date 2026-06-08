@@ -54,7 +54,8 @@ verification/
 │   └── 06_multi_node_concurrent.md
 │
 └── system_tests/
-    └── 01_mesh_2x2_gbp_interconnect.md   (2×2 manycore mesh, 4 GBP PEs)
+    ├── 01_mesh_2x2_gbp_interconnect.md   (Direction B: 2×2 manycore mesh, 4 GBP PEs)
+    └── 02_gbp_algorithm_golden_reference.md (Direction C: numerical correctness vs Python reference)
 ```
 
 ### Status
@@ -71,24 +72,24 @@ verification/
 | 06_pull_server.md | ✅ Complete | 2 tests PASS |
 | 07_response_collector.md | ✅ Complete | 2 tests PASS |
 | 08_neighbor_state_accumulator.md | ✅ Complete | 4 tests PASS |
-| 09_compute_unit.md | ❌ **编译失败** | `BEAT_BITS=64` 后 Verilator 生成标量，C++ 仍用数组下标 |
+| 09_compute_unit.md | ✅ **Complete** | 1 test PASS |
 | 10_writeback_controller.md | ✅ Complete | 3 tests PASS |
-| 11_spm_arbiter.md | ❌ **编译失败** | 同上，接口从 struct 变为标量 |
+| 11_spm_arbiter.md | ✅ **Complete** | 1 test PASS |
 | 12_noc_adapter.md | ✅ Complete | 4 tests PASS |
 
 #### Unit Tests (Infrastructure)
 
 | Document | Status | Notes |
 |----------|--------|-------|
-| 13_gbp_pe.md | 🟡 **Partial** | RTL complete; top-level functional test not yet written |
+| 13_gbp_pe.md | 🟡 **Planned** | Direction A detailed; RTL testbench (`gbp_pe_top.sv` + `gbp_pe.cc`) TBD |
 | 14_pe_top.md | ❌ **DEPRECATED** | `pe_top.sv` deleted; replaced by `gbp_pe.sv` |
 | 15_spm_subsystem.md | ❌ **DEPRECATED** | `spm_subsystem.sv` deleted; replaced by `gbp_pe_memory_subsystem.sv` |
 | 16_spm_bank.md | ✅ Complete | Updated for BEAT_BITS=64 |
 | 17_spm_bank_array.md | ✅ Complete | |
 | 18_gbp_pe_noc_bridge.md | ❌ DEPRECATED | Replaced by noc_adapter |
 | 19_gbp_pe_endpoint_adapter.md | ❌ DEPRECATED | Replaced by noc_adapter |
-| 18_read_stream_engine.md | ❌ **编译失败** | `BEAT_BITS=64` 后标量接口不兼容 |
-| 19_write_stream_engine.md | ❌ **编译超时** | 需排查（可能也是接口问题） |
+| 18_read_stream_engine.md | ✅ **Complete** | 1 test PASS |
+| 19_write_stream_engine.md | ✅ **Complete** | 1 test PASS |
 | 20_agu.md | ✅ Complete | 3 tests PASS |
 | 21_gbp_compute_engine_test.md | ✅ Complete | 27 tests PASS |
 
@@ -117,7 +118,8 @@ verification/
 
 | Document | Status |
 |----------|--------|
-| 01_mesh_2x2_gbp_interconnect.md | ✅ New |
+| 01_mesh_2x2_gbp_interconnect.md | 🟡 **Planned** | Direction B framework complete; awaiting `mesh_2x2_gbp_top.sv` |
+| 02_gbp_algorithm_golden_reference.md | 🟡 **Planned** | Direction C document complete; Python reference + RTL integration TBD |
 
 ## 3. Verification Hierarchy
 
@@ -126,9 +128,14 @@ Level 5: Chip Tests
     └── Full chip with manycore mesh + GBP PEs + host interface
 
 Level 4: System Tests
-    ├── gbp_pe (single full PE)
-    └── mesh_2x2_gbp_interconnect (2×2 manycore mesh with 4 GBP PEs)
-        └── Validates NoC routing, multi-PE concurrency, end-to-end algorithm
+    ├── Direction A: gbp_pe whitebox (single full PE end-to-end)
+    │   └── Validates integrated pipeline: schedule → scan → fetch → compute → writeback
+    ├── Direction B: mesh_2x2_gbp_interconnect (2×2 manycore mesh with 4 GBP PEs)
+    │   └── Validates NoC routing, multi-PE concurrency, functional handshake
+    └── Direction C: gbp_algorithm_golden_reference (numerical correctness)
+        └── Validates belief values match Python FP32 reference within tolerance
+
+> **Dependencies**: A → B → C. Single PE must work before mesh; mesh must work before numerical comparison.
 
 Level 3: Integration Tests
     └── End-to-end flows (notification → fetch → response → compute → writeback)

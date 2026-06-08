@@ -8,7 +8,7 @@ module spm_bank #(
     parameter string INIT_FILE = ""
 )(
     input logic clk_i,
-    input logic reset_i,
+    input logic rst_n_i,
 
     // Read port
     input  logic                  bank_rd_en,
@@ -21,6 +21,9 @@ module spm_bank #(
     input logic [ BEAT_BITS-1:0] bank_wr_data,
     input logic [   WSTRB_W-1:0] bank_wr_wstrb
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // Memory array
   logic [BEAT_BITS-1:0] mem_r [(1<<ROW_ADDR_W)-1:0];

@@ -139,7 +139,7 @@ module noc_subsystem_top #(
   // NoC Adapter
   noc_adapter u_noc_adapter (
     .clk_i(clk),
-    .reset_i(rst_i),
+    .rst_n_i(rst_n),
     .link_sif_i(link_sif_i),
     .link_sif_o(link_sif_o),
     .my_x_i(my_x),
@@ -207,7 +207,7 @@ module noc_subsystem_top #(
   // Pull Server
   pull_server u_pull_server (
     .clk_i(clk),
-    .rst_i(rst_i),
+    .rst_n_i(rst_n),
     .req_valid_i(rx_fetch_req_valid),
     .req_ready_o(rx_fetch_req_ready_i),
     .req_target_node_id_i(rx_fetch_req_target_node_id),
@@ -220,22 +220,22 @@ module noc_subsystem_top #(
     .spm_rd_addr_o(pull_server_spm_rd_addr),
     .spm_rd_ready_i(spm_rd_ready),
     .spm_rd_data_i(spm_rd_data),
-    .tx_valid_o(tx_fetch_resp_valid_i),
-    .tx_ready_i(tx_fetch_resp_ready_o),
-    .tx_node_id_o(tx_fetch_resp_node_id_i),
-    .tx_consumer_node_id_o(tx_fetch_resp_consumer_node_id_i),
-    .tx_is_factor_o(tx_fetch_resp_is_factor_i),
-    .tx_state_words_o(tx_fetch_resp_state_words_i),
-    .tx_data_o(tx_fetch_resp_data_i),
-    .tx_data_valid_o(tx_fetch_resp_data_valid_i),
-    .tx_last_o(tx_fetch_resp_last_i),
-    .tx_txn_id_o(tx_fetch_resp_txn_id_i)
+    .tx_fetch_resp_valid_o(tx_fetch_resp_valid_i),
+    .tx_fetch_resp_ready_i(tx_fetch_resp_ready_o),
+    .tx_fetch_resp_node_id_o(tx_fetch_resp_node_id_i),
+    .tx_fetch_resp_consumer_node_id_o(tx_fetch_resp_consumer_node_id_i),
+    .tx_fetch_resp_is_factor_o(tx_fetch_resp_is_factor_i),
+    .tx_fetch_resp_state_words_o(tx_fetch_resp_state_words_i),
+    .tx_fetch_resp_data_o(tx_fetch_resp_data_i),
+    .tx_fetch_resp_data_valid_o(tx_fetch_resp_data_valid_i),
+    .tx_fetch_resp_last_o(tx_fetch_resp_last_i),
+    .tx_fetch_resp_txn_id_o(tx_fetch_resp_txn_id_i)
   );
 
   // Writeback Controller
   writeback_controller u_writeback (
     .clk_i(clk),
-    .rst_i(rst_i),
+    .rst_n_i(rst_n),
     .done_valid_i(done_valid),
     .done_node_id_i(done_node_id),
     .done_is_factor_i(done_is_factor),
@@ -244,12 +244,12 @@ module noc_subsystem_top #(
     .adj_neighbor_xs_i(adj_neighbor_xs),
     .adj_neighbor_ys_i(adj_neighbor_ys),
     .adj_is_local_i(adj_is_local),
-    .tx_valid_o(tx_notif_valid_i),
-    .tx_ready_i(1'b1),
-    .tx_source_node_id_o(tx_notif_source_node_id_i),
-    .tx_is_factor_o(tx_notif_is_factor_i),
-    .tx_target_x_o(tx_notif_target_x_i),
-    .tx_target_y_o(tx_notif_target_y_i),
+    .tx_notif_valid_o(tx_notif_valid_i),
+    .tx_notif_ready_i(1'b1),
+    .tx_notif_source_node_id_o(tx_notif_source_node_id_i),
+    .tx_notif_is_factor_o(tx_notif_is_factor_i),
+    .tx_notif_target_x_o(tx_notif_target_x_i),
+    .tx_notif_target_y_o(tx_notif_target_y_i),
     .reset_valid_o(reset_valid),
     .reset_node_id_o(reset_node_id),
     .reset_is_factor_o(reset_is_factor),

@@ -15,7 +15,7 @@ module metadata_scanner
     , parameter int Y_CORD_W    = gbp_pkg::Y_CORD_W
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Command from scheduler
     , input  logic                 cmd_valid_i
@@ -50,6 +50,9 @@ module metadata_scanner
     , input  logic [X_CORD_W-1:0]  my_x_i
     , input  logic [Y_CORD_W-1:0]  my_y_i
 );
+
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
 
   // NodeHeader layout (packed in a beat):
   // [NODE_ID_W-1:0]                    node_id

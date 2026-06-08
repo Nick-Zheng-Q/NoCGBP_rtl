@@ -1,0 +1,5 @@
+top: gbp_pe_top
+top_sv: tops/unit/gbp_pe_top.sv
+rtl_f: tests/unit/gbp_pe.f
+defines:
+  - GBP_WHITEBOX_TEST

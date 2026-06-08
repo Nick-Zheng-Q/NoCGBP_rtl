@@ -31,7 +31,7 @@ module noc_adapter
         `bsg_manycore_packet_width(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p)
 ) (
     input  logic clk_i
-    , input  logic reset_i
+    , input  logic rst_n_i
 
     // ── Manycore link_sif (external) ──
     , input  logic [link_sif_width_lp-1:0] link_sif_i
@@ -106,6 +106,9 @@ module noc_adapter
     // ── Status ──
     , output logic tx_busy_o
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // ── Endpoint Standard signals ──
   logic                            in_v_lo;
@@ -192,7 +195,7 @@ module noc_adapter
     ,.GBP_BASE_ADDR(GBP_BASE_ADDR)
   ) tx (
     .clk_i(clk_i)
-    ,.reset_i(reset_i)
+    ,.rst_n_i(rst_n_i)
 
     ,.my_x_i(my_x_i)
     ,.my_y_i(my_y_i)
@@ -249,7 +252,7 @@ module noc_adapter
     ,.GBP_BASE_ADDR(GBP_BASE_ADDR)
   ) rx (
     .clk_i(clk_i)
-    ,.reset_i(reset_i)
+    ,.rst_n_i(rst_n_i)
 
     // From endpoint
     ,.in_v_i(in_v_lo)

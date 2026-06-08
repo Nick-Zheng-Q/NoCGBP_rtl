@@ -117,24 +117,24 @@ module spm_arbiter_top #(
     .ROW_ADDR_W(ROW_ADDR_W),
     .WSTRB_W(WSTRB_W)
   ) dut (
-    .clk(clk),
-    .rst_n(rst_n),
-    .rd_valid(rd_valid),
-    .rd_ready(rd_ready),
-    .rd_addr(rd_addr),
-    .rd_data(rd_data),
-    .wr_valid(wr_valid),
-    .wr_ready(wr_ready),
-    .wr_addr(wr_addr),
-    .wr_data(wr_data),
-    .wr_wstrb(wr_wstrb),
-    .bank_rd_en(bank_rd_en),
-    .bank_rd_addr(bank_rd_addr),
-    .bank_rd_data(bank_rd_data),
-    .bank_wr_en(bank_wr_en),
-    .bank_wr_addr(bank_wr_addr),
-    .bank_wr_data(bank_wr_data),
-    .bank_wr_wstrb(bank_wr_wstrb)
+    .clk_i(clk),
+    .rst_n_i(rst_n),
+    .rd_valid_i(rd_valid),
+    .rd_ready_o(rd_ready),
+    .rd_addr_i(rd_addr),
+    .rd_data_o(rd_data),
+    .wr_valid_i(wr_valid),
+    .wr_ready_o(wr_ready),
+    .wr_addr_i(wr_addr),
+    .wr_data_i(wr_data),
+    .wr_wstrb_i(wr_wstrb),
+    .bank_rd_en_o(bank_rd_en),
+    .bank_rd_addr_o(bank_rd_addr),
+    .bank_rd_data_i(bank_rd_data),
+    .bank_wr_en_o(bank_wr_en),
+    .bank_wr_addr_o(bank_wr_addr),
+    .bank_wr_data_o(bank_wr_data),
+    .bank_wr_wstrb_o(bank_wr_wstrb)
   );
 
 endmodule

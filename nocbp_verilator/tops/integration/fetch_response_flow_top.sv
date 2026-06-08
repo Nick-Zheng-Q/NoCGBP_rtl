@@ -91,7 +91,7 @@ module fetch_response_flow_top (
 
   pull_server u_pe_a_pull_server (
     .clk_i(clk)
-    ,.rst_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.req_valid_i(pe_a_req_valid)
     ,.req_ready_o()
     ,.req_target_node_id_i(pe_a_req_target_node_id)
@@ -104,21 +104,21 @@ module fetch_response_flow_top (
     ,.spm_rd_addr_o(pe_a_ps_spm_rd_addr)
     ,.spm_rd_ready_i(pe_a_spm_ready)
     ,.spm_rd_data_i(pe_a_spm_data)
-    ,.tx_valid_o(pe_a_ps_tx_valid)
-    ,.tx_ready_i(pe_a_ps_tx_ready)
-    ,.tx_node_id_o(pe_a_ps_tx_node_id)
-    ,.tx_consumer_node_id_o(pe_a_ps_tx_consumer_node_id)
-    ,.tx_is_factor_o(pe_a_ps_tx_is_factor)
-    ,.tx_state_words_o(pe_a_ps_tx_state_words)
-    ,.tx_data_o(pe_a_ps_tx_data)
-    ,.tx_data_valid_o(pe_a_ps_tx_data_valid)
-    ,.tx_last_o(pe_a_ps_tx_last)
-    ,.tx_txn_id_o(pe_a_ps_tx_txn_id)
+    ,.tx_fetch_resp_valid_o(pe_a_ps_tx_valid)
+    ,.tx_fetch_resp_ready_i(pe_a_ps_tx_ready)
+    ,.tx_fetch_resp_node_id_o(pe_a_ps_tx_node_id)
+    ,.tx_fetch_resp_consumer_node_id_o(pe_a_ps_tx_consumer_node_id)
+    ,.tx_fetch_resp_is_factor_o(pe_a_ps_tx_is_factor)
+    ,.tx_fetch_resp_state_words_o(pe_a_ps_tx_state_words)
+    ,.tx_fetch_resp_data_o(pe_a_ps_tx_data)
+    ,.tx_fetch_resp_data_valid_o(pe_a_ps_tx_data_valid)
+    ,.tx_fetch_resp_last_o(pe_a_ps_tx_last)
+    ,.tx_fetch_resp_txn_id_o(pe_a_ps_tx_txn_id)
   );
 
   noc_adapter u_pe_a_noc (
     .clk_i(clk)
-    ,.reset_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.link_sif_i(pe_a_link_in)
     ,.link_sif_o(pe_a_link_out)
     ,.my_x_i(X_W'(0))
@@ -209,7 +209,7 @@ module fetch_response_flow_top (
 
   scoreboard_prefetcher u_pe_b_scoreboard (
     .clk_i(clk)
-    ,.rst_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.rx_notif_valid_i(pe_b_rx_notif_valid)
     ,.rx_notif_ready_o(pe_b_rx_notif_ready)
     ,.rx_notif_source_node_id_i(pe_b_rx_notif_source_node_id)
@@ -251,7 +251,7 @@ module fetch_response_flow_top (
 
   pull_client u_pe_b_pull_client (
     .clk_i(clk)
-    ,.rst_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.req_valid_i(pe_b_sb_fetch_req_valid)
     ,.req_ready_o(pe_b_sb_fetch_req_ready)
     ,.req_target_node_id_i(pe_b_sb_fetch_req_target_node_id)
@@ -260,15 +260,15 @@ module fetch_response_flow_top (
     ,.req_target_x_i(pe_b_sb_fetch_req_target_x)
     ,.req_target_y_i(pe_b_sb_fetch_req_target_y)
     ,.req_txn_id_i(pe_b_sb_fetch_req_txn_id)
-    ,.tx_valid_o(pe_b_pc_tx_valid)
-    ,.tx_ready_i(1'b0)  // Block fetch request send; PE_A already "received" it
-    ,.tx_target_node_id_o(pe_b_pc_tx_target_node_id)
-    ,.tx_consumer_node_id_o(pe_b_pc_tx_consumer_node_id)
-    ,.tx_is_factor_o(pe_b_pc_tx_is_factor)
-    ,.tx_target_x_o(pe_b_pc_tx_target_x)
-    ,.tx_target_y_o(pe_b_pc_tx_target_y)
-    ,.tx_txn_id_o(pe_b_pc_tx_txn_id)
-    ,.tx_store_idx_o(pe_b_pc_tx_store_idx)
+    ,.tx_fetch_req_valid_o(pe_b_pc_tx_valid)
+    ,.tx_fetch_req_ready_i(1'b0)  // Block fetch request send; PE_A already "received" it
+    ,.tx_fetch_req_target_node_id_o(pe_b_pc_tx_target_node_id)
+    ,.tx_fetch_req_consumer_node_id_o(pe_b_pc_tx_consumer_node_id)
+    ,.tx_fetch_req_is_factor_o(pe_b_pc_tx_is_factor)
+    ,.tx_fetch_req_target_x_o(pe_b_pc_tx_target_x)
+    ,.tx_fetch_req_target_y_o(pe_b_pc_tx_target_y)
+    ,.tx_fetch_req_txn_id_o(pe_b_pc_tx_txn_id)
+    ,.tx_fetch_req_store_idx_o(pe_b_pc_tx_store_idx)
   );
 
   logic                  pe_b_noc_rx_fetch_resp_valid;
@@ -284,7 +284,7 @@ module fetch_response_flow_top (
 
   noc_adapter u_pe_b_noc (
     .clk_i(clk)
-    ,.reset_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.link_sif_i(pe_b_link_in)
     ,.link_sif_o(pe_b_link_out)
     ,.my_x_i(X_W'(1))
@@ -351,18 +351,18 @@ module fetch_response_flow_top (
 
   response_collector u_pe_b_response_collector (
     .clk_i(clk)
-    ,.rst_i(rst_i)
-    ,.rx_valid_i(pe_b_noc_rx_fetch_resp_valid)
-    ,.rx_ready_o()
-    ,.rx_is_factor_i(pe_b_noc_rx_fetch_resp_is_factor)
-    ,.rx_state_words_i(pe_b_noc_rx_fetch_resp_state_words)
-    ,.rx_data_i(pe_b_noc_rx_fetch_resp_data)
-    ,.rx_data_valid_i(pe_b_noc_rx_fetch_resp_data_valid)
-    ,.rx_last_i(pe_b_noc_rx_fetch_resp_last)
-    ,.rx_done_valid_i(pe_b_noc_rx_fetch_resp_done_valid)
-    ,.rx_txn_id_i(pe_b_noc_rx_fetch_resp_txn_id)
-    ,.rx_node_id_i(pe_b_noc_rx_fetch_resp_node_id)
-    ,.rx_consumer_node_id_i(pe_b_noc_rx_fetch_resp_consumer_node_id)
+    ,.rst_n_i(rst_n)
+    ,.rx_fetch_resp_valid_i(pe_b_noc_rx_fetch_resp_valid)
+    ,.rx_fetch_resp_ready_o()
+    ,.rx_fetch_resp_is_factor_i(pe_b_noc_rx_fetch_resp_is_factor)
+    ,.rx_fetch_resp_state_words_i(pe_b_noc_rx_fetch_resp_state_words)
+    ,.rx_fetch_resp_data_i(pe_b_noc_rx_fetch_resp_data)
+    ,.rx_fetch_resp_data_valid_i(pe_b_noc_rx_fetch_resp_data_valid)
+    ,.rx_fetch_resp_last_i(pe_b_noc_rx_fetch_resp_last)
+    ,.rx_fetch_resp_done_valid_i(pe_b_noc_rx_fetch_resp_done_valid)
+    ,.rx_fetch_resp_txn_id_i(pe_b_noc_rx_fetch_resp_txn_id)
+    ,.rx_fetch_resp_node_id_i(pe_b_noc_rx_fetch_resp_node_id)
+    ,.rx_fetch_resp_consumer_node_id_i(pe_b_noc_rx_fetch_resp_consumer_node_id)
     ,.staging_wr_valid_o()
     ,.staging_wr_ready_i(1'b1)
     ,.staging_wr_addr_o()

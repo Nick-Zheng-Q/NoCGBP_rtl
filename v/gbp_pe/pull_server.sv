@@ -18,7 +18,7 @@ module pull_server
     , parameter int DATA_WIDTH  = gbp_pkg::NOC_DATA_W
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Fetch request ingress (from NoC Adapter RX)
     , input  logic                 req_valid_i
@@ -37,16 +37,16 @@ module pull_server
     , input  logic [BEAT_BITS-1:0] spm_rd_data_i
 
     // To NoC Adapter (FETCH_RESPONSE TX)
-    , output logic                     tx_valid_o
-    , input  logic                     tx_ready_i
-    , output logic [NODE_ID_W-1:0]     tx_node_id_o
-    , output logic [NODE_ID_W-1:0]     tx_consumer_node_id_o
-    , output logic                     tx_is_factor_o
-    , output logic [STATE_WORDS_W-1:0] tx_state_words_o
-    , output logic [DATA_WIDTH-1:0]    tx_data_o
-    , output logic                     tx_data_valid_o
-    , output logic                     tx_last_o
-    , output logic [TXN_ID_W-1:0]      tx_txn_id_o
+    , output logic                     tx_fetch_resp_valid_o
+    , input  logic                     tx_fetch_resp_ready_i
+    , output logic [NODE_ID_W-1:0]     tx_fetch_resp_node_id_o
+    , output logic [NODE_ID_W-1:0]     tx_fetch_resp_consumer_node_id_o
+    , output logic                     tx_fetch_resp_is_factor_o
+    , output logic [STATE_WORDS_W-1:0] tx_fetch_resp_state_words_o
+    , output logic [DATA_WIDTH-1:0]    tx_fetch_resp_data_o
+    , output logic                     tx_fetch_resp_data_valid_o
+    , output logic                     tx_fetch_resp_last_o
+    , output logic [TXN_ID_W-1:0]      tx_fetch_resp_txn_id_o
 );
 
   // FSM states
@@ -54,6 +54,9 @@ module pull_server
   localparam S_LOOKUP    = 3'd1;  // read NodeHeader
   localparam S_SEND_DATA = 3'd2;  // stream state words
   localparam S_SEND_DONE = 3'd3;  // send done signal
+
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
 
   logic [2:0] state_r;
 
@@ -86,15 +89,15 @@ module pull_server
   assign spm_rd_addr_o  = (state_r == S_LOOKUP) ? header_addr_w : state_addr_w;
 
   // TX output
-  assign tx_valid_o           = (state_r == S_SEND_DATA) || (state_r == S_SEND_DONE);
-  assign tx_node_id_o         = target_node_id_r;
-  assign tx_consumer_node_id_o = consumer_node_id_r;
-  assign tx_is_factor_o       = is_factor_r;
-  assign tx_state_words_o     = state_words_r;
-  assign tx_data_o            = spm_rd_data_i[DATA_WIDTH-1:0];  // low bits of SPM beat
-  assign tx_data_valid_o      = (state_r == S_SEND_DATA);
-  assign tx_last_o            = (state_r == S_SEND_DATA) && (data_cnt_r == state_words_r - 1);
-  assign tx_txn_id_o          = txn_id_r;
+  assign tx_fetch_resp_valid_o           = (state_r == S_SEND_DATA) || (state_r == S_SEND_DONE);
+  assign tx_fetch_resp_node_id_o         = target_node_id_r;
+  assign tx_fetch_resp_consumer_node_id_o = consumer_node_id_r;
+  assign tx_fetch_resp_is_factor_o       = is_factor_r;
+  assign tx_fetch_resp_state_words_o     = state_words_r;
+  assign tx_fetch_resp_data_o            = spm_rd_data_i[DATA_WIDTH-1:0];  // low bits of SPM beat
+  assign tx_fetch_resp_data_valid_o      = (state_r == S_SEND_DATA);
+  assign tx_fetch_resp_last_o            = (state_r == S_SEND_DATA) && (data_cnt_r == state_words_r - 1);
+  assign tx_fetch_resp_txn_id_o          = txn_id_r;
 
   // FSM
   always_ff @(posedge clk_i) begin
@@ -150,7 +153,7 @@ module pull_server
         end
 
         S_SEND_DATA: begin
-          if (tx_ready_i && spm_rd_ready_i) begin
+          if (tx_fetch_resp_ready_i && spm_rd_ready_i) begin
             data_cnt_r <= data_cnt_r + 1;
             if (data_cnt_r == state_words_r - 1) begin
               // Last data word sent, next is DONE
@@ -160,7 +163,7 @@ module pull_server
         end
 
         S_SEND_DONE: begin
-          if (tx_ready_i) begin
+          if (tx_fetch_resp_ready_i) begin
             state_r <= S_IDLE;
           end
         end

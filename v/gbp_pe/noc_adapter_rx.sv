@@ -23,7 +23,7 @@ module noc_adapter_rx
     , parameter int unsigned GBP_BASE_ADDR = 32'h0000_1000
 ) (
     input  logic clk_i
-    , input  logic reset_i
+    , input  logic rst_n_i
 
     // ── From endpoint ──
     , input  logic                 in_v_i
@@ -64,6 +64,9 @@ module noc_adapter_rx
     , output logic [NODE_ID_W-1:0]     rx_fetch_resp_node_id_o       // from DONE store
     , output logic [NODE_ID_W-1:0]     rx_fetch_resp_consumer_node_id_o  // from DONE store
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // ── Mailbox offsets ──
   localparam int unsigned MBX_NOTIFICATION  = 'h00;

@@ -52,7 +52,12 @@ module gbp_pe
     , input logic [DOF_W-1:0] wb_cmd_dof_i
     , input logic [ADJ_COUNT_W-1:0] wb_cmd_adj_count_i
     , input logic [STATE_WORDS_W-1:0] wb_cmd_state_words_i
+    , input logic [MAX_ADJ_COUNT-1:0] wb_cmd_adj_is_local_i
+    , input logic wb_force_done_valid_i
     , output logic wb_cmd_ready_o
+    , output logic wb_done_valid_o
+    , output logic tx_notif_valid_o
+    , output logic reset_valid_o
 `endif
   );
 
@@ -137,7 +142,7 @@ module gbp_pe
     ,.rev_fifo_els_p(rev_fifo_els_p)
   ) u_noc_adapter (
     .clk_i(clk_i)
-    ,.reset_i(reset_i)
+    ,.rst_n_i(rst_n)
     ,.link_sif_i(link_sif_i)
     ,.link_sif_o(link_sif_o)
     ,.my_x_i({pod_x_i, my_x_i})
@@ -221,6 +226,12 @@ module gbp_pe
   logic [MAX_ADJ_COUNT-1:0][Y_CORD_W-1:0]  ctrl_wb_adj_neighbor_ys;
   logic [MAX_ADJ_COUNT-1:0]                ctrl_wb_adj_is_local;
 
+  logic [ADJ_COUNT_W-1:0] ctrl_wb_adj_count_ctrl;
+  logic [MAX_ADJ_COUNT-1:0][NODE_ID_W-1:0] ctrl_wb_adj_neighbor_ids_ctrl;
+  logic [MAX_ADJ_COUNT-1:0][X_CORD_W-1:0]  ctrl_wb_adj_neighbor_xs_ctrl;
+  logic [MAX_ADJ_COUNT-1:0][Y_CORD_W-1:0]  ctrl_wb_adj_neighbor_ys_ctrl;
+  logic [MAX_ADJ_COUNT-1:0]                ctrl_wb_adj_is_local_ctrl;
+
   logic                 ctrl_adj_valid;
   logic                 ctrl_adj_ready;
   logic [NODE_ID_W-1:0] ctrl_adj_neighbor_id;
@@ -259,11 +270,11 @@ module gbp_pe
     ,.cmd_adj_count_o(ctrl_cmd_adj_count)
     ,.cmd_state_words_o(ctrl_cmd_state_words)
     ,.cmd_state_base_o(ctrl_cmd_state_base)
-    ,.wb_adj_count_o(ctrl_wb_adj_count)
-    ,.wb_adj_neighbor_ids_o(ctrl_wb_adj_neighbor_ids)
-    ,.wb_adj_neighbor_xs_o(ctrl_wb_adj_neighbor_xs)
-    ,.wb_adj_neighbor_ys_o(ctrl_wb_adj_neighbor_ys)
-    ,.wb_adj_is_local_o(ctrl_wb_adj_is_local)
+    ,.wb_adj_count_o(ctrl_wb_adj_count_ctrl)
+    ,.wb_adj_neighbor_ids_o(ctrl_wb_adj_neighbor_ids_ctrl)
+    ,.wb_adj_neighbor_xs_o(ctrl_wb_adj_neighbor_xs_ctrl)
+    ,.wb_adj_neighbor_ys_o(ctrl_wb_adj_neighbor_ys_ctrl)
+    ,.wb_adj_is_local_o(ctrl_wb_adj_is_local_ctrl)
     ,.adj_valid_o(ctrl_adj_valid)
     ,.adj_ready_i(ctrl_adj_ready)
     ,.adj_neighbor_id_o(ctrl_adj_neighbor_id)
@@ -353,6 +364,8 @@ module gbp_pe
     ,.rx_fetch_resp_last_i(rx_fetch_resp_last)
     ,.rx_fetch_resp_done_valid_i(rx_fetch_resp_done_valid)
     ,.rx_fetch_resp_txn_id_i(rx_fetch_resp_txn_id)
+    ,.rx_fetch_resp_node_id_i(rx_fetch_resp_node_id)
+    ,.rx_fetch_resp_consumer_node_id_i(rx_fetch_resp_consumer_node_id)
     ,.spm_rd_valid_o(fetch_spm_rd_valid)
     ,.spm_rd_ready_i(fetch_spm_rd_ready)
     ,.spm_rd_addr_o(fetch_spm_rd_addr)
@@ -414,7 +427,11 @@ module gbp_pe
   assign comp_cmd_dof          = wb_cmd_dof_i;
   assign comp_cmd_adj_count    = wb_cmd_adj_count_i;
   assign comp_cmd_state_words  = wb_cmd_state_words_i;
+  assign comp_cmd_state_base   = SPM_ADDR_W'(wb_cmd_node_id_i) << 4;
   assign wb_cmd_ready_o        = comp_cmd_ready;
+  assign wb_done_valid_o       = comp_done_valid;
+  assign tx_notif_valid_o      = tx_notif_valid;
+  assign reset_valid_o         = ctrl_reset_valid;
 
   // In whitebox mode the control subsystem is bypassed; tie off its outputs
   // to prevent X propagation and keep lint clean.
@@ -423,6 +440,12 @@ module gbp_pe
   assign ctrl_local_ready      = 1'b0;
   assign ctrl_spm_rd_ready     = 1'b0;
   assign ctrl_wb_done          = 1'b0;
+  assign ctrl_wb_adj_count     = wb_cmd_adj_count_i;
+  assign ctrl_wb_adj_is_local  = wb_cmd_adj_is_local_i;
+  assign ctrl_wb_adj_neighbor_ids = '0;
+  assign ctrl_wb_adj_neighbor_xs  = '0;
+  assign ctrl_wb_adj_neighbor_ys  = '0;
+  assign ctrl_node_ready       = 1'b0;
 `else
   assign comp_cmd_valid        = ctrl_cmd_valid;
   assign comp_cmd_node_id      = ctrl_cmd_node_id;
@@ -432,6 +455,11 @@ module gbp_pe
   assign comp_cmd_state_words  = ctrl_cmd_state_words;
   assign comp_cmd_state_base   = ctrl_cmd_state_base;
   assign ctrl_cmd_ready        = comp_cmd_ready;
+  assign ctrl_wb_adj_count     = ctrl_wb_adj_count_ctrl;
+  assign ctrl_wb_adj_is_local  = ctrl_wb_adj_is_local_ctrl;
+  assign ctrl_wb_adj_neighbor_ids = ctrl_wb_adj_neighbor_ids_ctrl;
+  assign ctrl_wb_adj_neighbor_xs  = ctrl_wb_adj_neighbor_xs_ctrl;
+  assign ctrl_wb_adj_neighbor_ys  = ctrl_wb_adj_neighbor_ys_ctrl;
 `endif
 
   gbp_pe_compute_subsystem u_compute_subsystem (
@@ -473,7 +501,7 @@ module gbp_pe
   // ========================================================================
   neighbor_state_accumulator u_accumulator (
     .clk_i(clk_i)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.local_valid_i(ctrl_local_valid)
     ,.local_ready_o(ctrl_local_ready)
     ,.local_data_i(ctrl_local_data)
@@ -493,10 +521,17 @@ module gbp_pe
   // ========================================================================
   // Writeback Controller
   // ========================================================================
+  logic wb_done_valid;
+`ifdef GBP_WHITEBOX_TEST
+  assign wb_done_valid = wb_force_done_valid_i | comp_done_valid;
+`else
+  assign wb_done_valid = comp_done_valid;
+`endif
+
   writeback_controller u_writeback_controller (
     .clk_i(clk_i)
-    ,.rst_i(~rst_n)
-    ,.done_valid_i(comp_done_valid)
+    ,.rst_n_i(rst_n)
+    ,.done_valid_i(wb_done_valid)
     ,.done_node_id_i(comp_done_node_id)
     ,.done_is_factor_i(comp_done_is_factor)
     ,.adj_count_i(ctrl_wb_adj_count)
@@ -504,13 +539,13 @@ module gbp_pe
     ,.adj_neighbor_xs_i(ctrl_wb_adj_neighbor_xs)
     ,.adj_neighbor_ys_i(ctrl_wb_adj_neighbor_ys)
     ,.adj_is_local_i(ctrl_wb_adj_is_local)
-    ,.tx_valid_o(tx_notif_valid)
-    ,.tx_ready_i(tx_notif_ready)
-    ,.tx_source_node_id_o(tx_notif_source_node_id)
-    ,.tx_target_node_id_o(tx_notif_target_node_id)
-    ,.tx_is_factor_o(tx_notif_is_factor)
-    ,.tx_target_x_o(tx_notif_target_x)
-    ,.tx_target_y_o(tx_notif_target_y)
+    ,.tx_notif_valid_o(tx_notif_valid)
+    ,.tx_notif_ready_i(tx_notif_ready)
+    ,.tx_notif_source_node_id_o(tx_notif_source_node_id)
+    ,.tx_notif_target_node_id_o(tx_notif_target_node_id)
+    ,.tx_notif_is_factor_o(tx_notif_is_factor)
+    ,.tx_notif_target_x_o(tx_notif_target_x)
+    ,.tx_notif_target_y_o(tx_notif_target_y)
     ,.reset_valid_o(ctrl_reset_valid)
     ,.reset_node_id_o(ctrl_reset_node_id)
     ,.reset_is_factor_o(ctrl_reset_is_factor)
@@ -622,7 +657,7 @@ module gbp_pe
 
   pull_server u_pull_server (
     .clk_i(clk_i)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.req_valid_i(rx_fetch_req_valid)
     ,.req_ready_o(rx_fetch_req_ready)
     ,.req_target_node_id_i(rx_fetch_req_target_node_id)
@@ -635,16 +670,16 @@ module gbp_pe
     ,.spm_rd_addr_o(ps_spm_rd_addr)
     ,.spm_rd_ready_i(ps_spm_rd_ready)
     ,.spm_rd_data_i(ps_spm_rd_data)
-    ,.tx_valid_o(tx_fetch_resp_valid)
-    ,.tx_ready_i(tx_fetch_resp_ready)
-    ,.tx_node_id_o(tx_fetch_resp_node_id)
-    ,.tx_consumer_node_id_o(tx_fetch_resp_consumer_node_id)
-    ,.tx_is_factor_o(tx_fetch_resp_is_factor)
-    ,.tx_state_words_o(tx_fetch_resp_state_words)
-    ,.tx_data_o(tx_fetch_resp_data)
-    ,.tx_data_valid_o(tx_fetch_resp_data_valid)
-    ,.tx_last_o(tx_fetch_resp_last)
-    ,.tx_txn_id_o(tx_fetch_resp_txn_id)
+    ,.tx_fetch_resp_valid_o(tx_fetch_resp_valid)
+    ,.tx_fetch_resp_ready_i(tx_fetch_resp_ready)
+    ,.tx_fetch_resp_node_id_o(tx_fetch_resp_node_id)
+    ,.tx_fetch_resp_consumer_node_id_o(tx_fetch_resp_consumer_node_id)
+    ,.tx_fetch_resp_is_factor_o(tx_fetch_resp_is_factor)
+    ,.tx_fetch_resp_state_words_o(tx_fetch_resp_state_words)
+    ,.tx_fetch_resp_data_o(tx_fetch_resp_data)
+    ,.tx_fetch_resp_data_valid_o(tx_fetch_resp_data_valid)
+    ,.tx_fetch_resp_last_o(tx_fetch_resp_last)
+    ,.tx_fetch_resp_txn_id_o(tx_fetch_resp_txn_id)
   );
 
   // ========================================================================

@@ -12,15 +12,15 @@ static Vcompute_unit* dut;
 
 static void toggle_clock(int n = 1) {
   for (int i = 0; i < n; ++i) {
-    dut->clk = 0; dut->eval();
-    dut->clk = 1; dut->eval();
+    dut->clk_i = 0; dut->eval();
+    dut->clk_i = 1; dut->eval();
   }
 }
 
 static void reset() {
-  dut->rst_n = 0;
+  dut->rst_n_i = 0;
   toggle_clock(5);
-  dut->rst_n = 1;
+  dut->rst_n_i = 1;
   toggle_clock(1);
 }
 
@@ -54,20 +54,20 @@ int run_test(int argc, char** argv) {
   };
 
   // Start command
-  dut->cmd_valid = 1;
-  dut->cmd_node_id = 42;
-  dut->cmd_is_factor = 0;  // variable node
-  dut->cmd_dof = 2;
-  dut->cmd_adj_count = 0;  // no neighbors -> simple load/store flow
-  dut->cmd_state_words = 8;
+  dut->cmd_valid_i = 1;
+  dut->cmd_node_id_i = 42;
+  dut->cmd_is_factor_i = 0;  // variable node
+  dut->cmd_dof_i = 2;
+  dut->cmd_adj_count_i = 0;  // no neighbors -> simple load/store flow
+  dut->cmd_state_words_i = 8;
   toggle_clock(1);
-  dut->cmd_valid = 0;
+  dut->cmd_valid_i = 0;
 
   // Feed rd_beat data: 4 beats of 64b = 1 assembled 256b engine word
   int rd_beat_idx = 0;
   const int NUM_RD_BEATS = 4;
-  dut->rd_beat_valid = 1;
-  dut->rd_beat_data = pack_beat(prior_words[0], prior_words[1]);
+  dut->rd_beat_valid_i = 1;
+  dut->rd_beat_data_i = pack_beat(prior_words[0], prior_words[1]);
 
   int wr_count = 0;
   int done_seen = 0;
@@ -75,33 +75,33 @@ int run_test(int argc, char** argv) {
 
   for (int c = 0; c < max_cycles; ++c) {
     // Accept outputs
-    dut->wr_word_ready = 1;
-    dut->wr_desc_ready = 1;
+    dut->wr_word_ready_i = 1;
+    dut->wr_desc_ready_i = 1;
 
     toggle_clock(1);
 
     // Update rd_beat for NEXT cycle (after current tick)
-    if (dut->rd_beat_ready && rd_beat_idx < NUM_RD_BEATS) {
+    if (dut->rd_beat_ready_o && rd_beat_idx < NUM_RD_BEATS) {
       rd_beat_idx++;
       if (rd_beat_idx < NUM_RD_BEATS) {
         int w0 = rd_beat_idx * 2;
         int w1 = w0 + 1;
-        dut->rd_beat_data = pack_beat(prior_words[w0], prior_words[w1]);
+        dut->rd_beat_data_i = pack_beat(prior_words[w0], prior_words[w1]);
       } else {
-        dut->rd_beat_valid = 0;
+        dut->rd_beat_valid_i = 0;
       }
     }
 
-    if (dut->wr_word_valid) {
+    if (dut->wr_word_valid_o) {
       printf("  wr_word[%d] = 0x%08x (%f)\n", wr_count,
-             dut->wr_word_data,
-             *reinterpret_cast<float*>(&dut->wr_word_data));
+             dut->wr_word_data_o,
+             *reinterpret_cast<float*>(&dut->wr_word_data_o));
       wr_count++;
     }
 
-    if (dut->done_valid) {
+    if (dut->done_valid_o) {
       printf("  done_valid! node_id=%d is_factor=%d batch_done=%d\n",
-             dut->done_node_id, dut->done_is_factor, dut->batch_done);
+             dut->done_node_id_o, dut->done_is_factor_o, dut->batch_done_o);
       done_seen = 1;
       break;
     }

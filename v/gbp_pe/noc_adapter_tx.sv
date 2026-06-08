@@ -24,7 +24,7 @@ module noc_adapter_tx
         `bsg_manycore_packet_width(addr_width_p,data_width_p,x_cord_width_p,y_cord_width_p)
 ) (
     input  logic clk_i
-    , input  logic reset_i
+    , input  logic rst_n_i
 
     // ── Manycore coordinates ──
     , input  logic [x_cord_width_p-1:0] my_x_i
@@ -70,6 +70,9 @@ module noc_adapter_tx
     // ── Status ──
     , output logic tx_busy_o
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // ── Mailbox offsets ──
   localparam int unsigned MBX_NOTIFICATION  = 'h00;

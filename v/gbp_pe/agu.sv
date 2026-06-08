@@ -6,41 +6,41 @@
 module agu #(
     parameter int SPM_ADDR_W = gbp_pkg::SPM_ADDR_W
 )(
-    input  logic clk,
-    input  logic rst_n,
+    input  logic clk_i,
+    input  logic rst_n_i,
 
-    input  logic start,
-    input  logic [SPM_ADDR_W-1:0] base_addr,
-    input  logic [15:0] word_count,
+    input  logic start_i,
+    input  logic [SPM_ADDR_W-1:0] base_addr_i,
+    input  logic [15:0] word_count_i,
 
-    output logic addr_valid,
-    input  logic addr_ready,
-    output logic [SPM_ADDR_W-1:0] addr,
-    output logic last_addr
+    output logic addr_valid_o,
+    input  logic addr_ready_i,
+    output logic [SPM_ADDR_W-1:0] addr_o,
+    output logic last_addr_o
 );
 
   logic active_r;
   logic [15:0] cnt_r;
 
-  assign addr_valid = active_r;
-  assign last_addr = active_r && (cnt_r == word_count - 1);
+  assign addr_valid_o = active_r;
+  assign last_addr_o = active_r && (cnt_r == word_count_i - 1);
 
-  always_ff @(posedge clk) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
       active_r <= 1'b0;
       cnt_r <= '0;
-      addr <= '0;
+      addr_o <= '0;
     end else begin
-      if (start && !active_r) begin
+      if (start_i && !active_r) begin
         active_r <= 1'b1;
         cnt_r <= '0;
-        addr <= base_addr;
-      end else if (active_r && addr_ready) begin
-        if (cnt_r + 1 == word_count) begin
+        addr_o <= base_addr_i;
+      end else if (active_r && addr_ready_i) begin
+        if (cnt_r + 1 == word_count_i) begin
           active_r <= 1'b0;
         end else begin
           cnt_r <= cnt_r + 1;
-          addr <= addr + 1'b1;
+          addr_o <= addr_o + 1'b1;
         end
       end
     end

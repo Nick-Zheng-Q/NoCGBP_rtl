@@ -91,7 +91,7 @@ module gbp_pe_control_subsystem
 
   phase_controller u_phase_controller (
     .clk_i(clk)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.sched_valid_i(sched_valid)
     ,.sched_node_id_i(sched_node_id)
     ,.no_schedulable_nodes_i(no_schedulable_nodes)
@@ -107,16 +107,16 @@ module gbp_pe_control_subsystem
   logic sched_ready;
 
   node_scheduler u_node_scheduler (
-    .clk(clk)
-    ,.rst_n(rst_n)
-    ,.phase_factor_first(phase_factor_first)
-    ,.node_ready(node_ready_i)
-    ,.visited_mask(visited_mask)
-    ,.sched_ready(sched_ready)
-    ,.sched_valid(sched_valid)
-    ,.sched_node_id(sched_node_id)
-    ,.sched_is_factor(sched_is_factor)
-    ,.no_schedulable_nodes(no_schedulable_nodes)
+    .clk_i(clk)
+    ,.rst_n_i(rst_n)
+    ,.phase_factor_first_i(phase_factor_first)
+    ,.node_ready_i(node_ready_i)
+    ,.visited_mask_i(visited_mask)
+    ,.sched_ready_i(sched_ready)
+    ,.sched_valid_o(sched_valid)
+    ,.sched_node_id_o(sched_node_id)
+    ,.sched_is_factor_o(sched_is_factor)
+    ,.no_schedulable_nodes_o(no_schedulable_nodes)
   );
 
   // ========================================================================
@@ -148,7 +148,7 @@ module gbp_pe_control_subsystem
 
   metadata_scanner u_metadata_scanner (
     .clk_i(clk)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.cmd_valid_i(ms_cmd_valid)
     ,.cmd_node_id_i(ms_cmd_node_id)
     ,.cmd_is_factor_i(ms_cmd_is_factor)

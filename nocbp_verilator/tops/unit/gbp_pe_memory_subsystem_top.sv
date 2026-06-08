@@ -182,7 +182,7 @@ module gbp_pe_memory_subsystem_top (
   );
 
   // Expose internal bank enables for test observation
-  assign bank_rd_en_o = u_dut.u_spm_arbiter.bank_rd_en;
-  assign bank_wr_en_o = u_dut.u_spm_arbiter.bank_wr_en;
+  assign bank_rd_en_o = u_dut.u_spm_arbiter.bank_rd_en_o;
+  assign bank_wr_en_o = u_dut.u_spm_arbiter.bank_wr_en_o;
 
 endmodule

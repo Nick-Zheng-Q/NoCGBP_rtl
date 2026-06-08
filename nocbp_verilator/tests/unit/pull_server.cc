@@ -29,7 +29,7 @@ static void reset_dut(Vpull_server_top* dut) {
   dut->req_fetch_src_x_i = 0;
   dut->req_fetch_src_y_i = 0;
   dut->req_txn_id_i = 0;
-  dut->tx_ready_i = 1;
+  dut->tx_fetch_resp_ready_i = 1;
   for (int i = 0; i < 5; ++i) tick(dut);
   dut->rst_n = 1;
   for (int i = 0; i < 3; ++i) tick(dut);
@@ -72,17 +72,17 @@ static int test_normal_response(Vpull_server_top* dut) {
   for (int i = 0; i < 30; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o) {
-      if (dut->tx_data_valid_o) {
+    if (dut->tx_fetch_resp_valid_o) {
+      if (dut->tx_fetch_resp_data_valid_o) {
         if (data_count < 4) {
-          data_words[data_count] = dut->tx_data_o;
+          data_words[data_count] = dut->tx_fetch_resp_data_o;
         }
-        if (dut->tx_node_id_o == 0x10) tx_node_ok = 1;
-        if (dut->tx_consumer_node_id_o == 0x20) tx_consumer_ok = 1;
-        if (dut->tx_txn_id_o == 0x05) tx_txn_ok = 1;
-        if (dut->tx_last_o) last_seen = 1;
+        if (dut->tx_fetch_resp_node_id_o == 0x10) tx_node_ok = 1;
+        if (dut->tx_fetch_resp_consumer_node_id_o == 0x20) tx_consumer_ok = 1;
+        if (dut->tx_fetch_resp_txn_id_o == 0x05) tx_txn_ok = 1;
+        if (dut->tx_fetch_resp_last_o) last_seen = 1;
         data_count++;
-      } else if (dut->tx_valid_o) {
+      } else if (dut->tx_fetch_resp_valid_o) {
         // Done cycle: tx_valid=1, tx_data_valid=0
         done_seen = 1;
       }
@@ -152,8 +152,8 @@ static int test_fsm_idle(Vpull_server_top* dut) {
   int tx_was_high = 0;
   while (cycles < 50) {
     eval_fall(dut);
-    if (dut->tx_valid_o) tx_was_high = 1;
-    if (tx_was_high && !dut->tx_valid_o) break;
+    if (dut->tx_fetch_resp_valid_o) tx_was_high = 1;
+    if (tx_was_high && !dut->tx_fetch_resp_valid_o) break;
     tick(dut);
     cycles++;
   }
@@ -176,7 +176,7 @@ static int test_backpressure(Vpull_server_top* dut) {
   int pass = 1;
 
   // Issue request with tx_ready=0
-  dut->tx_ready_i = 0;
+  dut->tx_fetch_resp_ready_i = 0;
   dut->req_valid_i = 1;
   dut->req_target_node_id_i = 0x10;
   dut->req_consumer_node_id_i = 0x20;
@@ -192,18 +192,18 @@ static int test_backpressure(Vpull_server_top* dut) {
 
   // tx_valid should be asserted (trying to send)
   eval_fall(dut);
-  if (!dut->tx_valid_o) {
+  if (!dut->tx_fetch_resp_valid_o) {
     fprintf(stderr, "\n    FAIL: tx_valid=0 with backpressure");
     pass = 0;
   }
 
   // Release backpressure
-  dut->tx_ready_i = 1;
+  dut->tx_fetch_resp_ready_i = 1;
   tick(dut);
 
   // Data should flow
   eval_fall(dut);
-  if (!dut->tx_valid_o) {
+  if (!dut->tx_fetch_resp_valid_o) {
     fprintf(stderr, "\n    FAIL: tx_valid=0 after backpressure released");
     pass = 0;
   }
@@ -235,19 +235,19 @@ static int test_tx_last_and_data_valid(Vpull_server_top* dut) {
   for (int i = 0; i < 30; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o) {
-      if (dut->tx_data_valid_o) {
+    if (dut->tx_fetch_resp_valid_o) {
+      if (dut->tx_fetch_resp_data_valid_o) {
         if (data_count < 2) {
-          if (dut->tx_data_o != expected_data[data_count]) {
+          if (dut->tx_fetch_resp_data_o != expected_data[data_count]) {
             fprintf(stderr, "\n    FAIL: data[%d]=0x%x, expected 0x%x",
-                    data_count, dut->tx_data_o, expected_data[data_count]);
+                    data_count, dut->tx_fetch_resp_data_o, expected_data[data_count]);
             pass = 0;
           }
-          if (data_count == 0 && dut->tx_last_o) {
+          if (data_count == 0 && dut->tx_fetch_resp_last_o) {
             fprintf(stderr, "\n    FAIL: tx_last=1 on first data word");
             pass = 0;
           }
-          if (data_count == 1 && !dut->tx_last_o) {
+          if (data_count == 1 && !dut->tx_fetch_resp_last_o) {
             fprintf(stderr, "\n    FAIL: tx_last=0 on final data word");
             pass = 0;
           }
@@ -259,7 +259,7 @@ static int test_tx_last_and_data_valid(Vpull_server_top* dut) {
           pass = 0;
         }
         done_seen = 1;
-        if (dut->tx_last_o) {
+        if (dut->tx_fetch_resp_last_o) {
           fprintf(stderr, "\n    FAIL: tx_last=1 on done store cycle");
           pass = 0;
         }
@@ -304,14 +304,14 @@ static int test_zero_state_words(Vpull_server_top* dut) {
   for (int i = 0; i < 20; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o) {
-      if (dut->tx_data_valid_o) {
+    if (dut->tx_fetch_resp_valid_o) {
+      if (dut->tx_fetch_resp_data_valid_o) {
         data_count++;
       } else {
         done_seen++;
-        if (dut->tx_state_words_o != 0) {
+        if (dut->tx_fetch_resp_state_words_o != 0) {
           fprintf(stderr, "\n    FAIL: state_words=%d on zero-word done",
-                  (int)dut->tx_state_words_o);
+                  (int)dut->tx_fetch_resp_state_words_o);
           pass = 0;
         }
       }
@@ -358,19 +358,19 @@ static int test_max_state_words(Vpull_server_top* dut) {
   for (int i = 0; i < 40; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o) {
-      if (dut->tx_data_valid_o) {
+    if (dut->tx_fetch_resp_valid_o) {
+      if (dut->tx_fetch_resp_data_valid_o) {
         if (data_count < 4) {
-          if (dut->tx_data_o != expected_data[data_count]) {
+          if (dut->tx_fetch_resp_data_o != expected_data[data_count]) {
             fprintf(stderr, "\n    FAIL: data[%d]=0x%x, expected 0x%x",
-                    data_count, dut->tx_data_o, expected_data[data_count]);
+                    data_count, dut->tx_fetch_resp_data_o, expected_data[data_count]);
             pass = 0;
           }
-          if (data_count < 3 && dut->tx_last_o) {
+          if (data_count < 3 && dut->tx_fetch_resp_last_o) {
             fprintf(stderr, "\n    FAIL: tx_last=1 before final data word");
             pass = 0;
           }
-          if (data_count == 3 && !dut->tx_last_o) {
+          if (data_count == 3 && !dut->tx_fetch_resp_last_o) {
             fprintf(stderr, "\n    FAIL: tx_last=0 on final data word");
             pass = 0;
           }

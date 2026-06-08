@@ -74,7 +74,7 @@ module scoreboard_prefetcher_top (
     ,.NUM_NODES(1024)
   ) dut (
     .clk_i(clk)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.rx_notif_valid_i(rx_notif_valid_i)
     ,.rx_notif_ready_o(rx_notif_ready_o)
     ,.rx_notif_source_node_id_i(rx_notif_source_node_id_i)

@@ -10,7 +10,7 @@ module matrix_fsm #(
     parameter int ADDR_W = 6
 )(
     input  logic clk_i,
-    input  logic reset_i,
+    input  logic rst_n_i,
     
     // Command interface
     input  logic               cmd_valid,
@@ -45,6 +45,9 @@ module matrix_fsm #(
     input  logic [LANES-1:0]             simd_valid,
     input  logic [LANES-1:0][31:0]       simd_result
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // Operation encoding
   localparam logic [2:0] OP_MAT_ADD    = 3'd0;
@@ -431,7 +434,7 @@ module matrix_fsm #(
     .ADDR_W(ADDR_W)
   ) u_mat_inv (
     .clk_i(clk_i),
-    .reset_i(reset_i),
+    .rst_n_i(rst_n_i),
     .cmd_valid(mat_inv_cmd_valid),
     .cmd_base_a(mat_inv_base_a),
     .cmd_base_dest(mat_inv_base_dest),

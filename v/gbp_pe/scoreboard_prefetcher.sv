@@ -14,7 +14,7 @@ module scoreboard_prefetcher
     , parameter int NUM_NODES   = gbp_pkg::NUM_NODES_PER_PE
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     , input  logic                 rx_notif_valid_i
     , output logic                 rx_notif_ready_o
@@ -61,6 +61,9 @@ module scoreboard_prefetcher
     , output logic [$clog2(SCOREBOARD_DEPTH):0] scoreboard_occupancy_o
     , output logic scoreboard_full_o
 );
+
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
 
   localparam EDGE_IDLE      = 2'b00;
   localparam EDGE_NOTIFIED  = 2'b01;

@@ -28,7 +28,7 @@ module spm_bank_top
     .BANK_ID(BANK_ID)
   ) u_dut (
     .clk_i(clk),
-    .reset_i(reset_i),
+    .rst_n_i(~reset_i),
     .bank_rd_en(bank_rd_en),
     .bank_rd_addr(bank_rd_addr),
     .bank_rd_data(bank_rd_data),

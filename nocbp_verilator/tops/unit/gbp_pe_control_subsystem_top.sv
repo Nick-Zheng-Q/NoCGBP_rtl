@@ -133,9 +133,9 @@ module gbp_pe_control_subsystem_top (
 
   assign phase_factor_first_o = u_dut.u_phase_controller.phase_factor_first_o;
   assign phase_switch_pulse_o = u_dut.u_phase_controller.phase_switch_pulse_o;
-  assign no_schedulable_nodes_o = u_dut.u_node_scheduler.no_schedulable_nodes;
+  assign no_schedulable_nodes_o = u_dut.u_node_scheduler.no_schedulable_nodes_o;
   assign visited_mask_o = u_dut.u_phase_controller.visited_mask_o;
   assign debug_spm_rd_addr_o = spm_rd_addr;
-  assign debug_sched_node_id_o = u_dut.u_node_scheduler.sched_node_id;
+  assign debug_sched_node_id_o = u_dut.u_node_scheduler.sched_node_id_o;
 
 endmodule

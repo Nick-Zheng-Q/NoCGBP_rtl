@@ -29,7 +29,7 @@ static void reset_dut(Vpull_client_top* dut) {
   dut->req_target_x_i = 0;
   dut->req_target_y_i = 0;
   dut->req_txn_id_i = 0;
-  dut->tx_ready_i = 1;
+  dut->tx_fetch_req_ready_i = 1;
   for (int i = 0; i < 5; ++i) tick(dut);
   dut->rst_n = 1;
   for (int i = 0; i < 3; ++i) tick(dut);
@@ -69,17 +69,17 @@ static int test_normal_request(Vpull_client_top* dut) {
   for (int i = 0; i < 15; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o && dut->tx_ready_i) {
+    if (dut->tx_fetch_req_valid_o && dut->tx_fetch_req_ready_i) {
       if (store_count < 3) {
         int ok = 1;
         // All stores should have same target coords and node IDs
-        if (dut->tx_target_node_id_o != 0x10) ok = 0;
-        if (dut->tx_consumer_node_id_o != 0x20) ok = 0;
-        if (dut->tx_is_factor_o != 0) ok = 0;
-        if (dut->tx_target_x_o != 2) ok = 0;
-        if (dut->tx_target_y_o != 1) ok = 0;
-        if (dut->tx_txn_id_o != 0x03) ok = 0;
-        if (dut->tx_store_idx_o != store_count) ok = 0;
+        if (dut->tx_fetch_req_target_node_id_o != 0x10) ok = 0;
+        if (dut->tx_fetch_req_consumer_node_id_o != 0x20) ok = 0;
+        if (dut->tx_fetch_req_is_factor_o != 0) ok = 0;
+        if (dut->tx_fetch_req_target_x_o != 2) ok = 0;
+        if (dut->tx_fetch_req_target_y_o != 1) ok = 0;
+        if (dut->tx_fetch_req_txn_id_o != 0x03) ok = 0;
+        if (dut->tx_fetch_req_store_idx_o != store_count) ok = 0;
         store_ok[store_count] = ok;
       }
       store_count++;
@@ -102,7 +102,7 @@ static int test_normal_request(Vpull_client_top* dut) {
 
   // After 3 stores, tx_valid should be 0
   eval_fall(dut);
-  if (dut->tx_valid_o) {
+  if (dut->tx_fetch_req_valid_o) {
     fprintf(stderr, "\n    FAIL: tx_valid=1 after 3 stores");
     pass = 0;
   }
@@ -118,7 +118,7 @@ static int test_backpressure(Vpull_client_top* dut) {
   int pass = 1;
 
   // Issue request with tx_ready=0
-  dut->tx_ready_i = 0;
+  dut->tx_fetch_req_ready_i = 0;
   dut->req_valid_i = 1;
   dut->req_target_node_id_i = 0x10;
   dut->req_consumer_node_id_i = 0x20;
@@ -132,7 +132,7 @@ static int test_backpressure(Vpull_client_top* dut) {
   // Tick with backpressure - tx_valid should stay high
   for (int i = 0; i < 5; ++i) {
     eval_fall(dut);
-    if (!dut->tx_valid_o) {
+    if (!dut->tx_fetch_req_valid_o) {
       fprintf(stderr, "\n    FAIL: tx_valid=0 during backpressure at cycle %d", i);
       pass = 0;
     }
@@ -142,19 +142,19 @@ static int test_backpressure(Vpull_client_top* dut) {
 
   // Check store_idx stays at 0 (first store not consumed)
   eval_fall(dut);
-  if (dut->tx_store_idx_o != 0) {
-    fprintf(stderr, "\n    FAIL: store_idx=%d during backpressure, expected 0", dut->tx_store_idx_o);
+  if (dut->tx_fetch_req_store_idx_o != 0) {
+    fprintf(stderr, "\n    FAIL: store_idx=%d during backpressure, expected 0", dut->tx_fetch_req_store_idx_o);
     pass = 0;
   }
 
   // Release backpressure
-  dut->tx_ready_i = 1;
+  dut->tx_fetch_req_ready_i = 1;
   tick(dut);
 
   // Now store 0 consumed, store 1 should appear
   eval_fall(dut);
-  if (dut->tx_store_idx_o != 1) {
-    fprintf(stderr, "\n    FAIL: store_idx=%d after release, expected 1", dut->tx_store_idx_o);
+  if (dut->tx_fetch_req_store_idx_o != 1) {
+    fprintf(stderr, "\n    FAIL: store_idx=%d after release, expected 1", dut->tx_fetch_req_store_idx_o);
     pass = 0;
   }
 
@@ -184,29 +184,29 @@ static int test_store_payloads(Vpull_client_top* dut) {
   for (int i = 0; i < 15; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o && dut->tx_ready_i) {
-      int idx = dut->tx_store_idx_o;
+    if (dut->tx_fetch_req_valid_o && dut->tx_fetch_req_ready_i) {
+      int idx = dut->tx_fetch_req_store_idx_o;
       if (idx < 0 || idx > 2) {
         fprintf(stderr, "\n    FAIL: invalid store_idx %d", idx);
         pass = 0;
       } else {
         seen[idx] = 1;
         if (idx == 0) {
-          if (dut->tx_is_factor_o != 1) {
+          if (dut->tx_fetch_req_is_factor_o != 1) {
             fprintf(stderr, "\n    FAIL: store 0 is_factor mismatch");
             pass = 0;
           }
-          if (dut->tx_consumer_node_id_o != 0x20) {
+          if (dut->tx_fetch_req_consumer_node_id_o != 0x20) {
             fprintf(stderr, "\n    FAIL: store 0 consumer_node_id mismatch");
             pass = 0;
           }
         } else if (idx == 1) {
-          if (dut->tx_target_node_id_o != 0x10) {
+          if (dut->tx_fetch_req_target_node_id_o != 0x10) {
             fprintf(stderr, "\n    FAIL: store 1 target_node_id mismatch");
             pass = 0;
           }
         } else if (idx == 2) {
-          if (dut->tx_txn_id_o != 0x03) {
+          if (dut->tx_fetch_req_txn_id_o != 0x03) {
             fprintf(stderr, "\n    FAIL: store 2 txn_id mismatch");
             pass = 0;
           }
@@ -230,7 +230,7 @@ static int test_store_payloads(Vpull_client_top* dut) {
   }
 
   eval_fall(dut);
-  if (dut->tx_valid_o) {
+  if (dut->tx_fetch_req_valid_o) {
     fprintf(stderr, "\n    FAIL: tx_valid=1 after 3 stores");
     pass = 0;
   }
@@ -264,26 +264,26 @@ static int test_back_to_back_requests(Vpull_client_top* dut) {
   for (int i = 0; i < 40; ++i) {
     eval_fall(dut);
 
-    if (dut->tx_valid_o && dut->tx_ready_i) {
+    if (dut->tx_fetch_req_valid_o && dut->tx_fetch_req_ready_i) {
       if (phase == 1) {
         first_count++;
-        int idx = dut->tx_store_idx_o;
+        int idx = dut->tx_fetch_req_store_idx_o;
         if (idx == 0) {
-          if (dut->tx_is_factor_o != 0 || dut->tx_consumer_node_id_o != 0x20) pass = 0;
+          if (dut->tx_fetch_req_is_factor_o != 0 || dut->tx_fetch_req_consumer_node_id_o != 0x20) pass = 0;
         } else if (idx == 1) {
-          if (dut->tx_target_node_id_o != 0x10) pass = 0;
+          if (dut->tx_fetch_req_target_node_id_o != 0x10) pass = 0;
         } else if (idx == 2) {
-          if (dut->tx_txn_id_o != 0x0A) pass = 0;
+          if (dut->tx_fetch_req_txn_id_o != 0x0A) pass = 0;
         }
       } else {
         second_count++;
-        int idx = dut->tx_store_idx_o;
+        int idx = dut->tx_fetch_req_store_idx_o;
         if (idx == 0) {
-          if (dut->tx_is_factor_o != 1 || dut->tx_consumer_node_id_o != 0x40) pass = 0;
+          if (dut->tx_fetch_req_is_factor_o != 1 || dut->tx_fetch_req_consumer_node_id_o != 0x40) pass = 0;
         } else if (idx == 1) {
-          if (dut->tx_target_node_id_o != 0x30) pass = 0;
+          if (dut->tx_fetch_req_target_node_id_o != 0x30) pass = 0;
         } else if (idx == 2) {
-          if (dut->tx_txn_id_o != 0x0B) pass = 0;
+          if (dut->tx_fetch_req_txn_id_o != 0x0B) pass = 0;
         }
       }
     }

@@ -6,7 +6,7 @@ module neighbor_state_accumulator
   import gbp_pkg::*;
 (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Local SPM read
     , input  logic                 local_valid_i
@@ -30,6 +30,9 @@ module neighbor_state_accumulator
     , input  logic                 start_i
     , output logic                 accumulator_done_o
 );
+
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
 
   localparam S_LOCAL  = 2'b00;
   localparam S_REMOTE = 2'b01;

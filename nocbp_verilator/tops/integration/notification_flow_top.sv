@@ -43,7 +43,13 @@ module notification_flow_top (
     output logic pe_a_wb_done,
     output logic pe_b_noc_rx_notif_valid,
     output logic [gbp_pkg::X_CORD_W-1:0] pe_b_noc_rx_notif_source_x,
-    output logic [gbp_pkg::Y_CORD_W-1:0] pe_b_noc_rx_notif_source_y
+    output logic [gbp_pkg::Y_CORD_W-1:0] pe_b_noc_rx_notif_source_y,
+
+    // Test control: force PE_A tx_ready low to simulate backpressure
+    input logic pe_a_tx_notif_ready_force_low,
+
+    // Expose wb_controller tx_valid for backpressure detection
+    output logic pe_a_wb_tx_valid
 );
 
   localparam int ADDR_W = 16;
@@ -79,7 +85,7 @@ module notification_flow_top (
 
   writeback_controller u_pe_a_wb (
     .clk_i(clk)
-    ,.rst_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.done_valid_i(pe_a_done_valid)
     ,.done_node_id_i(pe_a_done_node_id)
     ,.done_is_factor_i(pe_a_done_is_factor)
@@ -88,13 +94,13 @@ module notification_flow_top (
     ,.adj_neighbor_xs_i(pe_a_adj_neighbor_xs)
     ,.adj_neighbor_ys_i(pe_a_adj_neighbor_ys)
     ,.adj_is_local_i(pe_a_adj_is_local)
-    ,.tx_valid_o(pe_a_tx_notif_valid)
-    ,.tx_ready_i(pe_a_tx_notif_ready)
-    ,.tx_source_node_id_o(pe_a_tx_notif_source_node_id)
-    ,.tx_target_node_id_o(pe_a_tx_notif_target_node_id)
-    ,.tx_is_factor_o(pe_a_tx_notif_is_factor)
-    ,.tx_target_x_o(pe_a_tx_notif_target_x)
-    ,.tx_target_y_o(pe_a_tx_notif_target_y)
+    ,.tx_notif_valid_o(pe_a_tx_notif_valid)
+    ,.tx_notif_ready_i(pe_a_tx_notif_ready)
+    ,.tx_notif_source_node_id_o(pe_a_tx_notif_source_node_id)
+    ,.tx_notif_target_node_id_o(pe_a_tx_notif_target_node_id)
+    ,.tx_notif_is_factor_o(pe_a_tx_notif_is_factor)
+    ,.tx_notif_target_x_o(pe_a_tx_notif_target_x)
+    ,.tx_notif_target_y_o(pe_a_tx_notif_target_y)
     ,.reset_valid_o(pe_a_reset_valid)
     ,.reset_node_id_o(pe_a_reset_node_id)
     ,.reset_is_factor_o()
@@ -103,13 +109,13 @@ module notification_flow_top (
 
   noc_adapter u_pe_a_noc (
     .clk_i(clk)
-    ,.reset_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.link_sif_i(pe_a_link_in)
     ,.link_sif_o(pe_a_link_out)
     ,.my_x_i(X_W'(0))
     ,.my_y_i(Y_W'(0))
 
-    ,.tx_notif_valid_i(pe_a_tx_notif_valid)
+    ,.tx_notif_valid_i(pe_a_tx_notif_valid & ~pe_a_tx_notif_ready_force_low)
     ,.tx_notif_ready_o(pe_a_tx_notif_ready)
     ,.tx_notif_source_node_id_i(pe_a_tx_notif_source_node_id)
     ,.tx_notif_target_node_id_i(pe_a_tx_notif_target_node_id)
@@ -180,7 +186,7 @@ module notification_flow_top (
 
   noc_adapter u_pe_b_noc (
     .clk_i(clk)
-    ,.reset_i(rst_i)
+    ,.rst_n_i(rst_n)
     ,.link_sif_i(pe_b_link_in)
     ,.link_sif_o(pe_b_link_out)
     ,.my_x_i(X_W'(1))
@@ -247,7 +253,7 @@ module notification_flow_top (
 
   scoreboard_prefetcher u_pe_b_scoreboard (
     .clk_i(clk)
-    ,.rst_i(rst_i)
+    ,.rst_n_i(rst_n)
 
     ,.rx_notif_valid_i(pe_b_rx_notif_valid)
     ,.rx_notif_ready_o(pe_b_rx_notif_ready)
@@ -295,5 +301,6 @@ module notification_flow_top (
   );
 
   assign pe_b_fetch_req_ready = 1'b1;
+  assign pe_a_wb_tx_valid = pe_a_tx_notif_valid;
 
 endmodule

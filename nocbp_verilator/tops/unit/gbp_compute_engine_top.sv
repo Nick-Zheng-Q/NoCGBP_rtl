@@ -43,7 +43,7 @@ module gbp_compute_engine_top;
     .STAGING_DEPTH(128)
   ) dut (
     .clk_i(clk),
-    .reset_i(~rst_n),
+    .rst_n_i(rst_n),
     
     .cmd_valid_i(cmd_valid),
     .cmd_is_factor_i(cmd_is_factor),

@@ -16,16 +16,16 @@ module pull_server_top (
     , output logic        req_ready_o
 
     // TX response
-    , output logic        tx_valid_o
-    , input  logic        tx_ready_i
-    , output logic [9:0] tx_node_id_o
-    , output logic [9:0] tx_consumer_node_id_o
-    , output logic        tx_is_factor_o
-    , output logic [3:0]  tx_state_words_o
-    , output logic [31:0] tx_data_o
-    , output logic        tx_data_valid_o
-    , output logic        tx_last_o
-    , output logic [5:0]  tx_txn_id_o
+    , output logic        tx_fetch_resp_valid_o
+    , input  logic        tx_fetch_resp_ready_i
+    , output logic [9:0] tx_fetch_resp_node_id_o
+    , output logic [9:0] tx_fetch_resp_consumer_node_id_o
+    , output logic        tx_fetch_resp_is_factor_o
+    , output logic [3:0]  tx_fetch_resp_state_words_o
+    , output logic [31:0] tx_fetch_resp_data_o
+    , output logic        tx_fetch_resp_data_valid_o
+    , output logic        tx_fetch_resp_last_o
+    , output logic [5:0]  tx_fetch_resp_txn_id_o
 );
 
   // SPM read port
@@ -89,7 +89,7 @@ module pull_server_top (
     ,.DATA_WIDTH(32)
   ) dut (
     .clk_i(clk)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.req_valid_i(req_valid_i)
     ,.req_ready_o(req_ready_o)
     ,.req_target_node_id_i(req_target_node_id_i)
@@ -102,16 +102,16 @@ module pull_server_top (
     ,.spm_rd_addr_o(spm_rd_addr)
     ,.spm_rd_ready_i(spm_rd_ready)
     ,.spm_rd_data_i(spm_rd_data)
-    ,.tx_valid_o(tx_valid_o)
-    ,.tx_ready_i(tx_ready_i)
-    ,.tx_node_id_o(tx_node_id_o)
-    ,.tx_consumer_node_id_o(tx_consumer_node_id_o)
-    ,.tx_is_factor_o(tx_is_factor_o)
-    ,.tx_state_words_o(tx_state_words_o)
-    ,.tx_data_o(tx_data_o)
-    ,.tx_data_valid_o(tx_data_valid_o)
-    ,.tx_last_o(tx_last_o)
-    ,.tx_txn_id_o(tx_txn_id_o)
+    ,.tx_fetch_resp_valid_o(tx_fetch_resp_valid_o)
+    ,.tx_fetch_resp_ready_i(tx_fetch_resp_ready_i)
+    ,.tx_fetch_resp_node_id_o(tx_fetch_resp_node_id_o)
+    ,.tx_fetch_resp_consumer_node_id_o(tx_fetch_resp_consumer_node_id_o)
+    ,.tx_fetch_resp_is_factor_o(tx_fetch_resp_is_factor_o)
+    ,.tx_fetch_resp_state_words_o(tx_fetch_resp_state_words_o)
+    ,.tx_fetch_resp_data_o(tx_fetch_resp_data_o)
+    ,.tx_fetch_resp_data_valid_o(tx_fetch_resp_data_valid_o)
+    ,.tx_fetch_resp_last_o(tx_fetch_resp_last_o)
+    ,.tx_fetch_resp_txn_id_o(tx_fetch_resp_txn_id_o)
   );
 
 endmodule

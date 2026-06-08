@@ -9,7 +9,7 @@ module phase_controller
     parameter int NUM_NODES = gbp_pkg::NUM_NODES_PER_PE
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Node Scheduler feedback
     , input  logic sched_valid_i           // scheduler selected a node this cycle
@@ -24,6 +24,9 @@ module phase_controller
     , output logic phase_switch_pulse_o     // combinational pulse, same cycle as no_sched
     , output logic [NUM_NODES-1:0] visited_mask_o  // nodes already computed this phase
 );
+
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
 
   logic phase_factor_r;
   logic [NUM_NODES-1:0] visited_mask_r;

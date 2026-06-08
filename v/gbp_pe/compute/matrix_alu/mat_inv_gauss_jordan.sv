@@ -10,7 +10,7 @@ module mat_inv_gauss_jordan #(
     parameter int ADDR_W = 6
 )(
     input  logic clk_i,
-    input  logic reset_i,
+    input  logic rst_n_i,
     
     // Command interface
     input  logic               cmd_valid,
@@ -41,6 +41,9 @@ module mat_inv_gauss_jordan #(
     input  logic [LANES-1:0]             simd_valid,
     input  logic [LANES-1:0][31:0]       simd_result
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   // Gauss-Jordan elimination states
   typedef enum logic [3:0] {

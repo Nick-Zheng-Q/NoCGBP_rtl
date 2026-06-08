@@ -11,7 +11,7 @@ module pull_client
     , parameter int TXN_ID_W = gbp_pkg::TXN_ID_W
 ) (
     input  logic clk_i
-    , input  logic rst_i
+    , input  logic rst_n_i
 
     // Request from ScoreboardPrefetcher
     , input  logic                 req_valid_i
@@ -24,15 +24,15 @@ module pull_client
     , input  logic [TXN_ID_W-1:0]  req_txn_id_i
 
     // To NoC Adapter (FETCH_REQUEST TX)
-    , output logic                 tx_valid_o
-    , input  logic                 tx_ready_i
-    , output logic [NODE_ID_W-1:0] tx_target_node_id_o
-    , output logic [NODE_ID_W-1:0] tx_consumer_node_id_o
-    , output logic                 tx_is_factor_o
-    , output logic [X_CORD_W-1:0]  tx_target_x_o
-    , output logic [Y_CORD_W-1:0]  tx_target_y_o
-    , output logic [TXN_ID_W-1:0]  tx_txn_id_o
-    , output logic [1:0]           tx_store_idx_o  // 0,1,2 = which store
+    , output logic                 tx_fetch_req_valid_o
+    , input  logic                 tx_fetch_req_ready_i
+    , output logic [NODE_ID_W-1:0] tx_fetch_req_target_node_id_o
+    , output logic [NODE_ID_W-1:0] tx_fetch_req_consumer_node_id_o
+    , output logic                 tx_fetch_req_is_factor_o
+    , output logic [X_CORD_W-1:0]  tx_fetch_req_target_x_o
+    , output logic [Y_CORD_W-1:0]  tx_fetch_req_target_y_o
+    , output logic [TXN_ID_W-1:0]  tx_fetch_req_txn_id_o
+    , output logic [1:0]           tx_fetch_req_store_idx_o  // 0,1,2 = which store
 );
 
   // FSM states
@@ -40,6 +40,9 @@ module pull_client
   localparam S_S0   = 2'd1;  // send store 0
   localparam S_S1   = 2'd2;  // send store 1
   localparam S_S2   = 2'd3;  // send store 2
+
+  logic rst_i;
+  assign rst_i = ~rst_n_i;
 
   logic [1:0] state_r;
 
@@ -54,14 +57,14 @@ module pull_client
   // Output assignments
   assign req_ready_o = (state_r == S_IDLE);
 
-  assign tx_valid_o = (state_r != S_IDLE);
-  assign tx_target_node_id_o = target_node_id_r;
-  assign tx_consumer_node_id_o = consumer_node_id_r;
-  assign tx_is_factor_o = is_factor_r;
-  assign tx_target_x_o = target_x_r;
-  assign tx_target_y_o = target_y_r;
-  assign tx_txn_id_o = txn_id_r;
-  assign tx_store_idx_o = state_r - 2'd1;  // 0,1,2
+  assign tx_fetch_req_valid_o = (state_r != S_IDLE);
+  assign tx_fetch_req_target_node_id_o = target_node_id_r;
+  assign tx_fetch_req_consumer_node_id_o = consumer_node_id_r;
+  assign tx_fetch_req_is_factor_o = is_factor_r;
+  assign tx_fetch_req_target_x_o = target_x_r;
+  assign tx_fetch_req_target_y_o = target_y_r;
+  assign tx_fetch_req_txn_id_o = txn_id_r;
+  assign tx_fetch_req_store_idx_o = state_r - 2'd1;  // 0,1,2
 
   // FSM
   always_ff @(posedge clk_i) begin
@@ -88,19 +91,19 @@ module pull_client
         end
 
         S_S0: begin
-          if (tx_ready_i) begin
+          if (tx_fetch_req_ready_i) begin
             state_r <= S_S1;
           end
         end
 
         S_S1: begin
-          if (tx_ready_i) begin
+          if (tx_fetch_req_ready_i) begin
             state_r <= S_S2;
           end
         end
 
         S_S2: begin
-          if (tx_ready_i) begin
+          if (tx_fetch_req_ready_i) begin
             state_r <= S_IDLE;
           end
         end

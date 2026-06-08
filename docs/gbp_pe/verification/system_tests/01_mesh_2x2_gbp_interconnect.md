@@ -1,5 +1,9 @@
 # 2×2 Mesh GBP PE Interconnect System Test
 
+> **Status**: 🟡 **Planned** — document framework complete; awaiting `mesh_2x2_gbp_top.sv` wrapper and C++ testbench implementation.
+>
+> **Priority**: B (after Direction A single-PE top-level test passes).
+
 ## 1. Test Objective
 
 Verify that GBP PEs correctly communicate through a **single-layer manycore mesh**.
@@ -77,12 +81,23 @@ endmodule
 
 > **Note**: If `bsg_manycore_mesh_node` is not available in the simulation environment, a simplified XY-routing router module may be used. The test focuses on GBP PE behavior, not router correctness.
 
+### 2.3 Implementation Roadmap
+
+| Milestone | Deliverable | Status | Dependencies |
+|-----------|-------------|--------|--------------|
+| M1 | Simplified XY-router (`bsg_mesh_router_xy.sv`) | 🟡 Planned | BaseJump STL crossbar |
+| M2 | `mesh_2x2_gbp_top.sv` — 4× `gbp_pe` + 4× router + tie-offs | 🟡 Planned | M1, Direction A passing |
+| M3 | C++ testbench with DPI/backdoor SPM init | 🟡 Planned | M2 |
+| M4 | Golden-reference integration (Direction C) | 🟡 Planned | M3 |
+
+> **Prerequisite**: Direction A (`gbp_pe` single-PE top-level whitebox test) must pass before M2 begins. A single PE must work in isolation before it can work in a mesh.
+
 ## 3. Preconditions
 
 ### 3.1 Global
 
 - Clock: 1 GHz (1 ns cycle time), all PEs and routers share the same clock.
-- Reset: 10 cycles active-high reset.
+- Reset: 10 cycles active-high `reset_i` (internal `rst_n` = ~`reset_i`).
 - NoC link credits: each router input has sufficient credit buffer (default 4).
 
 ### 3.2 Per-PE SPM Initialization
@@ -136,6 +151,14 @@ STATE region @ 0x500:
 - All PEs start in **FACTOR phase** (`phase_factor_first = 1`).
 - All edges initially IDLE.
 - All scoreboards empty.
+
+### 3.4 Assumptions & Known Limitations
+
+1. **In-order store delivery**: The Response Collector assumes data stores within a single FETCH_RESPONSE arrive in order. The 2×2 mesh with XY routing and single-flit stores preserves this assumption, but larger meshes with adaptive routing may violate it.
+2. **No ruche links / pods**: Only single-layer mesh. No heterogeneous tiles (vanilla core + GBP accelerator).
+3. **Simplified router latency**: 1 cycle per hop unless actual `bsg_manycore_mesh_node` is used.
+4. **No host interface**: PEs are self-scheduling once SPM is initialized. No kernel launch or DMA during the test.
+5. **Deterministic scheduling**: `node_scheduler` uses round-robin; phase switches are independent per PE (no global barrier).
 
 ## 4. Test Stimulus
 
@@ -240,11 +263,10 @@ After all traffic completes, read STAGING regions via testbench backdoor:
 
 | Cycle | Signal | Expected | PE |
 |-------|--------|----------|-----|
-| T+55 | `rx_notif_valid` | 1 | PE(1,0) |
-| T+55 | `rx_notif_source_node_id` | 0 | PE(1,0) |
-| T+55 | `rx_notif_target_node_id` | 1 | PE(1,0) |
-| T+64 | `complete_valid` | 1 | PE(1,0) |
-| T+64 | `complete_txn_id` | 0 | PE(1,0) |
+| T+55 | `rx_notif_valid_o` | 1 | PE(1,0) |
+| T+55 | `rx_notif_source_node_id_o` | 0 | PE(1,0) |
+| T+64 | `complete_valid_o` | 1 | PE(1,0) |
+| T+64 | `complete_txn_id_o` | 0 | PE(1,0) |
 | T+70 | `node_ready[1]` | 1 | PE(1,0) |
 | T+71 | `node_ready[3]` | 1 | PE(1,1) |
 | T+72 | `phase_factor_first` | 0 (was 1) | All PEs |
@@ -278,7 +300,7 @@ Phase    │FACTOR   │    │FACTOR │    │    │    │    │    │    
 - [ ] All 3 FETCH_REQUESTs arrive at correct source PEs with correct txn_id.
 - [ ] All FETCH_RESPONSE data beats match original SPM STATE data (bit-exact FP32).
 - [ ] STAGING regions in PE(1,0) and PE(1,1) contain correct data after responses complete.
-- [ ] `complete_valid` asserted on all consumer PEs with matching `txn_id`.
+- [ ] `complete_valid_o` asserted on all consumer PEs with matching `txn_id`.
 - [ ] `node_ready` asserted for N1 and N3 after all their edges are READY.
 - [ ] Phase switches from FACTOR to VARIABLE on all PEs.
 - [ ] No deadlock during concurrent multi-directional traffic.
@@ -291,7 +313,7 @@ Phase    │FACTOR   │    │FACTOR │    │    │    │    │    │    
 2. **Response-to-self**: A FETCH_REQUEST is misrouted back to the requesting PE (should not happen with correct coordinates, but verify Pull Server ignores self-requests).
 3. **Credit exhaustion**: Rapid-fire messages from PE(0,0) exhaust router credits. Verify NoC Adapter TX stalls gracefully and resumes when credits return.
 4. **Diagonal 2-hop latency**: PE(0,0) → PE(1,1) requires XY routing through (1,0) or (0,1). Verify latency is approximately 2× single-hop.
-5. **Packet reordering within response**: FETCH_RESPONSE data stores are received sequentially by the Response Collector (current design assumes in-order arrival; each data store increments an internal word counter to compute the STAGING write address). Verify that the 2×2 mesh does not reorder stores within a single response stream. If router reordering is possible, this is a known architectural limitation to be addressed in a future revision.
+5. **In-order response assumption**: The Response Collector computes STAGING write addresses by counting received data stores. If the mesh reorders stores, addresses will be corrupted. In the 2×2 mesh with XY routing this does not happen; this corner case documents the **design limitation** rather than a test failure mode. Future work: add sequence numbers or explicit address fields to FETCH_RESPONSE data stores.
 6. **Barrier not used**: GBP PEs do not use manycore barrier in this architecture. Verify barrier pins are tied off correctly.
 
 ## 9. Simulation Environment
@@ -328,7 +350,22 @@ nocbp_verilator/tests/system/mesh_2x2_gbp_interconnect.f:
 - Router latency: model as 1-cycle per hop for simplified router, or use actual manycore router latency.
 - Simulation timeout: 10,000 cycles (sufficient for 2×2 mesh with 6-word state transfers).
 
-## 10. Related Documents
+## 10. Relationship to Direction C (Golden Reference)
+
+This mesh test validates **functional correctness** and **NoC routing**:
+- Messages arrive at the correct destination.
+- Data is not corrupted during transfer.
+- Deadlock does not occur under concurrent traffic.
+- Phase switching and scheduling work across PE boundaries.
+
+It does **not** validate that the **numerical values** computed by the Compute Unit are mathematically correct. That is the scope of Direction C (`02_gbp_algorithm_golden_reference.md`), which runs the same 4-node graph through a floating-point Python reference and compares beliefs against the RTL output.
+
+**Execution order**:
+1. Direction A: single-PE top-level test passes.
+2. Direction B (this document): mesh functional test passes.
+3. Direction C: mesh numerical correctness verified against golden reference.
+
+## 11. Related Documents
 
 | Document | Content |
 |----------|---------|

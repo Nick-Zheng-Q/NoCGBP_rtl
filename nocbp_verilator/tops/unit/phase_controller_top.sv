@@ -19,7 +19,7 @@ module phase_controller_top #(
     .NUM_NODES(NUM_NODES)
   ) dut (
     .clk_i(clk)
-    ,.rst_i(~rst_n)
+    ,.rst_n_i(rst_n)
     ,.sched_valid_i(sched_valid_i)
     ,.sched_node_id_i(sched_node_id_i)
     ,.no_schedulable_nodes_i(no_schedulable_nodes_i)
