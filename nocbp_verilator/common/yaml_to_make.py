@@ -27,6 +27,7 @@ ALLOWED_KEYS = {
     "top": "TOP",
     "top_sv": "TOP_SV",
     "tb": "TB",
+    "verilator_warnings": "VERILATOR_WARNINGS",
 }
 
 def parse_yaml_with_pyyaml(path: str) -> dict:

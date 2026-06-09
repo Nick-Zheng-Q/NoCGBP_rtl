@@ -61,7 +61,7 @@ module metadata_scanner
   // [+: SPM_ADDR_W]                    adj_base
   // [+: SPM_ADDR_W]                    state_base
   // [+: STATE_WORDS_W]                 state_words
-  localparam int HEADER_WORDS = 1;  // 1 beat for header
+  localparam int HEADER_WORDS = 2;  // 2 words per header (1 beat = 64 bits)
 
   // AdjEntry layout:
   // [NODE_ID_W-1:0]                    neighbor_id

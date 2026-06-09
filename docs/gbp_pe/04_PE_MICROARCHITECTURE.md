@@ -13,7 +13,8 @@ gbp_pe (manycore tile interface)
 ├── gbp_pe_control_subsystem
 │   ├── phase_controller
 │   ├── node_scheduler
-│   └── metadata_scanner
+│   ├── metadata_scanner
+│   └── reverse_index_lookup       // NEW: Reverse CSR query for notifications
 ├── gbp_pe_compute_subsystem
 │   ├── compute_unit
 │   ├── read_stream_engine
@@ -62,30 +63,81 @@ Flow:
 
 Selects which node to compute within the current phase.
 
-Policies (configurable at runtime):
+**Inputs** (v2):
+- `node_ready_i[NUM_NODES-1:0]`: from ScoreboardPrefetcher
+- `visited_mask_i[NUM_NODES-1:0]`: from Phase Controller
+- `affected_valid_i`, `affected_local_id_i`: from reverse_index_lookup (one consumer node per cycle)
+
+**State** (v2):
+- `pending_queue`: FIFO of local_ids enqueued by reverse_index_lookup. Replaces the unscalable per-node dirty_mask.
+
+**Policies** (configurable at runtime):
 
 | Policy | Logic |
 |--------|-------|
-| `"rr"` (default) | Round-robin scan from `next_index`, pick first node where all edges are ready |
+| `"rr"` (default) | Round-robin scan from `next_index`, pick first unvisited node where `node_ready \|\| in_pending_queue` |
 | `"dirty_age"` | Scan window, pick node with oldest `latest_dirty_cycle` |
 | `"dirty_age_cap"` | Default RR, but promote if dirty time > threshold |
 | `"hybrid_rr_da"` | Every N-th pick uses dirty-age, others use RR |
 | `"residual"` | Pick node with highest `var_t_values[]` (PE-local RSM) |
 
-**Readiness check**: a node is schedulable when `ScoreboardPrefetcher.is_node_ready()` returns true (all edges ready).
+**Readiness check**: A node is schedulable when it is **unvisited** AND (**ready** OR **in pending_queue**).
+
+- `ready`: all remote edges fetched (ScoreboardPrefetcher.node_ready = 1)
+- `in pending_queue`: reverse_index_lookup has found this node as affected by a NOTIFICATION
+
+When a node is selected, it is dequeued from pending_queue (if present). If the node was not ready, SCAN proceeds and FETCH_REQUESTs are issued; ACCUMULATE will stall until responses arrive. The node remains in `visited_mask` until phase switch.
+
+**No discovery mode**: Removed. Prefetch is triggered by scheduling nodes from the pending_queue.
+
+**No dirty_mask**: The unscalable per-node dirty bitvector is replaced by a lightweight FIFO fed by reverse_index_lookup.
 
 ### 2.3 Metadata Scanner
 
-Flow:
+Flow (v2 — uses Forward CSR from SPM):
 
-1. Read current node's NodeHeader.
-2. Extract `dof`, `adj_count`, `adj_base`, `state_base`, `state_words`.
-3. Scan `AdjEntry[0 ... adj_count-1]`.
-4. For each neighbor, classify local vs remote.
+1. Read current node's `S1NodeHeader` from SPM.
+2. Extract `dof`, `fwd_len`, `fwd_base`, `state_base`, `state_words`.
+3. Scan `FwdEdgeArray[fwd_base ... fwd_base + fwd_len - 1]`.
+4. For each neighbor, `is_local` is read directly from `fwd_edge_t.is_local` (pre-computed at load time).
 
 ```
-is_local = (neighbor_x == self_x) && (neighbor_y == self_y)
+// No runtime local/remote classification needed
+is_local = fwd_edge[i].is_local
 ```
+
+**Output**: `adj_valid` stream with `neighbor_id`, `neighbor_x`, `neighbor_y`, `is_local`, `edge_slot`.
+
+---
+
+### 2.3b Reverse Index Lookup (NEW)
+
+Handles NOTIFICATION ingress by querying the Reverse CSR to find all affected local nodes.
+
+**Trigger**: `rx_notif_valid` from NoC Adapter RX.
+
+**Flow**:
+
+```
+Step 1: RevKeyHash lookup (1-2 cycles)
+  hash(rx_notif_source_node_id) -> bucket
+  compare key -> rev_id (or miss)
+
+Step 2: RevHeader read (1 cycle)
+  Read RevHeader[rev_id] -> rev_base, rev_len
+
+Step 3: Stream RevEntryArray (rev_len cycles)
+  For i = 0 .. rev_len-1:
+    Read RevEntryArray[rev_base + i]
+    Output: affected_valid=1, affected_local_id=entry.local_id
+  affected_last=1 on final entry
+```
+
+**Output**: Stream of `affected_local_id` values enqueued into Node Scheduler's pending_queue.
+
+**Miss handling**: If RevKeyHash misses, the NOTIFICATION's source node does not affect any local node. No action needed.
+
+**SPM access**: Uses a dedicated SPM read port (client for reverse CSR banks), independent of Forward CSR and Compute Unit ports.
 
 ### 2.4 ScoreboardPrefetcher (Outstanding Pull Tracker)
 
@@ -97,48 +149,57 @@ Coordinates with STAGING Allocator (inside Response Collector) before issuing pu
 
 ```
 typedef struct packed {
-    logic                  notification;  // NOTIFICATION received from producer
-    logic                  in_flight;     // FETCH_REQUEST sent, waiting for response
-    logic                  ready;         // FETCH_RESPONSE received (or local edge)
+    logic [1:0]            state;         // IDLE(00) → NOTIFIED(01) → IN_FLIGHT(10) → READY(11)
+    logic [NODE_ID_W-1:0]  consumer_node; // node that owns this edge
+    logic [NODE_ID_W-1:0]  source_node;   // neighbor node ID (target of fetch)
     logic [X_CORD_W-1:0]   source_x;      // NoC x coordinate of producer's PE
     logic [Y_CORD_W-1:0]   source_y;      // NoC y coordinate of producer's PE
-    logic [TXN_ID_W-1:0]   edge_index;    // global edge index within per-PE scoreboard, used as txn_id
-} edge_state_t;
+    logic                  is_factor;     // phase type from NOTIFICATION
+} edge_entry_t;
 ```
 
 **Per-node readiness:**
 
 ```
-node_ready = AND(all edge_ready bits for this node)
+node_ready = node_has_edge && (node_pending == 0)
 ```
+
+- `node_has_edge`: set when first adj_valid for this node is registered
+- `node_pending`: counts remote edges that are NOTIFIED or IN_FLIGHT; decremented on completion
 
 **Scoreboard:**
 
 ```
-entries: vector<ScoreboardEntry>   // in-flight fetches
-capacity: SCOREBOARD_DEPTH         // max concurrent fetches
+entries: vector<edge_entry_t>      // edge table, indexed by free_ptr / scan_ptr
+capacity: SCOREBOARD_DEPTH         // max concurrent edges tracked
 ```
 
 **Per-cycle flow:**
 
 ```
-1. issue_lookahead_fetches():
-   for each node with notification edges:
-     for each notified edge:
-       if scoreboard not full and edge not already in_flight:
-         issue FETCH_REQUEST
-         edge: notification=false, in_flight=true
-         add to scoreboard
-2. on_fetch_complete(txn_id):
-   find scoreboard entry by txn_id (direct index)
-   edge: ready=true, in_flight=false
-   remove from scoreboard
-   update node readiness
-3. reset_edges_after_compute(node_index):
-   for each remote edge: ready=false, in_flight=false, notification=false
-   for each local edge: ready=true (always)
-   remove node's entries from scoreboard
+1. on_adj_valid():
+   if node is NOT already ready (dedup guard):
+     register edge in edge table
+     if local: state = READY
+     if remote: state = NOTIFIED
+     increment node_pending
+2. issue_fetches():
+   scan edge table for NOTIFIED edges
+   if scoreboard not full and staging available:
+     issue FETCH_REQUEST
+     edge: NOTIFIED → IN_FLIGHT
+     increment scoreboard occupancy
+3. on_fetch_complete(txn_id):
+   edge: IN_FLIGHT → READY
+   decrement scoreboard occupancy
+   decrement node_pending
+   if node_pending == 0: node_ready = 1
+4. reset_edges_after_compute(node_index):
+   clear all edges for this node from table
+   clear node_has_edge, node_pending
 ```
+
+**Dedup guard**: When `adj_valid` arrives for a node that is already ready (`node_ready == 1`), the edge registration is skipped. This prevents duplicate entries during the second SCAN (formal compute).
 
 ### 2.5 Pull Client
 

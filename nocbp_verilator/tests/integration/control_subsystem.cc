@@ -69,9 +69,9 @@ static int test_full_pipeline(Vcontrol_subsystem_top* dut) {
     pass = 0;
   }
 
-  // T+2: metadata scanner starts reading SPM (addr = node_id = 16)
+  // T+2: metadata scanner starts reading SPM (addr = node_id * HEADER_WORDS = 32)
   tick(dut);
-  if (!dut->spm_rd_valid || dut->spm_rd_addr != 16) {
+  if (!dut->spm_rd_valid || dut->spm_rd_addr != 32) {
     fprintf(stderr, "\n    FAIL T+2: spm_rd_valid=%d addr=%d",
             dut->spm_rd_valid, dut->spm_rd_addr);
     pass = 0;

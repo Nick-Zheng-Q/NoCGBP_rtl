@@ -30,8 +30,10 @@ module phase_controller
 
   logic phase_factor_r;
   logic [NUM_NODES-1:0] visited_mask_r;
+  logic no_schedulable_nodes_r;
 
-  // Combinational: pulse when no_schedulable_nodes is asserted
+  // phase_switch_pulse_o stays high for polling compatibility;
+  // phase_factor_r toggles only on the rising edge.
   assign phase_switch_pulse_o = no_schedulable_nodes_i;
 
   // Registered: phase toggles on next clock edge
@@ -42,14 +44,23 @@ module phase_controller
     if (rst_i) begin
       phase_factor_r <= 1'b1;  // start in FACTOR_PHASE
       visited_mask_r <= '0;
+      no_schedulable_nodes_r <= 1'b0;
     end else begin
-      // Toggle phase when no_schedulable_nodes is asserted
+      no_schedulable_nodes_r <= no_schedulable_nodes_i;
+
+      // Clear visited mask whenever no_schedulable_nodes is asserted
+      // (matches original behavior; ensures mask is cleared even if
+      // sched_valid_i is still high from the previous cycle).
       if (no_schedulable_nodes_i) begin
-        phase_factor_r <= ~phase_factor_r;
-        visited_mask_r <= '0;  // reset on phase switch
+        visited_mask_r <= '0;
       end
 
-      // Track visited nodes
+      // Toggle phase only on rising edge of no_schedulable_nodes
+      if (no_schedulable_nodes_i && !no_schedulable_nodes_r) begin
+        phase_factor_r <= ~phase_factor_r;
+      end
+
+      // Track visited nodes (overrides the clear for the scheduled node)
       if (sched_valid_i) begin
         visited_mask_r[sched_node_id_i] <= 1'b1;
       end

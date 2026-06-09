@@ -122,6 +122,11 @@ module scoreboard_prefetcher
     end
   endgenerate
 
+  // Guard: do not re-register edges for a node that is already ready.
+  // This prevents duplicate registrations on the second SCAN.
+  logic adj_should_register;
+  assign adj_should_register = adj_valid_i && !node_ready_o[adj_current_node_id_i];
+
   // Helper functions for pending count manipulation
   function automatic [PENDING_W-1:0] pending_incr(
     input [PENDING_W-1:0] cur,
@@ -162,8 +167,8 @@ module scoreboard_prefetcher
       end
     end else begin
 
-      // 1. Register new edge
-      if (adj_valid_i) begin
+      // 1. Register new edge (guarded: skip if node already ready)
+      if (adj_should_register) begin
         edges[free_ptr_r].source_node   <= adj_neighbor_id_i;
         edges[free_ptr_r].source_x      <= adj_neighbor_x_i;
         edges[free_ptr_r].source_y      <= adj_neighbor_y_i;
@@ -172,12 +177,13 @@ module scoreboard_prefetcher
         if (adj_is_local_i) begin
           edges[free_ptr_r].state <= EDGE_READY;
         end else begin
-          edges[free_ptr_r].state <= EDGE_IDLE;
+          edges[free_ptr_r].state <= EDGE_NOTIFIED;
         end
         free_ptr_r <= free_ptr_r + 1;
       end
 
-      // 2. Notification
+      // 2. Notification: only marks edges that were registered before adj_valid.
+      //    Most edges are already NOTIFIED by adj_valid; this handles race cases.
       if (rx_notif_valid_i) begin
         for (int i = 0; i < SCOREBOARD_DEPTH; i++) begin
           if (edges[i].consumer_node != NODE_ID_W'(0)
@@ -254,7 +260,7 @@ module scoreboard_prefetcher
       node_has_edge_r <= '0;
       node_pending_r  <= '0;
     end else begin
-      adj_v_r   <= adj_valid_i;
+      adj_v_r   <= adj_should_register;
       adj_node_r  <= adj_current_node_id_i;
       adj_local_r <= adj_is_local_i;
       comp_v_r  <= complete_valid_i;

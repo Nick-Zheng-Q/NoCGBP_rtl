@@ -53,11 +53,30 @@ module gbp_pe
     , input logic [ADJ_COUNT_W-1:0] wb_cmd_adj_count_i
     , input logic [STATE_WORDS_W-1:0] wb_cmd_state_words_i
     , input logic [MAX_ADJ_COUNT-1:0] wb_cmd_adj_is_local_i
+    , input logic [MAX_ADJ_COUNT-1:0][X_CORD_W-1:0] wb_cmd_adj_neighbor_xs_i
+    , input logic [MAX_ADJ_COUNT-1:0][Y_CORD_W-1:0] wb_cmd_adj_neighbor_ys_i
     , input logic wb_force_done_valid_i
     , output logic wb_cmd_ready_o
     , output logic wb_done_valid_o
     , output logic tx_notif_valid_o
     , output logic reset_valid_o
+    , output logic rx_notif_valid_o
+    , output logic [NODE_ID_W-1:0] rx_notif_source_node_id_o
+    , output logic rx_notif_is_factor_o
+    , output logic rx_fetch_req_valid_o
+    , output logic rx_fetch_resp_valid_o
+    , output logic tx_fetch_req_valid_o
+    , output logic tx_fetch_resp_valid_o
+
+    // Fetch Response injection (testbench simulates pull_server)
+    , input logic wb_inject_fetch_resp_valid_i
+    , input logic wb_inject_fetch_resp_data_valid_i
+    , input logic [data_width_p-1:0] wb_inject_fetch_resp_data_i
+    , input logic wb_inject_fetch_resp_last_i
+    , input logic wb_inject_fetch_resp_done_valid_i
+    , input logic [TXN_ID_W-1:0] wb_inject_fetch_resp_txn_id_i
+    , input logic [NODE_ID_W-1:0] wb_inject_fetch_resp_node_id_i
+    , input logic [NODE_ID_W-1:0] wb_inject_fetch_resp_consumer_node_id_i
 `endif
   );
 
@@ -257,10 +276,16 @@ module gbp_pe
 
   logic                 ctrl_wb_done;
 
+  // Signals for reverse_index_lookup -> control_subsystem
+  logic                 ri_affected_valid;
+  logic [NODE_ID_W-1:0] ri_affected_local_id;
+
   gbp_pe_control_subsystem u_control_subsystem (
     .clk(clk_i)
     ,.rst_n(rst_n)
     ,.node_ready_i(ctrl_node_ready)
+    ,.affected_valid_i(ri_affected_valid)
+    ,.affected_local_id_i(ri_affected_local_id)
     ,.wb_done_i(ctrl_wb_done)
     ,.cmd_valid_o(ctrl_cmd_valid)
     ,.cmd_ready_i(ctrl_cmd_ready)
@@ -329,7 +354,7 @@ module gbp_pe
   gbp_pe_fetch_subsystem u_fetch_subsystem (
     .clk(clk_i)
     ,.rst_n(rst_n)
-    ,.rx_notif_valid_i(rx_notif_valid)
+    ,.rx_notif_valid_i(1'b0)  // v2: handled by reverse_index_lookup
     ,.rx_notif_ready_o(rx_notif_ready)
     ,.rx_notif_source_node_id_i(rx_notif_source_node_id)
     ,.rx_notif_is_factor_i(rx_notif_is_factor)
@@ -356,16 +381,16 @@ module gbp_pe
     ,.tx_fetch_req_target_x_o(fetch_tx_fetch_req_target_x)
     ,.tx_fetch_req_target_y_o(fetch_tx_fetch_req_target_y)
     ,.tx_fetch_req_txn_id_o(fetch_tx_fetch_req_txn_id)
-    ,.rx_fetch_resp_valid_i(rx_fetch_resp_valid)
-    ,.rx_fetch_resp_is_factor_i(rx_fetch_resp_is_factor)
-    ,.rx_fetch_resp_state_words_i(rx_fetch_resp_state_words)
-    ,.rx_fetch_resp_data_i(rx_fetch_resp_data)
-    ,.rx_fetch_resp_data_valid_i(rx_fetch_resp_data_valid)
-    ,.rx_fetch_resp_last_i(rx_fetch_resp_last)
-    ,.rx_fetch_resp_done_valid_i(rx_fetch_resp_done_valid)
-    ,.rx_fetch_resp_txn_id_i(rx_fetch_resp_txn_id)
-    ,.rx_fetch_resp_node_id_i(rx_fetch_resp_node_id)
-    ,.rx_fetch_resp_consumer_node_id_i(rx_fetch_resp_consumer_node_id)
+    ,.rx_fetch_resp_valid_i(rx_fetch_resp_valid_mux)
+    ,.rx_fetch_resp_is_factor_i(rx_fetch_resp_is_factor_mux)
+    ,.rx_fetch_resp_state_words_i(rx_fetch_resp_state_words_mux)
+    ,.rx_fetch_resp_data_i(rx_fetch_resp_data_mux)
+    ,.rx_fetch_resp_data_valid_i(rx_fetch_resp_data_valid_mux)
+    ,.rx_fetch_resp_last_i(rx_fetch_resp_last_mux)
+    ,.rx_fetch_resp_done_valid_i(rx_fetch_resp_done_valid_mux)
+    ,.rx_fetch_resp_txn_id_i(rx_fetch_resp_txn_id_mux)
+    ,.rx_fetch_resp_node_id_i(rx_fetch_resp_node_id_mux)
+    ,.rx_fetch_resp_consumer_node_id_i(rx_fetch_resp_consumer_node_id_mux)
     ,.spm_rd_valid_o(fetch_spm_rd_valid)
     ,.spm_rd_ready_i(fetch_spm_rd_ready)
     ,.spm_rd_addr_o(fetch_spm_rd_addr)
@@ -432,20 +457,50 @@ module gbp_pe
   assign wb_done_valid_o       = comp_done_valid;
   assign tx_notif_valid_o      = tx_notif_valid;
   assign reset_valid_o         = ctrl_reset_valid;
+  assign rx_notif_valid_o      = rx_notif_valid;
+  assign rx_notif_source_node_id_o = rx_notif_source_node_id;
+  assign rx_notif_is_factor_o   = rx_notif_is_factor;
+  assign rx_fetch_req_valid_o  = rx_fetch_req_valid;
+  assign rx_fetch_resp_valid_o = rx_fetch_resp_valid;
+  assign tx_fetch_req_valid_o  = tx_fetch_req_valid;
+  assign tx_fetch_resp_valid_o = tx_fetch_resp_valid;
 
-  // In whitebox mode the control subsystem is bypassed; tie off its outputs
-  // to prevent X propagation and keep lint clean.
+  // Whitebox hybrid mode:
+  //   - compute subsystem uses whitebox bypass (ctrl_cmd_ready=0)
+  //   - control subsystem is allowed to read SPM and feed adjacency to fetch subsystem
+  //   - fetch subsystem auto-generates FETCH_REQUESTs after NOTIFICATIONs
+  //   - testbench can inject FETCH_RESPONSEs via wb_inject_fetch_resp_* ports
   assign ctrl_cmd_ready        = 1'b0;
-  assign ctrl_adj_ready        = 1'b0;
-  assign ctrl_local_ready      = 1'b0;
-  assign ctrl_spm_rd_ready     = 1'b0;
-  assign ctrl_wb_done          = 1'b0;
+  // ctrl_adj_ready, ctrl_spm_rd_ready, ctrl_local_ready, ctrl_wb_done,
+  // ctrl_node_ready remain driven by their respective submodules.
   assign ctrl_wb_adj_count     = wb_cmd_adj_count_i;
   assign ctrl_wb_adj_is_local  = wb_cmd_adj_is_local_i;
   assign ctrl_wb_adj_neighbor_ids = '0;
-  assign ctrl_wb_adj_neighbor_xs  = '0;
-  assign ctrl_wb_adj_neighbor_ys  = '0;
-  assign ctrl_node_ready       = 1'b0;
+  assign ctrl_wb_adj_neighbor_xs  = wb_cmd_adj_neighbor_xs_i;
+  assign ctrl_wb_adj_neighbor_ys  = wb_cmd_adj_neighbor_ys_i;
+
+  // Fetch Response injection mux (testbench simulates pull_server)
+  logic                 rx_fetch_resp_valid_mux;
+  logic                 rx_fetch_resp_is_factor_mux;
+  logic [STATE_WORDS_W-1:0] rx_fetch_resp_state_words_mux;
+  logic [data_width_p-1:0]  rx_fetch_resp_data_mux;
+  logic                 rx_fetch_resp_data_valid_mux;
+  logic                 rx_fetch_resp_last_mux;
+  logic                 rx_fetch_resp_done_valid_mux;
+  logic [TXN_ID_W-1:0]  rx_fetch_resp_txn_id_mux;
+  logic [NODE_ID_W-1:0] rx_fetch_resp_node_id_mux;
+  logic [NODE_ID_W-1:0] rx_fetch_resp_consumer_node_id_mux;
+
+  assign rx_fetch_resp_valid_mux        = rx_fetch_resp_valid | wb_inject_fetch_resp_valid_i;
+  assign rx_fetch_resp_is_factor_mux    = wb_inject_fetch_resp_valid_i ? 1'b0 : rx_fetch_resp_is_factor;
+  assign rx_fetch_resp_state_words_mux  = wb_inject_fetch_resp_valid_i ? STATE_WORDS_W'(1) : rx_fetch_resp_state_words;
+  assign rx_fetch_resp_data_mux         = wb_inject_fetch_resp_data_valid_i ? wb_inject_fetch_resp_data_i : rx_fetch_resp_data;
+  assign rx_fetch_resp_data_valid_mux   = rx_fetch_resp_data_valid | wb_inject_fetch_resp_data_valid_i;
+  assign rx_fetch_resp_last_mux         = rx_fetch_resp_last | wb_inject_fetch_resp_last_i;
+  assign rx_fetch_resp_done_valid_mux   = rx_fetch_resp_done_valid | wb_inject_fetch_resp_done_valid_i;
+  assign rx_fetch_resp_txn_id_mux       = wb_inject_fetch_resp_done_valid_i ? wb_inject_fetch_resp_txn_id_i : rx_fetch_resp_txn_id;
+  assign rx_fetch_resp_node_id_mux      = wb_inject_fetch_resp_done_valid_i ? wb_inject_fetch_resp_node_id_i : rx_fetch_resp_node_id;
+  assign rx_fetch_resp_consumer_node_id_mux = wb_inject_fetch_resp_done_valid_i ? wb_inject_fetch_resp_consumer_node_id_i : rx_fetch_resp_consumer_node_id;
 `else
   assign comp_cmd_valid        = ctrl_cmd_valid;
   assign comp_cmd_node_id      = ctrl_cmd_node_id;
@@ -460,6 +515,29 @@ module gbp_pe
   assign ctrl_wb_adj_neighbor_ids = ctrl_wb_adj_neighbor_ids_ctrl;
   assign ctrl_wb_adj_neighbor_xs  = ctrl_wb_adj_neighbor_xs_ctrl;
   assign ctrl_wb_adj_neighbor_ys  = ctrl_wb_adj_neighbor_ys_ctrl;
+
+  // No injection in non-whitebox mode
+  logic                 rx_fetch_resp_valid_mux;
+  logic                 rx_fetch_resp_is_factor_mux;
+  logic [STATE_WORDS_W-1:0] rx_fetch_resp_state_words_mux;
+  logic [data_width_p-1:0]  rx_fetch_resp_data_mux;
+  logic                 rx_fetch_resp_data_valid_mux;
+  logic                 rx_fetch_resp_last_mux;
+  logic                 rx_fetch_resp_done_valid_mux;
+  logic [TXN_ID_W-1:0]  rx_fetch_resp_txn_id_mux;
+  logic [NODE_ID_W-1:0] rx_fetch_resp_node_id_mux;
+  logic [NODE_ID_W-1:0] rx_fetch_resp_consumer_node_id_mux;
+
+  assign rx_fetch_resp_valid_mux        = rx_fetch_resp_valid;
+  assign rx_fetch_resp_is_factor_mux    = rx_fetch_resp_is_factor;
+  assign rx_fetch_resp_state_words_mux  = rx_fetch_resp_state_words;
+  assign rx_fetch_resp_data_mux         = rx_fetch_resp_data;
+  assign rx_fetch_resp_data_valid_mux   = rx_fetch_resp_data_valid;
+  assign rx_fetch_resp_last_mux         = rx_fetch_resp_last;
+  assign rx_fetch_resp_done_valid_mux   = rx_fetch_resp_done_valid;
+  assign rx_fetch_resp_txn_id_mux       = rx_fetch_resp_txn_id;
+  assign rx_fetch_resp_node_id_mux      = rx_fetch_resp_node_id;
+  assign rx_fetch_resp_consumer_node_id_mux = rx_fetch_resp_consumer_node_id;
 `endif
 
   gbp_pe_compute_subsystem u_compute_subsystem (
@@ -611,12 +689,38 @@ module gbp_pe
   assign mem_wr_data[5]  = fetch_spm_wr_data;
   assign mem_wr_wstrb[5] = fetch_spm_wr_wstrb;
 
-  assign mem_rd_valid[6] = 1'b0;
-  assign mem_rd_addr[6]  = '0;
+  // Client 6: reverse_index_lookup (META read for notification processing)
+  logic                 ri_spm_rd_valid;
+  logic                 ri_spm_rd_ready;
+  logic [SPM_ADDR_W-1:0] ri_spm_rd_addr;
+  logic [BEAT_BITS-1:0]  ri_spm_rd_data;
+
+  assign mem_rd_valid[6] = ri_spm_rd_valid;
+  assign ri_spm_rd_ready = mem_rd_ready[6];
+  assign mem_rd_addr[6]  = ri_spm_rd_addr;
+  assign ri_spm_rd_data  = mem_rd_data[6];
   assign mem_wr_valid[6] = 1'b0;
   assign mem_wr_addr[6]  = '0;
   assign mem_wr_data[6]  = '0;
   assign mem_wr_wstrb[6] = '0;
+
+  // ========================================================================
+  // Reverse Index Lookup (v3: Reverse CSR)
+  // ========================================================================
+  reverse_index_lookup u_reverse_index_lookup (
+    .clk_i(clk_i)
+    ,.rst_n_i(rst_n)
+    ,.rx_notif_valid_i(rx_notif_valid)
+    ,.rx_notif_ready_o(/* unused: ready always 1 in S_IDLE */)
+    ,.rx_notif_source_node_id_i(rx_notif_source_node_id)
+    ,.affected_valid_o(ri_affected_valid)
+    ,.affected_ready_i(1'b1)  // node_scheduler queue always ready to accept
+    ,.affected_local_id_o(ri_affected_local_id)
+    ,.spm_rd_valid_o(ri_spm_rd_valid)
+    ,.spm_rd_ready_i(ri_spm_rd_ready)
+    ,.spm_rd_addr_o(ri_spm_rd_addr)
+    ,.spm_rd_data_i(ri_spm_rd_data)
+  );
 
   gbp_pe_memory_subsystem #(
     .NUM_CLIENTS(MEM_CLIENTS)

@@ -10,7 +10,8 @@ PE operation splits into two concurrent domains:
 │  (runs continuously, independent of node scheduling)     │
 │                                                         │
 │  • NoC RX: receive NOTIFICATION / FETCH_REQUEST / RESP  │
-│  • ScoreboardPrefetcher: issue FETCH_REQUEST (lookahead) │
+│  • ScoreboardPrefetcher: track fetch state, node ready  │
+│  • Pull Client: send FETCH_REQUESTs                     │
 │  • Pull Server: serve remote FETCH_REQUESTs             │
 │  • Response Collector: write STAGING, track completions  │
 └─────────────────────────────────────────────────────────┘
@@ -23,7 +24,20 @@ PE operation splits into two concurrent domains:
 └─────────────────────────────────────────────────────────┘
 ```
 
-Background domain never blocks on foreground. Foreground blocks on background only when waiting for outstanding fetches to complete.
+**Key design change (v2):**
+
+1. **SPM stores both Forward CSR and Reverse CSR.** Forward CSR (`S1NodeHeader` + `FwdEdgeArray`) is used by Metadata Scanner during compute. Reverse CSR (`RevKeyHash` + `RevHeader` + `RevEntryArray`) is used by `reverse_index_lookup` during NOTIFICATION processing.
+
+2. **`NOTIFICATION` triggers Reverse CSR query.** `reverse_index_lookup` receives `NOTIFICATION(source_node_id)`, queries the Reverse CSR, and streams affected `local_id`s into Node Scheduler's `pending_queue`.
+
+3. **Node Scheduler uses a FIFO (not dirty_mask).** The unscalable per-node dirty bitvector is replaced by a lightweight FIFO fed by `reverse_index_lookup`.
+
+4. **ScoreboardPrefetcher issues FETCH_REQUEST on `adj_valid`.** During SCAN, each remote edge's `adj_valid` immediately marks the edge NOTIFIED and triggers FETCH_REQUEST issuance. No separate NOTIFICATION → edge-table path is needed.
+
+**Two-SCAN model:** Because adjacency is not cached between prefetch and formal compute, each node may be SCANNed twice:
+- **First SCAN** (prefetch): scheduler selects a node from pending_queue → SCAN reads Forward CSR → `adj_valid` triggers ScoreboardPrefetcher to issue FETCH_REQUESTs. ACCUMULATE stalls if remote data is not yet ready.
+- **Phase switch** clears `visited_mask`, allowing re-selection.
+- **Second SCAN** (formal): scheduler re-selects the now-ready node → SCAN reads Forward CSR again → local_reader and accumulator consume the data. ScoreboardPrefetcher deduplicates (ignores `adj_valid` for already-ready nodes).
 
 ---
 
@@ -34,15 +48,15 @@ Background domain never blocks on foreground. Foreground blocks on background on
 These processes run every cycle, gated only by their own handshake signals:
 
 ```
-Process 1: Notification Ingress
-  NoC Adapter RX → ScoreboardPrefetcher.rx_notif_*
-  Frequency: whenever a NOTIFICATION store arrives
-  Latency: 1 cycle to latch, 1 cycle to mark edge NOTIFIED
+Process 1: Notification Ingress → Reverse CSR Query
+  NoC Adapter RX → reverse_index_lookup
+  Step 1: hash(rx_notif_source_node_id) -> RevKeyHash -> rev_id
+  Step 2: read RevHeader[rev_id] -> rev_base, rev_len
+  Step 3: stream RevEntryArray[rev_base : rev_base+rev_len-1]
+  Step 4: enqueue each affected_local_id into Node Scheduler pending_queue
+  Latency: 2 + rev_len cycles (pipelined, one notification at a time)
 
-Process 2: Lookahead Fetch Issue
-  ScoreboardPrefetcher.fetch_req_* → Pull Client → NoC Adapter TX
-  Frequency: up to 1 fetch per cycle (pipelined)
-  Condition: scoreboard not full AND staging reservation available
+Process 2: Fetch Issue (triggered by SCAN adj_valid)
 
 Process 3: Fetch Response Reception
   NoC Adapter RX → Response Collector → SPM STAGING write
@@ -97,19 +111,24 @@ Background processes only stall on:
 ```
 cycle S+0:
   Phase Controller checks current phase (factor or variable).
-  Node Scheduler scans node_ready vector for current phase.
-  If a ready node exists:
+  Node Scheduler scans for first unvisited node where (node_ready || in_pending_queue) is true.
+  If a schedulable node exists:
     sched_valid = 1
     sched_node_id = selected node
     sched_is_factor = current phase type
+    dequeue selected_node from pending_queue (if present)
     → advance to SCAN
-  If no ready node:
+  If no schedulable node:
     no_schedulable_nodes = 1
     Phase Controller switches phase (1 cycle)
-    → retry SCHEDULE in new phase
+    → retry SCHEDULE in new phase (visited_mask cleared)
 ```
 
-**Blocking**: If no node is ready in either phase, PE stalls in SCHEDULE until a background fetch completes and makes a node ready.
+**Scheduling policy**: A node is schedulable if it is **unvisited** AND (**ready** OR **in pending_queue**):
+- `ready`: all remote edges have been fetched (ScoreboardPrefetcher.node_ready = 1)
+- `in pending_queue`: reverse_index_lookup has found this node as affected by a NOTIFICATION
+
+**Two-SCAN consequence**: If a node from pending_queue is selected but not yet ready, SCAN proceeds and FETCH_REQUESTs are issued. ACCUMULATE will naturally stall until responses arrive. The node remains in `visited_mask`. After phase switch clears `visited_mask`, the now-ready node will be re-selected for the formal compute SCAN.
 
 **Key signal**: `node_ready[i]` from ScoreboardPrefetcher = `AND(all edge_ready bits for node i)`.
 
@@ -136,7 +155,10 @@ cycle C+2 .. C+1+adj_count:
   For each AdjEntry[i]:
     SPM returns {neighbor_id, neighbor_x, neighbor_y}.
     Classify: is_local = (neighbor_x == self_x) && (neighbor_y == self_y).
-    Output adj_valid stream to ScoreboardPrefetcher and Accumulator.
+    Output adj_valid stream to ScoreboardPrefetcher and local_neighbor_state_reader.
+    For remote edges: ScoreboardPrefetcher immediately marks edge NOTIFIED and
+      issues FETCH_REQUEST (if scoreboard has space).
+    For local edges: ScoreboardPrefetcher immediately marks edge READY.
 
 cycle C+2+adj_count:
   adj_last asserted for final AdjEntry.
@@ -148,13 +170,20 @@ cycle C+2+adj_count:
 
 **Bank conflict mitigation**: NodeHeader and AdjEntry list should be placed in different banks by the graph compiler (adj_base should not alias header bank).
 
-**Local edge READY initialization**: During SCAN, when Metadata Scanner classifies an AdjEntry as local (`(neighbor_x == self_x) && (neighbor_y == self_y)`), it asserts `adj_valid` with `adj_is_local = 1` and `adj_edge_idx` to the ScoreboardPrefetcher. The ScoreboardPrefetcher immediately sets that edge to READY state (bypasses the IDLE → NOTIFIED → IN_FLIGHT → READY lifecycle). This ensures local edges are always ready and never require a fetch request.
+**Local edge READY initialization**: During SCAN, when Metadata Scanner classifies an AdjEntry as local, it asserts `adj_valid` with `adj_is_local = 1`. The ScoreboardPrefetcher immediately sets that edge to READY state. Local edges never require a fetch request.
+
+**Remote edge FETCH on SCAN**: During SCAN, each remote AdjEntry causes `adj_valid` to be asserted. The ScoreboardPrefetcher:
+1. Registers the edge (unless the node is already ready — dedup guard)
+2. Immediately marks it NOTIFIED
+3. The fetch-scan loop finds NOTIFIED edges and issues FETCH_REQUESTs
+
+This means FETCH_REQUESTs are issued **during SCAN**, not in a separate background phase. The first SCAN of a node (prefetch) issues all its FETCH_REQUESTs. The second SCAN (formal) sees the node is already ready and skips edge registration.
 
 ### 3.4 Stage 3: ACCUMULATE
 
-**Trigger**: SCAN completes (`adj_last` asserted).
+**Trigger**: SCAN completes (`adj_last` asserted) and local_reader finishes.
 
-**Actor**: Neighbor State Accumulator + ScoreboardPrefetcher + Response Collector (background).
+**Actor**: Neighbor State Accumulator + local_neighbor_state_reader + Response Collector.
 
 **Flow**:
 
@@ -167,25 +196,23 @@ For each local neighbor (is_local == true), in adjacency order:
   Issue SPM read from neighbor's state_base.
   Data flows directly into accumulator.
   Latency: 1 cycle per read (pipelined, no stall if no bank conflict).
-  Uses single SPM read port (shared with Compute Unit, time-multiplexed).
 ```
 
-**Sub-phase 3b: Remote neighbor fetch (already in progress)**
+**Sub-phase 3b: Remote neighbor reads from STAGING**
 
 ```
 For each remote neighbor (is_local == false), in adjacency order:
-  ScoreboardPrefetcher already issued FETCH_REQUEST during background domain.
-  Response Collector already wrote response to STAGING.
-  Edge state should be READY by the time we reach ACCUMULATE.
   Read STAGING blocks sequentially into accumulator.
   Latency: 1 cycle per read (pipelined from STAGING).
 
-Local reads use SPM Arbiter client CU_state_rd; remote reads use CU_staging_rd.
-These are independent ports and can issue in the same cycle (no bank conflict permitting).
-Within each sub-phase, reads are sequential (1 per cycle).
+If FETCH_RESPONSE has not yet arrived for a remote edge:
+  accumulator.remote_valid = 0
+  accumulator.out_valid = 0
+  Compute Unit sees ns_valid = 0 and stalls
+  → entire pipeline stalls in ACCUMULATE until response arrives
 ```
 
-**Stall condition**: If any remote edge is NOT READY at this point, the node should not have been scheduled. This is a design invariant — the Node Scheduler only selects nodes where `node_ready == 1`.
+**Stall condition**: Unlike the old design (which required `node_ready == 1` before scheduling), the new design allows scheduling dirty nodes before all fetches complete. ACCUMULATE naturally stalls if remote data is not yet in STAGING. This stall is harmless — the Metadata Scanner is already idle (SCAN completed), so the Node Scheduler can proceed to select the next node for prefetch SCAN while the current node waits for its fetches.
 
 **Batch boundary**: If the node uses batched staging (remote edges exceed STAGING capacity), ACCUMULATE processes one batch at a time:
 
@@ -304,62 +331,79 @@ cycle W+1+M:
 
 ### 4.1 Variable Node (3 neighbors: 1 local, 2 remote)
 
-```
-Background (before scheduling):
-  T+0:   NOTIFICATION from PE_C for edge(M, N2) → NOTIFIED
-  T+1:   ScoreboardPrefetcher issues FETCH_REQ(N2) → PE_C → IN_FLIGHT
-  T+2:   NOTIFICATION from PE_D for edge(M, N3) → NOTIFIED
-  T+3:   ScoreboardPrefetcher issues FETCH_REQ(N3) → PE_D → IN_FLIGHT
-  T+10:  FETCH_RESPONSE(N2) arrives → STAGING write → READY
-  T+15:  FETCH_RESPONSE(N3) arrives → STAGING write → READY
-  T+15:  node_ready[M] = 1 (all edges ready)
+**First SCAN (prefetch — node M is dirty but not ready):**
 
-Foreground (node M selected):
-  T+16: SCHEDULE: sched_valid=1, sched_node_id=M
-  T+17: SCAN: read NodeHeader for M
-  T+18: SCAN: read AdjEntry[0] (N1, local)
-  T+19: SCAN: read AdjEntry[1] (N2, remote, PE_C)
-  T+20: SCAN: read AdjEntry[2] (N3, remote, PE_D) → adj_last
-  T+21: ACCUMULATE: read N1 state from SPM STATE (local)
-  T+22: ACCUMULATE: read N2 state from STAGING (remote, already written)
-  T+23: ACCUMULATE: read N3 state from STAGING (remote, already written) → accumulator_done
-  T+24: COMPUTE: LOAD prior
-  T+25: COMPUTE: MAT_ADD accumulate
-  T+26: COMPUTE: MAT_INV
-  T+27: COMPUTE: MAT_VEC_MUL
-  T+28: COMPUTE: STORE belief → done_valid
-  T+29: WRITEBACK: send NOTIFICATION to consumers of M
-  T+30: WRITEBACK: reset edges for M → wb_done
-  T+31: SCHEDULE: next node...
 ```
+T+0:   NOTIFICATION from PE_C (source=node M) → reverse_index_lookup → affected_local_id=M → enqueue M into pending_queue
+T+1:   NOTIFICATION from PE_D (source=node M) → reverse_index_lookup → M already in queue
+T+2:   SCHEDULE: Node Scheduler selects M (in pending_queue && unvisited)
+T+3:   SCAN: read NodeHeader for M
+T+4:   SCAN: read AdjEntry[0] (N1, local) → ScoreboardPrefetcher marks READY
+T+5:   SCAN: read AdjEntry[1] (N2, remote, PE_C) → ScoreboardPrefetcher marks NOTIFIED,
+       issues FETCH_REQ(N2) → PE_C → IN_FLIGHT
+T+6:   SCAN: read AdjEntry[2] (N3, remote, PE_D) → ScoreboardPrefetcher marks NOTIFIED,
+       issues FETCH_REQ(N3) → PE_D → IN_FLIGHT
+T+7:   adj_last → local_reader reads N1 state → cmd_valid → ACCUMULATE starts
+T+8:   ACCUMULATE: read N1 state (local) → accumulator_done for local
+T+9:   ACCUMULATE: read N2 from STAGING — NOT READY yet (FETCH_RESPONSE not arrived)
+       → pipeline stalls
+
+(While stalled, Node Scheduler can prefetch other nodes:
+  T+8:   SCHEDULE: select next node from pending_queue
+  T+9:   SCAN: node K adjacency → issue FETCH_REQs for K)
+
+T+15:  FETCH_RESPONSE(N2) arrives → STAGING write → edge(N2) READY
+T+16:  FETCH_RESPONSE(N3) arrives → STAGING write → edge(N3) READY
+T+16:  node_ready[M] = 1 (all edges ready)
+T+16:  ACCUMULATE resumes: read N2 state from STAGING
+T+17:  ACCUMULATE: read N3 state from STAGING → accumulator_done
+T+18:  COMPUTE: LOAD prior
+...    (compute continues)
+T+23:  WRITEBACK: send NOTIFICATION to consumers of M
+T+24:  WRITEBACK: reset edges for M → wb_done
+```
+
+**Second SCAN (formal — after phase switch clears visited_mask):**
+
+```
+T+50:  Phase switch → visited_mask cleared
+T+51:  SCHEDULE: Node Scheduler selects M again (now ready)
+T+52:   SCAN: read NodeHeader for M
+T+53:   SCAN: read AdjEntry[0] (N1, local)
+T+54:   SCAN: read AdjEntry[1] (N2, remote) → ScoreboardPrefetcher sees M already ready,
+        deduplicates (ignores adj_valid)
+T+55:   SCAN: read AdjEntry[2] (N3, remote) → deduplicated
+T+56:   ACCUMULATE: read N1 state (local)
+T+57:   ACCUMULATE: read N2 from STAGING (ready)
+T+58:   ACCUMULATE: read N3 from STAGING (ready) → accumulator_done
+T+59:   COMPUTE → WRITEBACK → done
+```
+
+Note: In practice, if the first prefetch SCAN completes before all fetches return, the node will stall in ACCUMULATE. When phase switch eventually clears `visited_mask`, the now-ready node is re-selected. The second SCAN re-reads adjacency from SPM (no cache) but ScoreboardPrefetcher ignores duplicate edge registration.
 
 ### 4.2 Factor Node (2 variable neighbors, both remote, batched)
 
 ```
-Background:
-  T+0..T+5: Both edges notified and fetched, responses in STAGING.
+T+0:  NOTIFICATION from PE_A (source=node F) → reverse_index_lookup → affected_local_id=F → enqueue F into pending_queue
+T+1:  NOTIFICATION from PE_B (source=node F) → reverse_index_lookup → F already in queue
+T+2:  SCHEDULE: select F (in pending_queue && unvisited)
+T+3:  SCAN: read NodeHeader
+T+4:  SCAN: read AdjEntry[0] (V1, remote) → ScoreboardPrefetcher marks NOTIFIED,
+      issues FETCH_REQ(V1)
+T+5:  SCAN: read AdjEntry[1] (V2, remote) → ScoreboardPrefetcher marks NOTIFIED,
+      issues FETCH_REQ(V2)
+T+6:  adj_last → cmd_valid → ACCUMULATE starts
+T+7:  ACCUMULATE batch 1: read V1 from STAGING — may stall if response not ready
+      (While stalled, prefetch other nodes)
+T+20: FETCH_RESPONSE(V1) arrives → ACCUMULATE resumes
+T+21: ACCUMULATE batch 1: partial accumulator update
+T+22: ACCUMULATE batch 2: read V2 from STAGING — may stall
+T+35: FETCH_RESPONSE(V2) arrives → ACCUMULATE resumes
+T+36: ACCUMULATE batch 2: final accumulator → accumulator_done
+T+37: COMPUTE → WRITEBACK → NOTIFICATION to V1, V2 → wb_done
 
-Foreground:
-  T+6:  SCHEDULE: sched_valid=1, sched_node_id=F
-  T+7:  SCAN: read NodeHeader
-  T+8:  SCAN: read AdjEntry[0] (V1, remote)
-  T+9:  SCAN: read AdjEntry[1] (V2, remote) → adj_last
-  T+10: ACCUMULATE batch 1: read V1 state from STAGING
-  T+11: ACCUMULATE batch 1: partial accumulator update
-  T+12: ACCUMULATE batch 2: read V2 state from STAGING
-  T+13: ACCUMULATE batch 2: final accumulator → accumulator_done
-  T+14: COMPUTE: LOAD
-  T+15: COMPUTE: MAT_ADD total
-  T+16: COMPUTE: edge 0: MAT_SUB cavity
-  T+17: COMPUTE: edge 0: MAT_INV cavity
-  T+18: COMPUTE: edge 0: MAT_MUL msg
-  T+19: COMPUTE: edge 0: STORE msg
-  T+20: COMPUTE: edge 1: MAT_SUB cavity
-  T+21: COMPUTE: edge 1: MAT_INV cavity
-  T+22: COMPUTE: edge 1: MAT_MUL msg
-  T+23: COMPUTE: edge 1: STORE msg → done_valid
-  T+24: WRITEBACK: send NOTIFICATION to V1, V2
-  T+25: WRITEBACK: reset edges → wb_done
+Phase switch clears visited_mask. If F was ready by then, second SCAN proceeds
+with deduplication (no redundant FETCH_REQUESTs).
 ```
 
 ---
@@ -369,6 +413,8 @@ Foreground:
 ### 5.1 Foreground Pipeline Handshakes
 
 ```
+NoC Adapter RX ──[rx_notif_valid]──▶ reverse_index_lookup
+NoC Adapter RX ──[affected_valid, affected_local_id]──▶ Node Scheduler (pending_queue enqueue)
 Phase Controller ──[phase_factor_first, visited_mask]──▶ Node Scheduler
 Node Scheduler ──[sched_valid, sched_node_id, sched_is_factor]──▶ Metadata Scanner (cmd_* inputs)
 Metadata Scanner ──[cmd_ready]──▶ Node Scheduler (sched_ready input)
@@ -394,7 +440,11 @@ Background → Foreground:
 
 Foreground → Background:
   Writeback Controller.reset_valid → ScoreboardPrefetcher (edge reset)
-  Metadata Scanner.adj_valid → ScoreboardPrefetcher (edge classification)
+  Metadata Scanner.adj_valid → ScoreboardPrefetcher (edge registration + FETCH trigger)
+
+Key change: adj_valid from Metadata Scanner (during SCAN) now directly triggers
+FETCH_REQUEST issuance in ScoreboardPrefetcher. No separate NOTIFICATION →
+ScoreboardPrefetcher path is required for fetch initiation.
 
 Shared resources (arbitrated by SPM Arbiter):
   Metadata Scanner ──[rd]──▶ SPM Arbiter ──[rd]──▶ SPM Bank Array

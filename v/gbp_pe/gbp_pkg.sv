@@ -30,6 +30,13 @@ package gbp_pkg;
   parameter int unsigned WSTRB_W   = BEAT_BYTES; // 8 (byte mask per beat)
   parameter int unsigned NOC_DATA_W = 32;
 
+  // -- Reverse CSR parameters --
+  parameter int unsigned REV_ID_W    = NODE_ID_W;  // max unique neighbors = NUM_NODES
+  parameter int unsigned REV_LEN_W   = NODE_ID_W;  // max affected nodes per neighbor
+  parameter int unsigned EDGE_IDX_W  = NODE_ID_W;  // max edges in FwdEdgeArray
+  parameter int unsigned REV_KEY_ENTRIES = 2048;   // hash table size (power of 2)
+  parameter int unsigned REV_MAX_PROBE   = 32;     // max linear probes
+
   // -- Fetch / scoreboard parameters --
   parameter int unsigned SCOREBOARD_DEPTH = 64;
   parameter int unsigned TXN_ID_W         = $clog2(SCOREBOARD_DEPTH); // 6
@@ -50,6 +57,25 @@ package gbp_pkg;
       logic [15:0]              word_count;    // 32-bit words to transfer
       logic                     is_staging;    // 1=STAGING, 0=STATE
   } stream_descriptor_t;
+
+  // ============================================================
+  // Reverse CSR types (SPM-resident)
+  // ============================================================
+  typedef struct packed {
+      logic                    valid;
+      logic [NODE_ID_W-1:0]    key;      // neighbor global ID
+      logic [REV_ID_W-1:0]     rev_id;   // index into RevHeader
+  } rev_key_entry_t;
+
+  typedef struct packed {
+      logic [REV_LEN_W-1:0]       rev_len;   // number of affected S1 nodes
+      logic [SPM_ADDR_W-1:0]      rev_base;  // word addr of first RevEntry
+  } rev_header_t;
+
+  typedef struct packed {
+      logic [NODE_ID_W-1:0]    local_id;     // S1 local node index (consumer)
+      logic [EDGE_IDX_W-1:0]   fwd_edge_idx; // index into FwdEdgeArray
+  } rev_entry_t;
 
   // ============================================================
   // DEPRECATED: Legacy parameters and types

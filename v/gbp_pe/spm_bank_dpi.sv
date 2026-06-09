@@ -12,7 +12,7 @@ module spm_bank
 )
 (
     input logic clk_i,
-    input logic reset_i,
+    input logic rst_n_i,
 
     input  logic                  bank_rd_en,
     input  logic [ROW_ADDR_W-1:0] bank_rd_addr,
@@ -23,6 +23,9 @@ module spm_bank
     input logic [ BEAT_BITS-1:0] bank_wr_data,
     input logic [   WSTRB_W-1:0] bank_wr_wstrb
 );
+
+  logic reset_i;
+  assign reset_i = ~rst_n_i;
 
   localparam int unsigned WORDS_PER_ROW = BEAT_BITS / 32;
   integer word_idx;

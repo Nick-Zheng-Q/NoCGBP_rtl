@@ -26,6 +26,10 @@ module gbp_pe_control_subsystem
     // From fetch subsystem: node readiness
     input  logic [NUM_NODES-1:0] node_ready_i,
 
+    // From reverse_index_lookup: affected nodes
+    input  logic                 affected_valid_i,
+    input  logic [NODE_ID_W-1:0] affected_local_id_i,
+
     // From writeback controller: completion pulse
     input  logic wb_done_i,
 
@@ -112,11 +116,14 @@ module gbp_pe_control_subsystem
     ,.phase_factor_first_i(phase_factor_first)
     ,.node_ready_i(node_ready_i)
     ,.visited_mask_i(visited_mask)
+    ,.affected_valid_i(affected_valid_i)
+    ,.affected_local_id_i(affected_local_id_i)
     ,.sched_ready_i(sched_ready)
     ,.sched_valid_o(sched_valid)
     ,.sched_node_id_o(sched_node_id)
     ,.sched_is_factor_o(sched_is_factor)
     ,.no_schedulable_nodes_o(no_schedulable_nodes)
+    ,.pending_q_overflow_o()  // debug only
   );
 
   // ========================================================================

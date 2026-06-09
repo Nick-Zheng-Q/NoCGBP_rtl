@@ -53,6 +53,7 @@ module writeback_controller
   assign rst_i = ~rst_n_i;
 
   logic [1:0] state_r;
+  logic [1:0] state_next;
 
   // Latched node info
   logic [NODE_ID_W-1:0] node_id_r;
@@ -60,6 +61,7 @@ module writeback_controller
 
   // Scan counter
   logic [ADJ_COUNT_W-1:0] adj_idx_r;
+  logic [ADJ_COUNT_W-1:0] adj_idx_next;
 
   // Output assignments
   assign tx_notif_valid_o = (state_r == S_SEND);
@@ -75,72 +77,109 @@ module writeback_controller
 
   assign wb_done_o = (state_r == S_DONE);
 
-  // FSM
+  // Sequential: adj_idx_r
+  always_ff @(posedge clk_i) begin
+    if (rst_i) begin
+      adj_idx_r <= '0;
+    end else begin
+      adj_idx_r <= adj_idx_next;
+    end
+  end
+
+  // Combinational: adj_idx_next
+  always_comb begin
+    adj_idx_next = adj_idx_r;
+    case (state_r)
+      S_IDLE: begin
+        if (done_valid_i) begin
+          if (adj_count_i == 0) begin
+            adj_idx_next = '0;
+          end else if (adj_is_local_i[0]) begin
+            if (adj_count_i == 1) begin
+              adj_idx_next = '0;
+            end else begin
+              adj_idx_next = 1;
+            end
+          end else begin
+            adj_idx_next = '0;
+          end
+        end
+      end
+      S_SEND: begin
+        if (adj_is_local_i[adj_idx_r]) begin
+          if (adj_idx_r != adj_count_i - 1) begin
+            adj_idx_next = adj_idx_r + 1;
+          end
+        end else begin
+          if (tx_notif_ready_i) begin
+            if (adj_idx_r != adj_count_i - 1) begin
+              adj_idx_next = adj_idx_r + 1;
+            end
+          end
+        end
+      end
+      default: adj_idx_next = adj_idx_r;
+    endcase
+  end
+
+  // Sequential: state_r
   always_ff @(posedge clk_i) begin
     if (rst_i) begin
       state_r <= S_IDLE;
       node_id_r <= '0;
       is_factor_r <= 1'b0;
-      adj_idx_r <= '0;
     end else begin
-      case (state_r)
-        S_IDLE: begin
-          if (done_valid_i) begin
-            node_id_r <= done_node_id_i;
-            is_factor_r <= done_is_factor_i;
-            adj_idx_r <= '0;
-            if (adj_count_i == 0) begin
-              state_r <= S_DONE;
-            end else begin
-              // Skip local neighbors (only send to remote)
-              if (adj_is_local_i[0]) begin
-                if (adj_count_i == 1) begin
-                  state_r <= S_DONE;
-                end else begin
-                  adj_idx_r <= 1;
-                  // Check next entry in same cycle
-                  if (adj_is_local_i[1]) begin
-                    // Keep scanning in subsequent cycles
-                    state_r <= S_SEND;
-                  end else begin
-                    state_r <= S_SEND;
-                  end
-                end
-              end else begin
-                state_r <= S_SEND;
-              end
-            end
-          end
-        end
+      state_r <= state_next;
+      if (done_valid_i && (state_r == S_IDLE)) begin
+        node_id_r <= done_node_id_i;
+        is_factor_r <= done_is_factor_i;
+      end
+    end
+  end
 
-        S_SEND: begin
-          // Skip local neighbors
-          if (adj_is_local_i[adj_idx_r]) begin
-            // Skip this entry
-            if (adj_idx_r == adj_count_i - 1) begin
-              state_r <= S_DONE;
+  // Combinational: state_next
+  always_comb begin
+    state_next = state_r;
+    case (state_r)
+      S_IDLE: begin
+        if (done_valid_i) begin
+          if (adj_count_i == 0) begin
+            state_next = S_DONE;
+          end else if (adj_is_local_i[0]) begin
+            if (adj_count_i == 1) begin
+              state_next = S_DONE;
             end else begin
-              adj_idx_r <= adj_idx_r + 1;
+              state_next = S_SEND;
             end
           end else begin
-            // Send notification
-            if (tx_notif_ready_i) begin
-              if (adj_idx_r == adj_count_i - 1) begin
-                state_r <= S_DONE;
-              end else begin
-                adj_idx_r <= adj_idx_r + 1;
-              end
-            end
+            state_next = S_SEND;
           end
         end
-
-        S_DONE: begin
-          state_r <= S_IDLE;
+      end
+      S_SEND: begin
+        if (adj_is_local_i[adj_idx_r]) begin
+          if (adj_idx_r == adj_count_i - 1) begin
+            state_next = S_DONE;
+          end else begin
+            state_next = S_SEND;
+          end
+        end else begin
+          if (tx_notif_ready_i) begin
+            if (adj_idx_r == adj_count_i - 1) begin
+              state_next = S_DONE;
+            end else begin
+              state_next = S_SEND;
+            end
+          end else begin
+            state_next = S_SEND;
+          end
         end
-
-        default: state_r <= S_IDLE;
-      endcase
-    end
+      end
+      S_DONE: begin
+        state_next = S_IDLE;
+      end
+      default: state_next = S_IDLE;
+    endcase
   end
 
 endmodule

@@ -33,12 +33,38 @@
 ../v/bsg_manycore_endpoint_standard.sv
 ../v/bsg_manycore_eva_to_npa.sv
 ../v/gbp_pe/gbp_pkg.sv
-../v/gbp_pe/gbp_pe_endpoint_adapter.sv
-../v/gbp_pe/gbp_pe_noc_bridge.sv
+
+../v/gbp_pe/noc_adapter_rx.sv
+../v/gbp_pe/noc_adapter_tx.sv
+../v/gbp_pe/noc_adapter.sv
+
+../v/gbp_pe/phase_controller.sv
+../v/gbp_pe/node_scheduler.sv
+../v/gbp_pe/metadata_scanner.sv
+../v/gbp_pe/scoreboard_prefetcher.sv
+../v/gbp_pe/pull_client.sv
+../v/gbp_pe/response_collector.sv
+../v/gbp_pe/writeback_controller.sv
+../v/gbp_pe/neighbor_state_accumulator.sv
+
+../v/gbp_pe/agu.sv
 ../v/gbp_pe/read_stream_engine.sv
 ../v/gbp_pe/write_stream_engine.sv
 ../v/gbp_pe/compute_unit.sv
-../v/gbp_pe/spm_bank.sv
+../v/gbp_pe/compute/gbp_compute_engine.sv
+../v/gbp_pe/compute/gbp_control_fsm.sv
+../v/gbp_pe/compute/matrix_fsm.sv
+../v/gbp_pe/compute/simd_array.sv
+../v/gbp_pe/compute/staging_buffer.sv
+../v/gbp_pe/compute/matrix_alu/mat_inv_gauss_jordan.sv
+
+../v/gbp_pe/spm_arbiter.sv
+../v/gbp_pe/spm_bank_dpi.sv
+
+../v/gbp_pe/gbp_pe_control_subsystem.sv
+../v/gbp_pe/gbp_pe_compute_subsystem.sv
+../v/gbp_pe/gbp_pe_memory_subsystem.sv
+../v/gbp_pe/gbp_pe_fetch_subsystem.sv
 ../v/gbp_pe/gbp_pe.sv
 
 ../basejump_stl/bsg_misc/bsg_counter_up_down.sv
@@ -63,11 +89,9 @@
 ../basejump_stl/bsg_noc/bsg_mesh_stitch.sv
 ../basejump_stl/bsg_noc/bsg_barrier.sv
 
-../v/bsg_manycore_hetero_socket.sv
-
 ../v/bsg_ruche_buffer.sv
 ../v/bsg_manycore_mesh_node.sv
-../v/bsg_manycore_tile_compute_mesh.sv
+
 
 ../basejump_stl/bsg_fpu/bsg_fpu_add_sub.sv
 ../basejump_stl/bsg_fpu/bsg_fpu_mul.sv
@@ -80,6 +104,7 @@
 ../basejump_stl/bsg_misc/bsg_priority_encode.sv
 ../basejump_stl/bsg_misc/bsg_priority_encode_one_hot_out.sv
 ../basejump_stl/bsg_misc/bsg_encode_one_hot.sv
+
 ../imports/HardFloat/source/HardFloat_primitives.v
 ../imports/HardFloat/source/HardFloat_rawFN.v
 ../imports/HardFloat/source/isSigNaNRecFN.v
@@ -89,4 +114,4 @@
 ../imports/HardFloat/source/divSqrtRecFN_medium.v
 ../imports/HardFloat/source/divSqrtRecFN.v
 ../imports/HardFloat/source/divSqrtFN.v
-tops/integration/gbp_pe_mesh_harness_support.sv
+../v/bsg_manycore_link_sif_tieoff.sv

@@ -40,16 +40,35 @@ module phase_scheduling_top (
   always_comb begin
     ctrl_spm_rd_data = '0;
     case (ctrl_spm_rd_addr[3:0])
+      // Node headers at addr = node_id * HEADER_WORDS (HEADER_WORDS=2)
       4'd0: begin
-        // NodeHeader: node_id=1, dof=1, adj_count=1, adj_base=4, state_base=8, state_words=8
+        // NodeHeader[0]: node_id=1, dof=1, adj_count=1, adj_base=8, state_base=8, state_words=8
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W-1:0] = gbp_pkg::NODE_ID_W'(1);
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W-1:gbp_pkg::NODE_ID_W] = gbp_pkg::DOF_W'(1);
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W] = gbp_pkg::ADJ_COUNT_W'(1);
-        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W] = gbp_pkg::SPM_ADDR_W'(4);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W] = gbp_pkg::SPM_ADDR_W'(8);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W] = gbp_pkg::SPM_ADDR_W'(8);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W+gbp_pkg::STATE_WORDS_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W] = gbp_pkg::STATE_WORDS_W'(8);
+      end
+      4'd2: begin
+        // NodeHeader[1]: node_id=2, dof=1, adj_count=1, adj_base=8, state_base=8, state_words=8
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W-1:0] = gbp_pkg::NODE_ID_W'(2);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W-1:gbp_pkg::NODE_ID_W] = gbp_pkg::DOF_W'(1);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W] = gbp_pkg::ADJ_COUNT_W'(1);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W] = gbp_pkg::SPM_ADDR_W'(8);
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W] = gbp_pkg::SPM_ADDR_W'(8);
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W+gbp_pkg::STATE_WORDS_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W] = gbp_pkg::STATE_WORDS_W'(8);
       end
       4'd4: begin
+        // NodeHeader[2]: node_id=3, dof=1, adj_count=1, adj_base=8, state_base=8, state_words=8
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W-1:0] = gbp_pkg::NODE_ID_W'(3);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W-1:gbp_pkg::NODE_ID_W] = gbp_pkg::DOF_W'(1);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W] = gbp_pkg::ADJ_COUNT_W'(1);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W] = gbp_pkg::SPM_ADDR_W'(8);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+gbp_pkg::SPM_ADDR_W] = gbp_pkg::SPM_ADDR_W'(8);
+        ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W+gbp_pkg::STATE_WORDS_W-1:gbp_pkg::NODE_ID_W+gbp_pkg::DOF_W+gbp_pkg::ADJ_COUNT_W+2*gbp_pkg::SPM_ADDR_W] = gbp_pkg::STATE_WORDS_W'(8);
+      end
+      4'd8: begin
         // AdjEntry[0]: neighbor_id=2, x=2, y=3 (remote)
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W-1:0] = gbp_pkg::NODE_ID_W'(2);
         ctrl_spm_rd_data[gbp_pkg::NODE_ID_W+gbp_pkg::X_CORD_W-1:gbp_pkg::NODE_ID_W] = gbp_pkg::X_CORD_W'(2);
@@ -109,6 +128,8 @@ module phase_scheduling_top (
     ,.local_ready_i(1'b1)
     ,.local_data_o()
     ,.local_last_o()
+    ,.affected_valid_i(1'b0)
+    ,.affected_local_id_i('0)
     ,.my_x_i(gbp_pkg::X_CORD_W'(1))
     ,.my_y_i(gbp_pkg::Y_CORD_W'(0))
   );

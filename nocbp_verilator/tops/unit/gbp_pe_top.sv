@@ -21,6 +21,13 @@ module gbp_pe_top (
   , output logic wb_done_valid_o
   , output logic tx_notif_valid_o
   , output logic reset_valid_o
+  , output logic rx_notif_valid_o
+  , output logic [9:0] rx_notif_source_node_id_o
+  , output logic rx_notif_is_factor_o
+  , output logic rx_fetch_req_valid_o
+  , output logic rx_fetch_resp_valid_o
+  , output logic tx_fetch_req_valid_o
+  , output logic tx_fetch_resp_valid_o
 );
 
   import bsg_manycore_pkg::*;
@@ -89,11 +96,20 @@ module gbp_pe_top (
     ,.wb_cmd_adj_count_i(wb_cmd_adj_count_i)
     ,.wb_cmd_state_words_i(wb_cmd_state_words_i)
     ,.wb_cmd_adj_is_local_i(wb_cmd_adj_is_local_i)
+    ,.wb_cmd_adj_neighbor_xs_i('0)
+    ,.wb_cmd_adj_neighbor_ys_i('0)
     ,.wb_force_done_valid_i(wb_force_done_valid_i)
     ,.wb_cmd_ready_o(wb_cmd_ready_o)
     ,.wb_done_valid_o(wb_done_valid_o)
     ,.tx_notif_valid_o(tx_notif_valid_o)
     ,.reset_valid_o(reset_valid_o)
+    ,.rx_notif_valid_o(rx_notif_valid_o)
+    ,.rx_notif_source_node_id_o(rx_notif_source_node_id_o)
+    ,.rx_notif_is_factor_o(rx_notif_is_factor_o)
+    ,.rx_fetch_req_valid_o(rx_fetch_req_valid_o)
+    ,.rx_fetch_resp_valid_o(rx_fetch_resp_valid_o)
+    ,.tx_fetch_req_valid_o(tx_fetch_req_valid_o)
+    ,.tx_fetch_resp_valid_o(tx_fetch_resp_valid_o)
   );
 
 endmodule

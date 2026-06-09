@@ -104,7 +104,7 @@ module noc_adapter_rx
   // Notification
   assign rx_notif_valid_o = is_gbp_w && (offset_w == 16'(MBX_NOTIFICATION));
   assign rx_notif_source_node_id_o = NODE_ID_W'(in_data_i[NODE_ID_W-1:0]);
-  assign rx_notif_is_factor_o = in_data_i[data_width_p-1];
+  assign rx_notif_is_factor_o = in_data_i[NODE_ID_W];
   assign rx_notif_source_x_o = in_src_x_i;
   assign rx_notif_source_y_o = in_src_y_i;
 
