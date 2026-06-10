@@ -1,6 +1,10 @@
 // scoreboard_prefetcher.cc
 // Unit test for scoreboard_prefetcher
 // Test cases from docs/gbp_pe/verification/unit_tests/04_scoreboard_prefetcher.md
+//
+// NOTE: Updated for v2/v3 RTL where remote edges are auto-NOTIFIED on
+// registration (adj_valid_i). rx_notif is only needed for race-case edges
+// that were still IDLE when adj_valid arrived.
 
 #include <cstdio>
 #include <cstdlib>
@@ -25,10 +29,13 @@ static void reset_dut(Vscoreboard_prefetcher_top* d) {
 
 static void reg_edge(Vscoreboard_prefetcher_top* d, uint16_t cur, uint16_t nbr,
                       uint8_t nx, uint8_t ny, int local, int idx, int last) {
+  int old_ready = d->fetch_req_ready_i;
+  d->fetch_req_ready_i = 0;  // prevent premature fetch issue during registration
   d->adj_valid_i=1; d->adj_current_node_id_i=cur; d->adj_neighbor_id_i=nbr;
   d->adj_neighbor_x_i=nx; d->adj_neighbor_y_i=ny; d->adj_is_local_i=local;
   d->adj_edge_idx_i=idx; d->adj_last_i=last; tick(d);
   d->adj_valid_i=0; tick(d);
+  d->fetch_req_ready_i = old_ready;
 }
 
 static void send_notif(Vscoreboard_prefetcher_top* d, uint16_t src, uint8_t sx, uint8_t sy) {
@@ -77,17 +84,16 @@ static int test_node_readiness(Vscoreboard_prefetcher_top* d) {
   reg_edge(d, 20, 0x11, 3, 2, 0, 1, 1);
   eval_fall(d);
   if(READY(20)) { fprintf(stderr,"\n    FAIL: node_ready[20]=1 before notif"); pass=0; }
-  send_notif(d, 0x10, 2, 1);
+  // In v2/v3, remote edges are auto-NOTIFIED on registration.
+  // consume_fetch advances all pending edges to IN_FLIGHT.
   int t0=consume_fetch(d); if(t0<0) { fprintf(stderr,"\n    FAIL: no fetch e0"); pass=0; }
-  complete_fetch(d, t0, 20);
+  // Both edges (0 and 1) are now IN_FLIGHT. Complete edge 0 first.
+  complete_fetch(d, 0, 20);
   eval_fall(d);
   if(READY(20)) { fprintf(stderr,"\n    FAIL: node_ready[20]=1 with e1 pending"); pass=0; }
-  send_notif(d, 0x11, 3, 2);
-  int t1=consume_fetch(d); if(t1<0) { fprintf(stderr,"\n    FAIL: no fetch e1"); pass=0; }
-  complete_fetch(d, t1, 20);
+  // Complete edge 1.
+  complete_fetch(d, 1, 20);
   eval_fall(d);
-  printf("\n    [debug] has_edge=%d pending=%d ready=%d",
-         d->debug_node_has_edge_20, d->debug_node_pending_20, (int)READY(20));
   if(!READY(20)) { fprintf(stderr,"\n    FAIL: node_ready[20]=0 after both complete"); pass=0; }
   printf("%s\n",pass?"PASS":"FAIL"); return pass?0:1;
 }
@@ -110,7 +116,7 @@ static int test_duplicate_notification(Vscoreboard_prefetcher_top* d) {
   printf("  Test Case 4: Duplicate Notification...");
   reset_dut(d); int pass = 1;
   reg_edge(d, 30, 0x20, 2, 1, 0, 0, 1);
-  // First notification
+  // First notification (no-op in v2/v3; edge already NOTIFIED)
   send_notif(d, 0x20, 2, 1);
   int t0 = consume_fetch(d);
   if (t0 < 0) { fprintf(stderr, "\n    FAIL: no fetch on first notif"); pass = 0; }
@@ -140,16 +146,15 @@ static int test_out_of_order_complete(Vscoreboard_prefetcher_top* d) {
   // Two edges for node 40
   reg_edge(d, 40, 0x30, 1, 0, 0, 0, 0);
   reg_edge(d, 40, 0x31, 2, 0, 0, 1, 1);
-  send_notif(d, 0x30, 1, 0);
+  // In v2/v3, remote edges are auto-NOTIFIED on registration.
+  // consume_fetch advances all pending edges to IN_FLIGHT.
   int t0 = consume_fetch(d);
-  send_notif(d, 0x31, 2, 0);
-  int t1 = consume_fetch(d);
-  if (t0 < 0 || t1 < 0) { fprintf(stderr, "\n    FAIL: missing fetch"); pass = 0; }
-  // Complete out of order: t1 first, then t0
-  complete_fetch(d, t1, 40);
+  if (t0 < 0) { fprintf(stderr, "\n    FAIL: no fetch"); pass = 0; }
+  // Both edges (0 and 1) are now IN_FLIGHT. Complete out of order: t1 first, then t0
+  complete_fetch(d, 1, 40);
   eval_fall(d);
   if (READY(40)) { fprintf(stderr, "\n    FAIL: node_ready[40]=1 after only t1 done"); pass = 0; }
-  complete_fetch(d, t0, 40);
+  complete_fetch(d, 0, 40);
   eval_fall(d);
   if (!READY(40)) { fprintf(stderr, "\n    FAIL: node_ready[40]=0 after both done"); pass = 0; }
   printf("%s\n", pass ? "PASS" : "FAIL"); return pass ? 0 : 1;
@@ -208,22 +213,19 @@ static int test_scoreboard_full_blocks(Vscoreboard_prefetcher_top* d) {
   d->fetch_req_ready_i = 1;
   int txn[64];
 
-  // Fill scoreboard with 64 in-flight fetches (consumer_node_id must be non-zero)
+  // Fill scoreboard with 64 in-flight fetches
   for (int i = 0; i < 64; i++) {
     reg_edge(d, 100 + i, 0x200 + i, 1, 0, 0, 0, 1);
-    d->rx_notif_valid_i = 1;
-    d->rx_notif_source_node_id_i = 0x200 + i;
-    d->rx_notif_source_x_i = 1;
-    d->rx_notif_source_y_i = 0;
-    tick(d);
-    d->rx_notif_valid_i = 0;
+    // In v2/v3, edges are auto-NOTIFIED on registration.
+    // fetch_req_ready_i is restored to 1 by reg_edge, so the fetch is
+    // pending immediately. No rx_notif needed.
 
     int got = 0;
     for (int c = 0; c < 10; c++) {
       eval_fall(d);
       if (d->fetch_req_valid_o) {
         txn[i] = d->fetch_req_txn_id_o;
-        tick(d);
+        tick(d);  // block 3 runs: edge -> IN_FLIGHT
         got = 1;
         break;
       }
@@ -282,13 +284,10 @@ static int test_scoreboard_full_blocks(Vscoreboard_prefetcher_top* d) {
   }
 
   // New edge should now be accepted and fetch issued
-  reg_edge(d, 100, 0x300, 2, 1, 0, 0, 1);
-  d->rx_notif_valid_i = 1;
-  d->rx_notif_source_node_id_i = 0x300;
-  d->rx_notif_source_x_i = 2;
-  d->rx_notif_source_y_i = 1;
-  tick(d);
-  d->rx_notif_valid_i = 0;
+  // Use a new node (200) because node 100 is already registered and
+  // node_registered_r blocks duplicate registration in v2/v3.
+  reg_edge(d, 200, 0x300, 2, 1, 0, 0, 1);
+  // In v2/v3, edge is auto-NOTIFIED. No rx_notif needed.
 
   int got = -1;
   for (int c = 0; c < 10; c++) {

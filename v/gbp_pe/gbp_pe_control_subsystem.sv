@@ -42,6 +42,7 @@ module gbp_pe_control_subsystem
     output logic [ADJ_COUNT_W-1:0] cmd_adj_count_o,
     output logic [STATE_WORDS_W-1:0] cmd_state_words_o,
     output logic [SPM_ADDR_W-1:0]  cmd_state_base_o,
+    output logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0] cmd_neighbor_dofs_o,
 
     // Adjacency info to writeback controller (latched when cmd fires)
     output logic [ADJ_COUNT_W-1:0] wb_adj_count_o,
@@ -64,6 +65,11 @@ module gbp_pe_control_subsystem
     input  logic                 reset_valid_i,
     input  logic [NODE_ID_W-1:0] reset_node_id_i,
     input  logic                 reset_is_factor_i,
+
+    // Whitebox metadata scanner override (active-high: use wb_ms_* instead of sched_valid)
+    input  logic                 wb_ms_cmd_valid_i,
+    input  logic [NODE_ID_W-1:0] wb_ms_cmd_node_id_i,
+    input  logic                 wb_ms_cmd_is_factor_i,
 
     // SPM read port (to memory subsystem) — shared by metadata_scanner and local_reader
     output logic                 spm_rd_valid_o,
@@ -146,6 +152,7 @@ module gbp_pe_control_subsystem
   logic                 ms_adj_is_local;
   logic                 ms_adj_last;
   logic [ADJ_COUNT_W-1:0] ms_adj_edge_idx;
+  logic [DOF_W-1:0]     ms_adj_neighbor_dof;
 
   logic                 ms_info_valid;
   logic [DOF_W-1:0]     ms_info_dof;
@@ -169,6 +176,7 @@ module gbp_pe_control_subsystem
     ,.adj_neighbor_id_o(ms_adj_neighbor_id)
     ,.adj_neighbor_x_o(ms_adj_neighbor_x)
     ,.adj_neighbor_y_o(ms_adj_neighbor_y)
+    ,.adj_neighbor_dof_o(ms_adj_neighbor_dof)
     ,.adj_is_local_o(ms_adj_is_local)
     ,.adj_last_o(ms_adj_last)
     ,.adj_edge_idx_o(ms_adj_edge_idx)
@@ -181,10 +189,10 @@ module gbp_pe_control_subsystem
     ,.my_y_i(my_y_i)
   );
 
-  assign ms_cmd_valid     = sched_valid;
-  assign ms_cmd_node_id   = sched_node_id;
-  assign ms_cmd_is_factor = sched_is_factor;
-  assign sched_ready      = ms_cmd_ready;
+  assign ms_cmd_valid     = wb_ms_cmd_valid_i ? 1'b1 : sched_valid;
+  assign ms_cmd_node_id   = wb_ms_cmd_valid_i ? wb_ms_cmd_node_id_i : sched_node_id;
+  assign ms_cmd_is_factor = wb_ms_cmd_valid_i ? wb_ms_cmd_is_factor_i : sched_is_factor;
+  assign sched_ready      = ms_cmd_ready & ~wb_ms_cmd_valid_i;
 
   // ========================================================================
   // Local Neighbor State Reader
@@ -250,6 +258,7 @@ module gbp_pe_control_subsystem
   logic [MAX_ADJ_COUNT-1:0][NODE_ID_W-1:0] adj_buf_neighbor_ids_r;
   logic [MAX_ADJ_COUNT-1:0][X_CORD_W-1:0]  adj_buf_neighbor_xs_r;
   logic [MAX_ADJ_COUNT-1:0][Y_CORD_W-1:0]  adj_buf_neighbor_ys_r;
+  logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0]     adj_buf_neighbor_dofs_r;
   logic [MAX_ADJ_COUNT-1:0]                adj_buf_is_local_r;
   logic [ADJ_COUNT_W-1:0]                  adj_buf_count_r;
 
@@ -265,6 +274,7 @@ module gbp_pe_control_subsystem
         adj_buf_neighbor_ids_r[ms_adj_edge_idx] <= ms_adj_neighbor_id;
         adj_buf_neighbor_xs_r[ms_adj_edge_idx]  <= ms_adj_neighbor_x;
         adj_buf_neighbor_ys_r[ms_adj_edge_idx]  <= ms_adj_neighbor_y;
+        adj_buf_neighbor_dofs_r[ms_adj_edge_idx] <= ms_adj_neighbor_dof;
         adj_buf_is_local_r[ms_adj_edge_idx]     <= ms_adj_is_local;
         if (ms_adj_last) begin
           adj_buf_count_r <= ADJ_COUNT_W'(ms_adj_edge_idx + 1);
@@ -278,6 +288,7 @@ module gbp_pe_control_subsystem
   assign wb_adj_neighbor_xs_o   = adj_buf_neighbor_xs_r;
   assign wb_adj_neighbor_ys_o   = adj_buf_neighbor_ys_r;
   assign wb_adj_is_local_o      = adj_buf_is_local_r;
+  assign cmd_neighbor_dofs_o    = adj_buf_neighbor_dofs_r;
 
   // Local reader FSM
   always_ff @(posedge clk) begin

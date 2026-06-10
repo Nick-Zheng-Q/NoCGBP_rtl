@@ -36,6 +36,7 @@ module gbp_pe_control_subsystem_top (
     , output logic [gbp_pkg::FP32_W-1:0]   local_data_o
     , output logic       local_last_o
 
+    , output logic [gbp_pkg::MAX_ADJ_COUNT-1:0][gbp_pkg::DOF_W-1:0] comp_cmd_neighbor_dofs_o
     , output logic [gbp_pkg::ADJ_COUNT_W-1:0] wb_adj_count_o
     , output logic       phase_factor_first_o
     , output logic       phase_switch_pulse_o
@@ -103,6 +104,7 @@ module gbp_pe_control_subsystem_top (
     ,.cmd_adj_count_o(comp_cmd_adj_count_o)
     ,.cmd_state_words_o(comp_cmd_state_words_o)
     ,.cmd_state_base_o(comp_cmd_state_base_o)
+    ,.cmd_neighbor_dofs_o(comp_cmd_neighbor_dofs_o)
     ,.wb_adj_count_o(wb_adj_count_o)
     ,.wb_adj_neighbor_ids_o()
     ,.wb_adj_neighbor_xs_o()
@@ -116,6 +118,8 @@ module gbp_pe_control_subsystem_top (
     ,.adj_is_local_o(adj_is_local_o)
     ,.adj_last_o(adj_last_o)
     ,.adj_edge_idx_o(adj_edge_idx_o)
+    ,.affected_valid_i(1'b0)
+    ,.affected_local_id_i('0)
     ,.reset_valid_i(1'b0)
     ,.reset_node_id_i('0)
     ,.reset_is_factor_i(1'b0)

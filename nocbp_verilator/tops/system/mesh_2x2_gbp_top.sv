@@ -158,6 +158,12 @@ module mesh_2x2_gbp_top (
   assign wb_cmd_adj_count_i[2] = wb_cmd_adj_count_pe2_i;
   assign wb_cmd_adj_count_i[3] = wb_cmd_adj_count_pe3_i;
 
+  always_ff @(posedge clk) begin
+    if (wb_cmd_valid_i[0]) begin
+      $display("TOP_DBG: PE0 wb_cmd_adj_count_pe0_i=%d", wb_cmd_adj_count_pe0_i);
+    end
+  end
+
   assign wb_cmd_state_words_i[0] = wb_cmd_state_words_pe0_i;
   assign wb_cmd_state_words_i[1] = wb_cmd_state_words_pe1_i;
   assign wb_cmd_state_words_i[2] = wb_cmd_state_words_pe2_i;

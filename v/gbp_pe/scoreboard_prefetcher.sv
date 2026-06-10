@@ -122,10 +122,12 @@ module scoreboard_prefetcher
     end
   endgenerate
 
-  // Guard: do not re-register edges for a node that is already ready.
-  // This prevents duplicate registrations on the second SCAN.
+  // Guard: do not re-register edges for a node that has already been
+  // registered in this phase. This prevents duplicate registrations on
+  // the second SCAN while allowing mixed local+remote edges in the first SCAN.
+  logic [NUM_NODES-1:0] node_registered_r;
   logic adj_should_register;
-  assign adj_should_register = adj_valid_i && !node_ready_o[adj_current_node_id_i];
+  assign adj_should_register = adj_valid_i && !node_registered_r[adj_current_node_id_i];
 
   // Helper functions for pending count manipulation
   function automatic [PENDING_W-1:0] pending_incr(
@@ -162,12 +164,13 @@ module scoreboard_prefetcher
       fetch_pending_r <= 1'b0;
       node_has_edge_r <= '0;
       node_pending_r  <= '0;
+      node_registered_r <= '0;
       for (int i = 0; i < SCOREBOARD_DEPTH; i++) begin
         edges[i] <= '0;
       end
     end else begin
 
-      // 1. Register new edge (guarded: skip if node already ready)
+      // 1. Register new edge (guarded: skip if node already registered)
       if (adj_should_register) begin
         edges[free_ptr_r].source_node   <= adj_neighbor_id_i;
         edges[free_ptr_r].source_x      <= adj_neighbor_x_i;
@@ -180,6 +183,11 @@ module scoreboard_prefetcher
           edges[free_ptr_r].state <= EDGE_NOTIFIED;
         end
         free_ptr_r <= free_ptr_r + 1;
+        // Only mark node as registered after the LAST adjacency entry.
+        // This allows all edges of a node to be registered in one SCAN.
+        if (adj_last_i) begin
+          node_registered_r[adj_current_node_id_i] <= 1'b1;
+        end
       end
 
       // 2. Notification: only marks edges that were registered before adj_valid.
@@ -239,6 +247,7 @@ module scoreboard_prefetcher
           end
         end
         sb_count_r <= sb_count_r - reset_inflight_count;
+        node_registered_r[reset_node_id_i] <= 1'b0;
       end
     end
   end

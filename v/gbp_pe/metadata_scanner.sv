@@ -35,6 +35,7 @@ module metadata_scanner
     , output logic [NODE_ID_W-1:0] adj_neighbor_id_o
     , output logic [X_CORD_W-1:0]  adj_neighbor_x_o
     , output logic [Y_CORD_W-1:0]  adj_neighbor_y_o
+    , output logic [DOF_W-1:0]     adj_neighbor_dof_o
     , output logic                 adj_is_local_o
     , output logic                 adj_last_o
     , output logic [ADJ_COUNT_W-1:0] adj_edge_idx_o
@@ -63,10 +64,13 @@ module metadata_scanner
   // [+: STATE_WORDS_W]                 state_words
   localparam int HEADER_WORDS = 2;  // 2 words per header (1 beat = 64 bits)
 
-  // AdjEntry layout:
+  // AdjEntry layout (packed in lower 32 bits of 64-bit beat):
   // [NODE_ID_W-1:0]                    neighbor_id
   // [NODE_ID_W+X_CORD_W-1:NODE_ID_W]  neighbor_x
   // [+: Y_CORD_W]                      neighbor_y
+  // [+: DOF_W]                         neighbor_dof
+  // [+: EDGE_IDX_W]                    edge_slot
+  // [+: 1]                             is_local (pre-computed at load time)
 
   // FSM states
   localparam S_IDLE       = 3'd0;
@@ -96,6 +100,7 @@ module metadata_scanner
   logic [NODE_ID_W-1:0] adj_neighbor_id_r;
   logic [X_CORD_W-1:0]  adj_neighbor_x_r;
   logic [Y_CORD_W-1:0]  adj_neighbor_y_r;
+  logic [DOF_W-1:0]     adj_neighbor_dof_r;
 
   // SPM read request register
   logic                 spm_rd_pending_r;
@@ -121,6 +126,7 @@ module metadata_scanner
   assign adj_neighbor_id_o = adj_neighbor_id_r;
   assign adj_neighbor_x_o  = adj_neighbor_x_r;
   assign adj_neighbor_y_o  = adj_neighbor_y_r;
+  assign adj_neighbor_dof_o = adj_neighbor_dof_r;
   assign adj_is_local_o    = is_local_w;
   assign adj_last_o        = (adj_idx_r == hdr_adj_count_r - 1);
   assign adj_edge_idx_o    = adj_idx_r;
@@ -147,6 +153,7 @@ module metadata_scanner
       adj_neighbor_id_r <= '0;
       adj_neighbor_x_r <= '0;
       adj_neighbor_y_r <= '0;
+      adj_neighbor_dof_r <= '0;
     end else begin
       case (state_r)
         S_IDLE: begin
@@ -187,10 +194,11 @@ module metadata_scanner
         S_RD_ADJ: begin
           if (spm_rd_ready_i) begin
             spm_rd_pending_r <= 1'b0;
-            // Parse AdjEntry
-            adj_neighbor_id_r <= spm_rd_data_i[NODE_ID_W-1:0];
-            adj_neighbor_x_r  <= spm_rd_data_i[NODE_ID_W +: X_CORD_W];
-            adj_neighbor_y_r  <= spm_rd_data_i[NODE_ID_W + X_CORD_W +: Y_CORD_W];
+            // Parse AdjEntry (lower 32 bits of 64-bit beat)
+            adj_neighbor_id_r  <= spm_rd_data_i[NODE_ID_W-1:0];
+            adj_neighbor_x_r   <= spm_rd_data_i[NODE_ID_W +: X_CORD_W];
+            adj_neighbor_y_r   <= spm_rd_data_i[NODE_ID_W + X_CORD_W +: Y_CORD_W];
+            adj_neighbor_dof_r <= spm_rd_data_i[NODE_ID_W + X_CORD_W + Y_CORD_W +: DOF_W];
             state_r <= S_OUTPUT_ADJ;
           end
         end

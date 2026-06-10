@@ -58,6 +58,8 @@ module spm_bank #(
           mem_r[bank_wr_addr][8*i +: 8] <= bank_wr_data[8*i +: 8];
         end
       end
+      if (BANK_ID == 0)
+        $display("SPM_WR_DBG: bank=%0d addr=%0d data=%016x wstrb=%h", BANK_ID, bank_wr_addr, bank_wr_data, bank_wr_wstrb);
     end
   end
 

@@ -39,23 +39,39 @@ PE_A updates node N:
        (lightweight control packet, no eta/lambda payload)
 ```
 
-### 2.2 Consumer Side (before node update)
+### 2.2 Consumer Side (before node update) — v2 Design
 
 ```
 PE_B wants to update node M (adjacent to N on PE_A):
 
-  1. ScoreboardPrefetcher receives NOTIFICATION from PE_A.
-     → Mark edge (M, N) as "notified".
-  2. Prefetcher issues FETCH_REQUEST to PE_A (lookahead, before M is scheduled).
-     → Mark edge (M, N) as "in_flight".
-     → Add entry to Scoreboard.
-  3. PE_A receives FETCH_REQUEST, reads N's STATE, sends FETCH_RESPONSE.
-  4. PE_B receives FETCH_RESPONSE.
-     → Mark edge (M, N) as "ready".
-     → Remove entry from Scoreboard.
-  5. When ALL edges of M are "ready" → M becomes schedulable.
-  6. Scheduler selects M, Compute Unit reads neighbor states, performs update.
-  7. After compute: reset remote edges to idle, keep local edges as ready.
+  1. PE_B receives NOTIFICATION from PE_A: "N updated".
+     → reverse_index_lookup queries Reverse CSR: which local nodes depend on N?
+     → Enqueue affected local_id(s) into Node Scheduler's pending_queue.
+     (NOTIFICATION is control-only; no data payload.)
+
+  2. Node Scheduler selects M from pending_queue (or round-robin if ready).
+     → Metadata Scanner scans M's adjacency list (Forward CSR).
+
+  3. During SCAN, each remote AdjEntry triggers adj_valid to ScoreboardPrefetcher.
+     → ScoreboardPrefetcher marks edge NOTIFIED and issues FETCH_REQUEST to PE_A.
+     → Edge state: NOTIFIED → IN_FLIGHT.
+     Local edges are marked READY immediately (no fetch needed).
+
+  4. PE_A receives FETCH_REQUEST, reads N's STATE, sends FETCH_RESPONSE.
+
+  5. PE_B receives FETCH_RESPONSE.
+     → Response Collector writes to STAGING region.
+     → ScoreboardPrefetcher marks edge "ready".
+
+  6. When ALL edges of M are "ready" → M becomes schedulable.
+     → Second SCAN (formal compute) re-reads adjacency; ScoreboardPrefetcher
+       deduplicates (ignores adj_valid for already-ready edges).
+
+  7. Compute Unit reads neighbor states (local from STATE, remote from STAGING),
+     performs update.
+
+  8. After compute: Writeback Controller sends NOTIFICATION to all consuming
+     neighbors. ScoreboardPrefetcher resets remote edges to IDLE.
 ```
 
 ---
@@ -90,7 +106,7 @@ Why not raw PullReq/PullResp:
 - ScoreboardPrefetcher can issue fetches **ahead of scheduling** (lookahead), hiding latency.
 - Multiple outstanding fetches can be in-flight simultaneously.
 
-### 4.2 Scoreboard = Outstanding Pull Tracker
+### 4.2 Scoreboard = Outstanding Pull Tracker (v2)
 
 The ScoreboardPrefetcher serves dual purpose:
 1. **Outstanding pull tracker**: tracks in-flight FETCH_REQUESTs, limits concurrency via `scoreboard_cap`.
@@ -99,12 +115,22 @@ The ScoreboardPrefetcher serves dual purpose:
 Per-edge state machine:
 
 ```
-IDLE ──[notification]──▶ NOTIFIED ──[fetch issued]──▶ IN_FLIGHT ──[response received]──▶ READY
-  ↑                                                                                    │
-  └──────────────────────[after compute, reset]─────────────────────────────────────────┘
+                         ┌─[local edge, adj_valid]──┐
+                         ▼                          │
+IDLE ──[remote edge, adj_valid]──▶ NOTIFIED ──[fetch issued]──▶ IN_FLIGHT ──[response received]──▶ READY
+  ↑                                                                                              │
+  └──────────────────────────────[after compute, reset]──────────────────────────────────────────┘
 ```
 
-Local edges skip directly to READY (no fetch needed).
+**State transition triggers:**
+- `IDLE → NOTIFIED`: Triggered by `adj_valid` from Metadata Scanner during SCAN. For local edges, the ScoreboardPrefetcher immediately promotes to READY. For remote edges, it transitions to NOTIFIED and the fetch-scan loop issues FETCH_REQUEST.
+- `NOTIFIED → IN_FLIGHT`: FETCH_REQUEST issued by Pull Client.
+- `IN_FLIGHT → READY`: FETCH_RESPONSE received by Response Collector, ScoreboardPrefetcher notified.
+- `READY → IDLE`: After compute completes (Writeback Controller triggers reset).
+
+**NOTIFICATION vs FETCH_REQUEST decoupling**:
+- NOTIFICATION (from remote PE) only triggers Reverse CSR query → pending_queue enqueue.
+- FETCH_REQUEST is issued during SCAN, driven by `adj_valid`, not by NOTIFICATION receipt.
 
 ### 4.3 Single Active Node, Multiple Outstanding Fetches
 

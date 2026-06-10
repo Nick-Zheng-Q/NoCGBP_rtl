@@ -18,9 +18,9 @@ module matrix_fsm #(
     input  logic [ADDR_W-1:0]  cmd_base_a,     // Base address for operand A
     input  logic [ADDR_W-1:0]  cmd_base_b,     // Base address for operand B
     input  logic [ADDR_W-1:0]  cmd_base_dest,  // Base address for result
-    input  logic [3:0]         cmd_m,          // Rows of A / result
-    input  logic [3:0]         cmd_n,          // Cols of B / result (for MatMul)
-    input  logic [3:0]         cmd_k,          // Inner dimension (for MatMul)
+    input  logic [5:0]         cmd_m,          // Rows of A / result
+    input  logic [5:0]         cmd_n,          // Cols of B / result (for MatMul)
+    input  logic [5:0]         cmd_k,          // Inner dimension (for MatMul)
     output logic               cmd_ready,
     output logic               done_o,
     
@@ -84,7 +84,7 @@ module matrix_fsm #(
   // Operation registers
   logic [2:0] op_r;
   logic [ADDR_W-1:0] base_a_r, base_b_r, base_dest_r;
-  logic [3:0] m_r, n_r, k_r;
+  logic [5:0] m_r, n_r, k_r;
   
   // Iteration counters
   logic [ADDR_W-1:0] iter_r;
@@ -298,17 +298,31 @@ module matrix_fsm #(
             buf_rd_addr_b[i] = '0;
           end
         end
+        $display("MAT_DBG: ADD_EXEC iter=%d total=%d base_a=%d base_b=%d addr_a[0]=%d addr_b[0]=%d",
+                 iter_r, total_elements, base_a_r, base_b_r, buf_rd_addr_a[0], buf_rd_addr_b[0]);
       end
       
       S_MATADD_WAIT, S_MATADD_WRITE: begin
         // Keep op enabled during WAIT to maintain valid signal
         simd_op_add = {LANES{1'b1}};
+        // Preserve read addresses so simd_result doesn't change
+        for (int i = 0; i < LANES; i++) begin
+          if (iter_r + i < total_elements + LANES) begin
+            buf_rd_addr_a[i] = base_a_r + iter_r - LANES + i;
+            buf_rd_addr_b[i] = base_b_r + iter_r - LANES + i;
+          end else begin
+            buf_rd_addr_a[i] = '0;
+            buf_rd_addr_b[i] = '0;
+          end
+        end
         // Write results back
         buf_wr_valid = simd_valid;
         for (int i = 0; i < LANES; i++) begin
           buf_wr_addr[i] = base_dest_r + iter_r - LANES + i;
           buf_wr_data[i] = simd_result[i];
         end
+        $display("MAT_DBG: ADD_WRITE iter=%d base_dest=%d wr_addr[0]=%d wr_data[0]=%h (%f)",
+                 iter_r, base_dest_r, buf_wr_addr[0], buf_wr_data[0], $bitstoreal(buf_wr_data[0]));
       end
       
       S_MATSUB_EXEC: begin
@@ -325,6 +339,18 @@ module matrix_fsm #(
       end
       
       S_MATSUB_WAIT, S_MATSUB_WRITE: begin
+        // Keep op enabled during WAIT to maintain valid signal
+        simd_op_sub = {LANES{1'b1}};
+        // Preserve read addresses so simd_result doesn't change
+        for (int i = 0; i < LANES; i++) begin
+          if (iter_r + i < total_elements + LANES) begin
+            buf_rd_addr_a[i] = base_a_r + iter_r - LANES + i;
+            buf_rd_addr_b[i] = base_b_r + iter_r - LANES + i;
+          end else begin
+            buf_rd_addr_a[i] = '0;
+            buf_rd_addr_b[i] = '0;
+          end
+        end
         buf_wr_valid = simd_valid;
         for (int i = 0; i < LANES; i++) begin
           buf_wr_addr[i] = base_dest_r + iter_r - LANES + i;

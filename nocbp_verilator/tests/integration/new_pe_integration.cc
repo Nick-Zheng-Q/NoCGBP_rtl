@@ -76,15 +76,15 @@ static uint32_t float_to_bits(float f) {
 
 static void toggle_clock(Vnew_pe_integration_top* dut, int n = 1) {
   for (int i = 0; i < n; ++i) {
-    dut->clk = 0; dut->eval();
-    dut->clk = 1; dut->eval();
+    dut->clk_i = 0; dut->eval();
+    dut->clk_i = 1; dut->eval();
   }
 }
 
 static void reset(Vnew_pe_integration_top* dut) {
-  dut->rst_n = 0;
+  dut->rst_n_i = 0;
   toggle_clock(dut, 5);
-  dut->rst_n = 1;
+  dut->rst_n_i = 1;
   toggle_clock(dut, 1);
 }
 
@@ -140,14 +140,14 @@ int run_test(int argc, char** argv) {
   // -----------------------------------------------------------------
   // 2. Send command to compute_unit
   // -----------------------------------------------------------------
-  dut->cmd_valid = 1;
-  dut->cmd_node_id = 0;
-  dut->cmd_is_factor = 0;  // variable node
-  dut->cmd_dof = 2;
-  dut->cmd_adj_count = 2;
-  dut->cmd_state_words = 5;
+  dut->cmd_valid_i = 1;
+  dut->cmd_node_id_i = 0;
+  dut->cmd_is_factor_i = 0;  // variable node
+  dut->cmd_dof_i = 2;
+  dut->cmd_adj_count_i = 2;
+  dut->cmd_state_words_i = 5;
   toggle_clock(dut, 1);
-  dut->cmd_valid = 0;
+  dut->cmd_valid_i = 0;
 
   // -----------------------------------------------------------------
   // 3. Feed neighbor states via ns_data
@@ -167,23 +167,23 @@ int run_test(int argc, char** argv) {
 
   for (int c = 0; c < max_cycles; ++c) {
     if (ns_idx < 10) {
-      dut->ns_valid = 1;
-      dut->ns_data = (ns_idx < 5) ? msg0[ns_idx] : msg1[ns_idx - 5];
-      dut->ns_last = (ns_idx == 9);
+      dut->ns_valid_i = 1;
+      dut->ns_data_i = (ns_idx < 5) ? msg0[ns_idx] : msg1[ns_idx - 5];
+      dut->ns_last_i = (ns_idx == 9);
     } else {
-      dut->ns_valid = 0;
-      dut->ns_last = 0;
+      dut->ns_valid_i = 0;
+      dut->ns_last_i = 0;
     }
 
     toggle_clock(dut, 1);
 
-    if (dut->ns_ready) {
+    if (dut->ns_ready_o) {
       ns_idx++;
     }
 
-    if (dut->done_valid) {
+    if (dut->done_valid_o) {
       printf("  done_valid at cycle %d! node_id=%d is_factor=%d batch_done=%d\n",
-             c, dut->done_node_id, dut->done_is_factor, dut->batch_done);
+             c, dut->done_node_id_o, dut->done_is_factor_o, dut->batch_done_o);
       done_seen = 1;
       break;
     }

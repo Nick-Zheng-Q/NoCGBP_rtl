@@ -679,7 +679,306 @@ static int tc_full_gbp_iteration(Vmesh_2x2_gbp_top* dut) {
 }
 
 // ---------------------------------------------------------------------------
+// Test Case: Multi-Round Local Compute (Stability Check)
+// ---------------------------------------------------------------------------
+// Each PE runs a local-only variable node for N rounds.
+// No remote edges → no NoC traffic.  This isolates the compute->writeback
+// pipeline and verifies that repeated rounds do not corrupt STATE.
+// ---------------------------------------------------------------------------
+static int tc_multi_round_local_compute(Vmesh_2x2_gbp_top* dut) {
+  printf("\n=== TC: Multi-Round Local Compute (3 rounds) ===\n");
+
+  // SPM layout: one local-only variable node per PE
+  // NodeHeader @ node_id*2, STATE @ node_id*16 (node_id << 4)
+  for (int pe = 0; pe < 4; pe++) {
+    uint32_t node_id = pe;  // PE0->N0, PE1->N1, PE2->N2, PE3->N3
+    uint32_t state_base = node_id << 4;
+    spm_write_node_header(pe, node_id, 1, 0, 0x10, state_base, 8);
+    // adj_count=0, adj_base unused
+    spm_write_state_word(pe, state_base + 0, 1.0f + pe * 0.5f);  // eta
+    spm_write_state_word(pe, state_base + 1, 2.0f + pe * 0.5f);  // lambda
+    for (int i = 2; i < 8; i++) {
+      spm_write_word(pe, state_base + i, 0);
+    }
+  }
+  printf("SPM init: 4 local-only variable nodes (DOF=1, state_words=8)\n");
+
+  // Belief snapshot after each round: [round][pe][word]
+  float beliefs[3][4][2];
+  const int kRounds = 3;
+
+  for (int round = 0; round < kRounds; round++) {
+    printf("\n-- Round %d --\n", round + 1);
+
+    // Inject compute command to all 4 PEs simultaneously
+    dut->wb_cmd_valid_i            = 0xF;  // all PEs
+    dut->wb_cmd_node_id_pe0_i      = 0;
+    dut->wb_cmd_node_id_pe1_i      = 1;
+    dut->wb_cmd_node_id_pe2_i      = 2;
+    dut->wb_cmd_node_id_pe3_i      = 3;
+    dut->wb_cmd_is_factor_i        = 0x0;  // all variable
+    dut->wb_cmd_dof_pe0_i          = 1;
+    dut->wb_cmd_dof_pe1_i          = 1;
+    dut->wb_cmd_dof_pe2_i          = 1;
+    dut->wb_cmd_dof_pe3_i          = 1;
+    dut->wb_cmd_adj_count_pe0_i    = 0;
+    dut->wb_cmd_adj_count_pe1_i    = 0;
+    dut->wb_cmd_adj_count_pe2_i    = 0;
+    dut->wb_cmd_adj_count_pe3_i    = 0;
+    dut->wb_cmd_state_words_pe0_i  = 8;
+    dut->wb_cmd_state_words_pe1_i  = 8;
+    dut->wb_cmd_state_words_pe2_i  = 8;
+    dut->wb_cmd_state_words_pe3_i  = 8;
+    dut->wb_cmd_adj_is_local_pe0_i = 0xFF;
+    dut->wb_cmd_adj_is_local_pe1_i = 0xFF;
+    dut->wb_cmd_adj_is_local_pe2_i = 0xFF;
+    dut->wb_cmd_adj_is_local_pe3_i = 0xFF;
+    tick(dut);
+    dut->wb_cmd_valid_i = 0;
+
+    // Wait for all PEs to assert done
+    bool done_mask[4] = {false, false, false, false};
+    int cycle;
+    const int max_cycles = 500;
+    for (cycle = 0; cycle < max_cycles; cycle++) {
+      uint8_t done_vec = dut->wb_done_valid_o;
+      for (int pe = 0; pe < 4; pe++) {
+        if ((done_vec >> pe) & 1u) done_mask[pe] = true;
+      }
+      tick(dut);
+      bool all_done = true;
+      for (int pe = 0; pe < 4; pe++) {
+        if (!done_mask[pe]) { all_done = false; break; }
+      }
+      if (all_done) break;
+    }
+    if (cycle >= max_cycles) {
+      printf("FAIL: Round %d timeout (done_mask=%d%d%d%d)\n",
+             round + 1, done_mask[0], done_mask[1], done_mask[2], done_mask[3]);
+      return 1;
+    }
+    printf("  All PEs done @ cycle %d\n", cycle);
+
+    // Extra cycles for write_stream_engine to finish
+    for (int i = 0; i < 20; i++) tick(dut);
+
+    // Read back STATE for each PE
+    for (int pe = 0; pe < 4; pe++) {
+      uint32_t state_base = pe << 4;
+      uint32_t eta_bits = spm_read_word(pe, state_base + 0);
+      uint32_t lam_bits = spm_read_word(pe, state_base + 1);
+      beliefs[round][pe][0] = *reinterpret_cast<float*>(&eta_bits);
+      beliefs[round][pe][1] = *reinterpret_cast<float*>(&lam_bits);
+      printf("  PE%d: eta=%.4f, lambda=%.4f\n",
+             pe, beliefs[round][pe][0], beliefs[round][pe][1]);
+    }
+  }
+
+  // Verify stability: beliefs should not change across rounds (identity)
+  bool pass = true;
+  for (int round = 1; round < kRounds; round++) {
+    for (int pe = 0; pe < 4; pe++) {
+      float eta0 = beliefs[0][pe][0];
+      float lam0 = beliefs[0][pe][1];
+      float eta_r = beliefs[round][pe][0];
+      float lam_r = beliefs[round][pe][1];
+      if (eta_r != eta0 || lam_r != lam0) {
+        printf("FAIL: PE%d belief changed from round 1 to round %d\n", pe, round + 1);
+        pass = false;
+      }
+    }
+  }
+
+  if (pass) {
+    printf("PASS: Multi-round local compute stable across %d rounds\n", kRounds);
+  }
+  return pass ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // Main
+// === TC: Variable Node with Injected Message ===
+// Tests that compute_unit correctly accumulates a message into belief.
+// Node 0: prior (eta=1.0, lambda=2.0), message (eta=0.5, lambda=1.0)
+// Expected: (eta=1.5, lambda=3.0)
+
+static int tc_variable_node_with_message(Vmesh_2x2_gbp_top* dut) {
+  printf("\n=== TC: Variable Node with Injected Message ===\n");
+
+  // Clear SPM for PE0
+  for (int b = 0; b < kNumBanks; b++) {
+    fill(g_dpi_bank_mem[0][b].begin(), g_dpi_bank_mem[0][b].end(), 0u);
+  }
+
+  // SPM layout for node 0 (base=0, state_words=16):
+  // Words 0-1: state (eta, lambda)
+  // Words 2-7: padding (8-word beat alignment)
+  // Words 8-9: message 0 (eta_msg, lambda_msg)
+  // Words 10-15: padding
+  spm_write_state_word(0, 0, 1.0f);   // eta
+  spm_write_state_word(0, 1, 2.0f);   // lambda
+  spm_write_state_word(0, 8, 0.5f);   // msg eta
+  spm_write_state_word(0, 9, 1.0f);   // msg lambda
+
+  // Trigger compute
+  dut->wb_cmd_valid_i            = 1;  // PE0
+  dut->wb_cmd_node_id_pe0_i      = 0;
+  dut->wb_cmd_is_factor_i        = 0;
+  dut->wb_cmd_dof_pe0_i          = 1;
+  dut->wb_cmd_adj_count_pe0_i    = 1;
+  dut->wb_cmd_state_words_pe0_i  = 16;
+  tick(dut);
+  dut->wb_cmd_valid_i            = 0;
+  dut->wb_cmd_node_id_pe0_i      = 0;
+  dut->wb_cmd_is_factor_i        = 0;
+  dut->wb_cmd_dof_pe0_i          = 0;
+  dut->wb_cmd_adj_count_pe0_i    = 0;
+  dut->wb_cmd_state_words_pe0_i  = 0;
+
+  // Wait for done
+  int timeout = 50;
+  while (!dut->wb_done_valid_o && timeout-- > 0) tick(dut);
+  if (timeout <= 0) {
+    printf("FAIL: Compute timeout\n");
+    return 1;
+  }
+  tick(dut);
+
+  // Extra cycles for writeback
+  for (int i = 0; i < 20; i++) tick(dut);
+
+  // Read back
+  uint32_t eta_bits = spm_read_word(0, 0);
+  uint32_t lam_bits = spm_read_word(0, 1);
+  float eta = *reinterpret_cast<float*>(&eta_bits);
+  float lam = *reinterpret_cast<float*>(&lam_bits);
+
+  printf("  Result: eta=%.4f (0x%08X), lambda=%.4f (0x%08X)\n",
+         eta, eta_bits, lam, lam_bits);
+  printf("  Expected: eta=1.5000, lambda=3.0000\n");
+
+  bool pass = true;
+  if (eta != 1.5f) {
+    printf("FAIL: eta mismatch: got %.4f, expected 1.5000\n", eta);
+    pass = false;
+  }
+  if (lam != 3.0f) {
+    printf("FAIL: lambda mismatch: got %.4f, expected 3.0000\n", lam);
+    pass = false;
+  }
+
+  if (pass) {
+    printf("PASS: Variable node correctly accumulates message\n");
+  }
+  return pass ? 0 : 1;
+}
+// === TC: Direction C — 4-Node Local Chain (all on PE0) ===
+// Configurable initial values for each node, runs N rounds.
+// Dumps final state in parseable format for Python golden-ref comparison.
+
+static int tc_direction_c_chain(Vmesh_2x2_gbp_top* dut) {
+  printf("\n=== TC: Direction C — 4-Node Local Chain ===\n");
+
+  // 4 nodes on PE0 with varied initial beliefs
+  struct NodeInit { uint32_t id; float eta; float lambda; };
+  const NodeInit nodes[] = {
+    {0, 0.5f,  1.0f},
+    {1, -1.0f, 2.0f},
+    {2, 2.5f,  0.5f},
+    {3, -0.25f, 4.0f},
+  };
+  const int kNumNodes = sizeof(nodes) / sizeof(nodes[0]);
+  const int kRounds   = 3;
+
+  // SPM init for PE0 only (other PEs idle)
+  for (int pe = 0; pe < kNumPEs; pe++) {
+    for (int b = 0; b < kNumBanks; b++) {
+      fill(g_dpi_bank_mem[pe][b].begin(), g_dpi_bank_mem[pe][b].end(), 0u);
+    }
+  }
+
+  for (int i = 0; i < kNumNodes; i++) {
+    uint32_t nid = nodes[i].id;
+    // NodeHeader
+    spm_write_node_header(0, nid, 1, 0, 0, nid << 4, 8);
+    // STATE
+    spm_write_state_word(0, (nid << 4) + 0, nodes[i].eta);
+    spm_write_state_word(0, (nid << 4) + 1, nodes[i].lambda);
+  }
+
+  // Run N rounds
+  float beliefs[kRounds][kNumNodes][2];
+  for (int round = 0; round < kRounds; round++) {
+    printf("\n-- Round %d --\n", round + 1);
+    for (int i = 0; i < kNumNodes; i++) {
+      uint32_t nid = nodes[i].id;
+      dut->wb_cmd_valid_i = 1;
+      dut->wb_cmd_node_id_pe0_i = nid;
+      dut->wb_cmd_is_factor_i = 0;
+      dut->wb_cmd_dof_pe0_i = 1;
+      dut->wb_cmd_adj_count_pe0_i = 0;
+      dut->wb_cmd_state_words_pe0_i = 8;
+      tick(dut);
+      dut->wb_cmd_valid_i = 0;
+
+      // Wait for compute done
+      int timeout = 50;
+      while (!dut->wb_done_valid_o && timeout-- > 0) tick(dut);
+      if (timeout <= 0) {
+        printf("FAIL: Node %d compute timeout in round %d\n", nid, round + 1);
+        return 1;
+      }
+      tick(dut);
+    }
+    // Extra cycles for writeback
+    for (int k = 0; k < 20; k++) tick(dut);
+
+    // Read back
+    for (int i = 0; i < kNumNodes; i++) {
+      uint32_t nid = nodes[i].id;
+      uint32_t base = nid << 4;
+      uint32_t eta_bits = spm_read_word(0, base + 0);
+      uint32_t lam_bits = spm_read_word(0, base + 1);
+      beliefs[round][i][0] = *reinterpret_cast<float*>(&eta_bits);
+      beliefs[round][i][1] = *reinterpret_cast<float*>(&lam_bits);
+      printf("  N%d: eta=%.6f, lambda=%.6f\n",
+             nid, beliefs[round][i][0], beliefs[round][i][1]);
+    }
+  }
+
+  // Verify stability (identity for local-only nodes)
+  bool pass = true;
+  for (int round = 1; round < kRounds; round++) {
+    for (int i = 0; i < kNumNodes; i++) {
+      if (beliefs[round][i][0] != beliefs[0][i][0] ||
+          beliefs[round][i][1] != beliefs[0][i][1]) {
+        printf("FAIL: Node %d belief changed from round 1 to round %d\n",
+               nodes[i].id, round + 1);
+        pass = false;
+      }
+    }
+  }
+
+  // Print JSON-like summary for Python parser
+  printf("\nDIRECTION_C_OUTPUT_BEGIN\n");
+  printf("  \"test_name\": \"4node_local_chain\",\n");
+  printf("  \"num_nodes\": %d,\n", kNumNodes);
+  printf("  \"num_rounds\": %d,\n", kRounds);
+  printf("  \"final_state\": [\n");
+  for (int i = 0; i < kNumNodes; i++) {
+    printf("    {\"id\": %d, \"pe\": 0, \"dof\": 1, \"state\": {"
+           "\"eta\": %.8f, \"lambda\": %.8f}}%s\n",
+           nodes[i].id, beliefs[kRounds-1][i][0], beliefs[kRounds-1][i][1],
+           (i < kNumNodes - 1) ? "," : "");
+  }
+  printf("  ]\n");
+  printf("DIRECTION_C_OUTPUT_END\n");
+
+  if (pass) {
+    printf("PASS: Direction C 4-node chain stable across %d rounds\n", kRounds);
+  }
+  return pass ? 0 : 1;
+}
 // ---------------------------------------------------------------------------
 int run_test(int argc, char** argv) {
   // Init DPI memory for all PEs / banks
@@ -727,6 +1026,36 @@ int run_test(int argc, char** argv) {
   for (int i = 0; i < 5; i++) tick(dut);
 
   rc |= tc_full_gbp_iteration(dut);
+  if (rc != 0) {
+    delete dut;
+    return rc;
+  }
+
+  // Reset between test cases
+  reset_dut(dut, 5);
+  for (int i = 0; i < 5; i++) tick(dut);
+
+  rc |= tc_multi_round_local_compute(dut);
+  if (rc != 0) {
+    delete dut;
+    return rc;
+  }
+
+  // Reset between test cases
+  reset_dut(dut, 5);
+  for (int i = 0; i < 5; i++) tick(dut);
+
+  rc |= tc_direction_c_chain(dut);
+  if (rc != 0) {
+    delete dut;
+    return rc;
+  }
+
+  // Reset between test cases
+  reset_dut(dut, 5);
+  for (int i = 0; i < 5; i++) tick(dut);
+
+  rc |= tc_variable_node_with_message(dut);
 
   delete dut;
   return rc;

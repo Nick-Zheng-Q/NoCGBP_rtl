@@ -264,12 +264,13 @@ module simd_array #(
   // Global busy signal
   assign busy_o = |lane_busy || |div_active_r;
   
-  // Debug (disabled for cleaner output)
-  // always_ff @(posedge clk_i) begin
-  //   if (|op_add_en || |op_sub_en || |op_mul_en || |op_mac_en)
-  //     $display("SIMD_DBG: time=%0t op_add=%b%b%b%b valid_o=%b%b%b%b", 
-  //              $time, op_add_en[3], op_add_en[2], op_add_en[1], op_add_en[0],
-  //              valid_o[3], valid_o[2], valid_o[1], valid_o[0]);
-  // end
+  // Debug
+  always_ff @(posedge clk_i) begin
+    if (|op_add_en)
+      $display("SIMD_DBG: op_add=%b data_a[0]=%h (%f) data_b[0]=%h (%f) result[0]=%h (%f)",
+               op_add_en, data_a_i[0], $bitstoreal(data_a_i[0]),
+               data_b_i[0], $bitstoreal(data_b_i[0]),
+               result_o[0], $bitstoreal(result_o[0]));
+  end
 
 endmodule

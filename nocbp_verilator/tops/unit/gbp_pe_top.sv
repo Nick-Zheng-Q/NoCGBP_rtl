@@ -14,6 +14,7 @@ module gbp_pe_top (
   , input  logic wb_cmd_is_factor_i
   , input  logic [3:0] wb_cmd_dof_i
   , input  logic [3:0] wb_cmd_adj_count_i
+  , input  logic [7:0][2:0] wb_cmd_neighbor_dofs_i
   , input  logic [5:0] wb_cmd_state_words_i
   , input  logic [7:0] wb_cmd_adj_is_local_i
   , input  logic wb_force_done_valid_i
@@ -28,6 +29,16 @@ module gbp_pe_top (
   , output logic rx_fetch_resp_valid_o
   , output logic tx_fetch_req_valid_o
   , output logic tx_fetch_resp_valid_o
+
+  // Fetch response injection (tied off in normal test mode)
+  , input logic wb_inject_fetch_resp_valid_i
+  , input logic wb_inject_fetch_resp_data_valid_i
+  , input logic [31:0] wb_inject_fetch_resp_data_i
+  , input logic wb_inject_fetch_resp_last_i
+  , input logic wb_inject_fetch_resp_done_valid_i
+  , input logic [5:0] wb_inject_fetch_resp_txn_id_i
+  , input logic [9:0] wb_inject_fetch_resp_node_id_i
+  , input logic [9:0] wb_inject_fetch_resp_consumer_node_id_i
 );
 
   import bsg_manycore_pkg::*;
@@ -94,6 +105,7 @@ module gbp_pe_top (
     ,.wb_cmd_is_factor_i(wb_cmd_is_factor_i)
     ,.wb_cmd_dof_i(wb_cmd_dof_i)
     ,.wb_cmd_adj_count_i(wb_cmd_adj_count_i)
+    ,.wb_cmd_neighbor_dofs_i(wb_cmd_neighbor_dofs_i)
     ,.wb_cmd_state_words_i(wb_cmd_state_words_i)
     ,.wb_cmd_adj_is_local_i(wb_cmd_adj_is_local_i)
     ,.wb_cmd_adj_neighbor_xs_i('0)
@@ -110,6 +122,14 @@ module gbp_pe_top (
     ,.rx_fetch_resp_valid_o(rx_fetch_resp_valid_o)
     ,.tx_fetch_req_valid_o(tx_fetch_req_valid_o)
     ,.tx_fetch_resp_valid_o(tx_fetch_resp_valid_o)
+    ,.wb_inject_fetch_resp_valid_i(wb_inject_fetch_resp_valid_i)
+    ,.wb_inject_fetch_resp_data_valid_i(wb_inject_fetch_resp_data_valid_i)
+    ,.wb_inject_fetch_resp_data_i(wb_inject_fetch_resp_data_i)
+    ,.wb_inject_fetch_resp_last_i(wb_inject_fetch_resp_last_i)
+    ,.wb_inject_fetch_resp_done_valid_i(wb_inject_fetch_resp_done_valid_i)
+    ,.wb_inject_fetch_resp_txn_id_i(wb_inject_fetch_resp_txn_id_i)
+    ,.wb_inject_fetch_resp_node_id_i(wb_inject_fetch_resp_node_id_i)
+    ,.wb_inject_fetch_resp_consumer_node_id_i(wb_inject_fetch_resp_consumer_node_id_i)
   );
 
 endmodule

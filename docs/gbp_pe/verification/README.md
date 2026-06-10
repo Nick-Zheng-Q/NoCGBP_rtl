@@ -97,7 +97,7 @@ verification/
 
 | Document | Status | Implemented / Total |
 |----------|--------|---------------------|
-| 01_compute_subsystem.md | 🟡 **Partial** | 2 / ~8 (missing factor, multi-DOF, msg_count>1) |
+| 01_compute_subsystem.md | 🔴 **Critical Gap** | 2 / 8 implemented. **Factor node (Test Case 2) is REQUIRED — currently NOT YET IMPLEMENTED and blocks algorithmic correctness.** Multi-DOF (Case 4), multi-edge (Case 5), batch_done (Case 6) also required. |
 | 02_memory_subsystem.md | 🟡 **Partial** | 4 / ~10 (missing write-then-read, zero-wstrb, all-clients) |
 | 03_fetch_subsystem.md | 🟡 **Partial** | 3 / ~10 (missing response full path, dedup, scoreboard-full) |
 | 04_control_subsystem.md | 🟡 **Partial** | 3 / ~8 (missing multi-edge, adj_last, local-state-reader) |
@@ -119,7 +119,7 @@ verification/
 | Document | Status |
 |----------|--------|
 | 01_mesh_2x2_gbp_interconnect.md | 🟡 **Planned** | Direction B framework complete; awaiting `mesh_2x2_gbp_top.sv` |
-| 02_gbp_algorithm_golden_reference.md | 🟡 **Planned** | Direction C document complete; Python reference + RTL integration TBD |
+| 02_gbp_algorithm_golden_reference.md | 🔴 **REQUIRED** | Direction C document complete. **RTL testbench + Python reference integration is REQUIRED for algorithmic correctness gate.** Blocked by factor node implementation (see Compute Subsystem). |
 
 ## 3. Verification Hierarchy
 

@@ -14,6 +14,7 @@ module gbp_pe_compute_subsystem_top (
     , input logic [gbp_pkg::ADJ_COUNT_W-1:0] cmd_adj_count_i
     , input logic [gbp_pkg::STATE_WORDS_W-1:0] cmd_state_words_i
     , input logic [gbp_pkg::SPM_ADDR_W-1:0]  cmd_state_base_i
+    , input logic [gbp_pkg::MAX_ADJ_COUNT-1:0][gbp_pkg::DOF_W-1:0] cmd_neighbor_dofs_i
     , output logic       cmd_ready_o
 
     // Neighbor state stream
@@ -56,6 +57,7 @@ module gbp_pe_compute_subsystem_top (
     ,.cmd_adj_count_i(cmd_adj_count_i)
     ,.cmd_state_words_i(cmd_state_words_i)
     ,.cmd_state_base_i(cmd_state_base_i)
+    ,.cmd_neighbor_dofs_i(cmd_neighbor_dofs_i)
     ,.ns_valid_i(ns_valid_i)
     ,.ns_ready_o(ns_ready_o)
     ,.ns_data_i(ns_data_i)

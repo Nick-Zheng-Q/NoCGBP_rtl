@@ -50,7 +50,7 @@ static int test_single_node_scan(Vmetadata_scanner_top* dut) {
 
   // Drive command
   dut->cmd_valid_i = 1;
-  dut->cmd_node_id_i = 0x10;
+  dut->cmd_node_id_i = 0x08;  // header at addr 0x10 (0x08 * 2)
   dut->cmd_is_factor_i = 0;
 
   // Check cmd_ready at falling edge (combinational: state is IDLE → cmd_ready=1)
@@ -201,7 +201,7 @@ static int test_max_all_remote(Vmetadata_scanner_top* dut) {
   int pass = 1;
 
   dut->cmd_valid_i = 1;
-  dut->cmd_node_id_i = 0x30;
+  dut->cmd_node_id_i = 0x18;  // header at addr 0x30 (0x18 * 2)
   dut->cmd_is_factor_i = 0;
   tick(dut);
   dut->cmd_valid_i = 0;
@@ -269,7 +269,7 @@ static int test_max_all_local(Vmetadata_scanner_top* dut) {
   int pass = 1;
 
   dut->cmd_valid_i = 1;
-  dut->cmd_node_id_i = 0x20;
+  dut->cmd_node_id_i = 0x10;  // header at addr 0x20 (0x10 * 2)
   dut->cmd_is_factor_i = 0;
   tick(dut);
   dut->cmd_valid_i = 0;
@@ -334,7 +334,7 @@ static int test_spm_read_error_reset(Vmetadata_scanner_top* dut) {
 
   // Issue a command
   dut->cmd_valid_i = 1;
-  dut->cmd_node_id_i = 0x40;
+  dut->cmd_node_id_i = 0x20;  // header at addr 0x40 (0x20 * 2)
   dut->cmd_is_factor_i = 0;
   tick(dut);
   dut->cmd_valid_i = 0;

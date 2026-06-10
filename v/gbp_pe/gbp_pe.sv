@@ -51,6 +51,7 @@ module gbp_pe
     , input logic wb_cmd_is_factor_i
     , input logic [DOF_W-1:0] wb_cmd_dof_i
     , input logic [ADJ_COUNT_W-1:0] wb_cmd_adj_count_i
+    , input logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0] wb_cmd_neighbor_dofs_i
     , input logic [STATE_WORDS_W-1:0] wb_cmd_state_words_i
     , input logic [MAX_ADJ_COUNT-1:0] wb_cmd_adj_is_local_i
     , input logic [MAX_ADJ_COUNT-1:0][X_CORD_W-1:0] wb_cmd_adj_neighbor_xs_i
@@ -238,6 +239,7 @@ module gbp_pe
   logic [ADJ_COUNT_W-1:0] ctrl_cmd_adj_count;
   logic [STATE_WORDS_W-1:0] ctrl_cmd_state_words;
   logic [SPM_ADDR_W-1:0]  ctrl_cmd_state_base;
+  logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0] ctrl_cmd_neighbor_dofs;
 
   logic [ADJ_COUNT_W-1:0] ctrl_wb_adj_count;
   logic [MAX_ADJ_COUNT-1:0][NODE_ID_W-1:0] ctrl_wb_adj_neighbor_ids;
@@ -295,6 +297,7 @@ module gbp_pe
     ,.cmd_adj_count_o(ctrl_cmd_adj_count)
     ,.cmd_state_words_o(ctrl_cmd_state_words)
     ,.cmd_state_base_o(ctrl_cmd_state_base)
+    ,.cmd_neighbor_dofs_o(ctrl_cmd_neighbor_dofs)
     ,.wb_adj_count_o(ctrl_wb_adj_count_ctrl)
     ,.wb_adj_neighbor_ids_o(ctrl_wb_adj_neighbor_ids_ctrl)
     ,.wb_adj_neighbor_xs_o(ctrl_wb_adj_neighbor_xs_ctrl)
@@ -311,6 +314,15 @@ module gbp_pe
     ,.reset_valid_i(ctrl_reset_valid)
     ,.reset_node_id_i(ctrl_reset_node_id)
     ,.reset_is_factor_i(ctrl_reset_is_factor)
+`ifdef GBP_WHITEBOX_TEST
+    ,.wb_ms_cmd_valid_i(wb_cmd_valid_i)
+    ,.wb_ms_cmd_node_id_i(wb_cmd_node_id_i)
+    ,.wb_ms_cmd_is_factor_i(wb_cmd_is_factor_i)
+`else
+    ,.wb_ms_cmd_valid_i(1'b0)
+    ,.wb_ms_cmd_node_id_i('0)
+    ,.wb_ms_cmd_is_factor_i(1'b0)
+`endif
     ,.spm_rd_valid_o(ctrl_spm_rd_valid)
     ,.spm_rd_ready_i(ctrl_spm_rd_ready)
     ,.spm_rd_addr_o(ctrl_spm_rd_addr)
@@ -418,6 +430,7 @@ module gbp_pe
   logic [ADJ_COUNT_W-1:0] comp_cmd_adj_count;
   logic [STATE_WORDS_W-1:0] comp_cmd_state_words;
   logic [SPM_ADDR_W-1:0]  comp_cmd_state_base;
+  logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0] comp_cmd_neighbor_dofs;
 
   logic                 comp_ns_valid;
   logic                 comp_ns_ready;
@@ -451,6 +464,13 @@ module gbp_pe
   assign comp_cmd_is_factor    = wb_cmd_is_factor_i;
   assign comp_cmd_dof          = wb_cmd_dof_i;
   assign comp_cmd_adj_count    = wb_cmd_adj_count_i;
+  assign comp_cmd_neighbor_dofs = wb_cmd_neighbor_dofs_i;
+
+  always_ff @(posedge clk_i) begin
+    if (wb_cmd_valid_i) begin
+      $display("GBP_PE_DBG: wb_cmd_adj_count_i=%d comp_cmd_adj_count=%d", wb_cmd_adj_count_i, comp_cmd_adj_count);
+    end
+  end
   assign comp_cmd_state_words  = wb_cmd_state_words_i;
   assign comp_cmd_state_base   = SPM_ADDR_W'(wb_cmd_node_id_i) << 4;
   assign wb_cmd_ready_o        = comp_cmd_ready;
@@ -509,6 +529,7 @@ module gbp_pe
   assign comp_cmd_adj_count    = ctrl_cmd_adj_count;
   assign comp_cmd_state_words  = ctrl_cmd_state_words;
   assign comp_cmd_state_base   = ctrl_cmd_state_base;
+  assign comp_cmd_neighbor_dofs = ctrl_cmd_neighbor_dofs;
   assign ctrl_cmd_ready        = comp_cmd_ready;
   assign ctrl_wb_adj_count     = ctrl_wb_adj_count_ctrl;
   assign ctrl_wb_adj_is_local  = ctrl_wb_adj_is_local_ctrl;
@@ -551,6 +572,7 @@ module gbp_pe
     ,.cmd_adj_count_i(comp_cmd_adj_count)
     ,.cmd_state_words_i(comp_cmd_state_words)
     ,.cmd_state_base_i(comp_cmd_state_base)
+    ,.cmd_neighbor_dofs_i(comp_cmd_neighbor_dofs)
     ,.ns_valid_i(comp_ns_valid)
     ,.ns_ready_o(comp_ns_ready)
     ,.ns_data_i(comp_ns_data)

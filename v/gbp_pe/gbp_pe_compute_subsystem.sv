@@ -30,6 +30,7 @@ module gbp_pe_compute_subsystem
     input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
     input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
     input  logic [SPM_ADDR_W-1:0]  cmd_state_base_i,
+    input  logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0] cmd_neighbor_dofs_i,
 
     // Neighbor state from accumulator
     input  logic                 ns_valid_i,
@@ -97,6 +98,8 @@ module gbp_pe_compute_subsystem
     ,.cmd_dof_i(cmd_dof_i)
     ,.cmd_adj_count_i(cmd_adj_count_i)
     ,.cmd_state_words_i(cmd_state_words_i)
+    ,.cmd_state_base_i(cmd_state_base_i)
+    ,.cmd_neighbor_dofs_i(cmd_neighbor_dofs_i)
     ,.ns_valid_i(ns_valid_i)
     ,.ns_ready_o(ns_ready_o)
     ,.ns_data_i(ns_data_i)

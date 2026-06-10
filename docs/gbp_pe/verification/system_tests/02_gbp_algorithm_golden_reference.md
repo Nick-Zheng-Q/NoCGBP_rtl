@@ -1,8 +1,8 @@
 # GBP Algorithm Golden Reference Test
 
-> **Status**: 🟡 **Planned** — document complete; Python golden reference model and RTL testbench not yet implemented.
+> **Status**: 🔴 **REQUIRED** — document complete; Python golden reference model complete. **RTL testbench implementation is blocked by missing factor node compute path.**
 >
-> **Priority**: C (after Directions A and B pass).
+> **Priority**: A (must pass for algorithmic correctness).
 
 ## 1. Test Objective
 

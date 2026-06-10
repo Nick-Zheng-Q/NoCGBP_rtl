@@ -153,12 +153,13 @@ cycle C+1:
 
 cycle C+2 .. C+1+adj_count:
   For each AdjEntry[i]:
-    SPM returns {neighbor_id, neighbor_x, neighbor_y}.
-    Classify: is_local = (neighbor_x == self_x) && (neighbor_y == self_y).
+    SPM returns {neighbor_id, neighbor_x, neighbor_y, neighbor_dof, is_local}.
+    is_local is read directly from fwd_edge_t.is_local (pre-computed at load time).
     Output adj_valid stream to ScoreboardPrefetcher and local_neighbor_state_reader.
     For remote edges: ScoreboardPrefetcher immediately marks edge NOTIFIED and
       issues FETCH_REQUEST (if scoreboard has space).
     For local edges: ScoreboardPrefetcher immediately marks edge READY.
+    Factor node control FSM accumulates msg_offset[i] and msg_words[i] from neighbor_dof.
 
 cycle C+2+adj_count:
   adj_last asserted for final AdjEntry.
@@ -170,7 +171,7 @@ cycle C+2+adj_count:
 
 **Bank conflict mitigation**: NodeHeader and AdjEntry list should be placed in different banks by the graph compiler (adj_base should not alias header bank).
 
-**Local edge READY initialization**: During SCAN, when Metadata Scanner classifies an AdjEntry as local, it asserts `adj_valid` with `adj_is_local = 1`. The ScoreboardPrefetcher immediately sets that edge to READY state. Local edges never require a fetch request.
+**Local edge READY initialization**: During SCAN, Metadata Scanner reads `is_local` directly from `fwd_edge_t.is_local` (pre-computed at load time) and asserts `adj_valid` with `adj_is_local = 1` for local edges. The ScoreboardPrefetcher immediately sets that edge to READY state. Local edges never require a fetch request.
 
 **Remote edge FETCH on SCAN**: During SCAN, each remote AdjEntry causes `adj_valid` to be asserted. The ScoreboardPrefetcher:
 1. Registers the edge (unless the node is already ready — dedup guard)
@@ -280,15 +281,27 @@ Variable node (schedule_vn):
   Issue write descriptor for belief → stream out via wr_word_valid/wr_word_data
 
 Factor node (schedule_fn):
-  Issue read descriptor → stream in via rd_beat_valid/rd_beat_data (per-edge messages in STATE)
+  // Step 1: Read factor's own STATE (per-edge old messages + measurement + Jacobian)
+  Issue read descriptor → stream in via rd_beat_valid/rd_beat_data
+    - First adj_count segments: per-edge old messages (each sized by msg_words[i])
+    - Next segment: measurement
+    - Final segment: Jacobian
+
+  // Step 2: Accumulate incoming neighbor beliefs (via accumulator)
   [ROBUSTIFY] (if applicable)
   [RELINEARIZE] (if applicable)
-  MAT_ADD total
-  For each edge:
-    MAT_SUB cavity (reads from STATE)
+  MAT_ADD total (build joint belief from measurement + Jacobian + incoming messages)
+
+  // Step 3: Per-edge message computation
+  For each edge i (0 .. adj_count-1):
+    // Extract cavity = joint - variable_i's contribution
+    MAT_SUB cavity
     MAT_INV cavity
-    MAT_MUL msg
-    STORE msg to SPM STATE
+    MAT_MUL msg (Schur complement to extract message for variable i)
+    DAMPING: msg_new = (1-damping)*msg_new + damping*msg_old[i]
+    // Writeback
+    STORE msg_new to SPM STATE at msg_addr[i] (factor's own per-edge message slot)
+    // Notification sent by Writeback Controller after all edges complete
 ```
 
 **Completion**: Compute Unit asserts `done_valid` with `done_node_id` and `done_is_factor`.
@@ -418,10 +431,9 @@ NoC Adapter RX ──[affected_valid, affected_local_id]──▶ Node Scheduler
 Phase Controller ──[phase_factor_first, visited_mask]──▶ Node Scheduler
 Node Scheduler ──[sched_valid, sched_node_id, sched_is_factor]──▶ Metadata Scanner (cmd_* inputs)
 Metadata Scanner ──[cmd_ready]──▶ Node Scheduler (sched_ready input)
-Metadata Scanner ──[adj_valid, adj_neighbor_*, adj_is_local, adj_last, adj_edge_idx]──▶ ScoreboardPrefetcher
+Metadata Scanner ──[adj_valid, adj_neighbor_*, adj_neighbor_dof, adj_is_local, adj_last, adj_edge_idx, adj_current_node_id]──▶ ScoreboardPrefetcher / Fetch Subsystem
 ScoreboardPrefetcher ──[adj_ready]──▶ Metadata Scanner (backpressure)
-Metadata Scanner ──[info_valid, info_dof, info_adj_count, info_state_words]──▶ Compute Unit (cmd_* inputs)
-Metadata Scanner ──[info_state_base]──▶ PE controller / stream engine (for descriptor base_addr, not direct compute_unit input)
+Metadata Scanner ──[info_valid, info_dof, info_adj_count, info_state_words, info_state_base]──▶ Compute Unit / PE controller (cmd_* inputs)
 Accumulator ──[out_valid, out_data, out_last, accumulator_done]──▶ Compute Unit / PE controller
 Compute Unit ──[done_valid, done_node_id, done_is_factor]──▶ Writeback Controller
 Compute Unit ──[batch_done]──▶ Response Collector

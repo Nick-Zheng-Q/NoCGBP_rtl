@@ -23,7 +23,7 @@ package gbp_pkg;
   parameter int unsigned MAX_ADJ_COUNT    = 8;
   parameter int unsigned ADJ_COUNT_W      = 4;  // >= $clog2(MAX_ADJ_COUNT)
   parameter int unsigned DOF_W            = 4;
-  parameter int unsigned STATE_WORDS_W    = 6;  // max 64 words per state block
+  parameter int unsigned STATE_WORDS_W    = 9;  // max 512 words per state block
 
   // -- Data width --
   parameter int unsigned FP32_W    = 32;

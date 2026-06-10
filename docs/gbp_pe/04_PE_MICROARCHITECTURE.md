@@ -71,15 +71,19 @@ Selects which node to compute within the current phase.
 **State** (v2):
 - `pending_queue`: FIFO of local_ids enqueued by reverse_index_lookup. Replaces the unscalable per-node dirty_mask.
 
-**Policies** (configurable at runtime):
+**Policies** (hardware-implemented fixed logic):
 
-| Policy | Logic |
-|--------|-------|
-| `"rr"` (default) | Round-robin scan from `next_index`, pick first unvisited node where `node_ready \|\| in_pending_queue` |
-| `"dirty_age"` | Scan window, pick node with oldest `latest_dirty_cycle` |
-| `"dirty_age_cap"` | Default RR, but promote if dirty time > threshold |
-| `"hybrid_rr_da"` | Every N-th pick uses dirty-age, others use RR |
-| `"residual"` | Pick node with highest `var_t_values[]` (PE-local RSM) |
+The scheduler policy is **not runtime-configurable**. It is fixed hardware logic, currently round-robin v1:
+
+| Policy | Logic | Status |
+|--------|-------|--------|
+| `"rr"` (v1) | Round-robin scan from `next_index`, pick first unvisited node where `node_ready \|\| in_pending_queue` | **Implemented** |
+| `"dirty_age"` | Scan window, pick node with oldest `latest_dirty_cycle` | Reserved for future |
+| `"dirty_age_cap"` | Default RR, but promote if dirty time > threshold | Reserved for future |
+| `"hybrid_rr_da"` | Every N-th pick uses dirty-age, others use RR | Reserved for future |
+| `"residual"` | Pick node with highest `var_t_values[]` (PE-local RSM) | Reserved for future |
+
+> **No policy selection port exists**. Changing the scheduling policy requires RTL modification.
 
 **Readiness check**: A node is schedulable when it is **unvisited** AND (**ready** OR **in pending_queue**).
 
@@ -97,8 +101,8 @@ When a node is selected, it is dequeued from pending_queue (if present). If the 
 Flow (v2 — uses Forward CSR from SPM):
 
 1. Read current node's `S1NodeHeader` from SPM.
-2. Extract `dof`, `fwd_len`, `fwd_base`, `state_base`, `state_words`.
-3. Scan `FwdEdgeArray[fwd_base ... fwd_base + fwd_len - 1]`.
+2. Extract `dof`, `adj_count`, `adj_base`, `state_base`, `state_words`.
+3. Scan `FwdEdgeArray[adj_base ... adj_base + adj_count - 1]`.
 4. For each neighbor, `is_local` is read directly from `fwd_edge_t.is_local` (pre-computed at load time).
 
 ```
@@ -323,17 +327,18 @@ for each consuming neighbor (remote):
 
 ### 2.11 SPM Arbiter
 
-SPM clients (7), accessed through `gbp_pe_memory_subsystem`:
+SPM clients (8), accessed through `gbp_pe_memory_subsystem`:
 
 1. Metadata Scanner read (META — NodeHeader, AdjEntry) — from `gbp_pe_control_subsystem`
-2. Read Stream Engine read (STATE — current node + local neighbor, via descriptor + AGU) — from `gbp_pe_compute_subsystem`
-3. Read Stream Engine read (STAGING — remote neighbor state, via descriptor + AGU) — from `gbp_pe_compute_subsystem`
-4. Write Stream Engine write (STATE — compute result writeback, via descriptor + AGU) — from `gbp_pe_compute_subsystem`
-5. Pull Server read (STATE — respond to remote pulls) — leaf module in `gbp_pe`
-6. Response Collector write (STAGING — write pull response data) — from `gbp_pe_fetch_subsystem`
-7. DMA / loader (META + STATE — initialization) — external
+2. reverse_index_lookup read (META — RevKeyHash, RevHeader, RevEntryArray) — from `gbp_pe_control_subsystem`
+3. Read Stream Engine read (STATE — current node + local neighbor, via descriptor + AGU) — from `gbp_pe_compute_subsystem`
+4. Read Stream Engine read (STAGING — remote neighbor state, via descriptor + AGU) — from `gbp_pe_compute_subsystem`
+5. Write Stream Engine write (STATE — compute result writeback, via descriptor + AGU) — from `gbp_pe_compute_subsystem`
+6. Pull Server read (STATE — respond to remote pulls) — leaf module in `gbp_pe`
+7. Response Collector write (STAGING — write pull response data) — from `gbp_pe_fetch_subsystem`
+8. DMA / loader (META + STATE — initialization) — external
 
-Note: Clients 2-4 are driven by stream engines inside `gbp_pe_compute_subsystem`. The compute_unit itself does not directly drive the SPM Arbiter.
+Note: Clients 3-5 are driven by stream engines inside `gbp_pe_compute_subsystem`. The compute_unit itself does not directly drive the SPM Arbiter.
 
 First version: round-robin, no priority.
 
@@ -344,12 +349,12 @@ Bank conflict: if multiple requests hit same bank in same cycle, un-granted requ
 The four subsystem wrappers do not add new algorithms; they only encapsulate leaf-module instantiation and local handshakes.
 
 #### 2.12.1 `gbp_pe_control_subsystem`
-Encapsulates: `phase_controller`, `node_scheduler`, `metadata_scanner`.
+Encapsulates: `phase_controller`, `node_scheduler`, `metadata_scanner`, `reverse_index_lookup`.
 
 External interfaces:
 - To `gbp_pe_fetch_subsystem`: `node_ready` output, `reset_valid` input.
 - To `gbp_pe_compute_subsystem`: `cmd_valid/node_id/is_factor/dof/adj_count/state_words/state_base` output, `cmd_ready` input.
-- To `gbp_pe_memory_subsystem`: SPM read port for META region.
+- To `gbp_pe_memory_subsystem`: **Two SPM read ports** — port 0 for Forward CSR (Metadata Scanner), port 1 for Reverse CSR (reverse_index_lookup).
 - To `gbp_pe`: `sched_valid`, `no_schedulable_nodes`, `wb_done`.
 
 #### 2.12.2 `gbp_pe_compute_subsystem`
@@ -430,7 +435,7 @@ Not decided by RTL alone. Format bitwidths jointly agreed by software graph comp
 parameter int DOF_W;
 parameter int DIM_W;           // max dof for NoC payload sizing (e.g., 8)
 parameter int ADJ_COUNT_W;
-parameter int STATE_WORDS_W = 6;  // ≥ $clog2(compact_words(MAX_DOF)+1), see 02_SPM_AND_METADATA.md §4.1
+parameter int STATE_WORDS_W = 9;  // ≥ $clog2(max_state_words+1), see 02_SPM_AND_METADATA.md §6.1
 ```
 
 ### 3.3 Runtime Metadata Values

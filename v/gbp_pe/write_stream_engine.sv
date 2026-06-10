@@ -86,7 +86,7 @@ module write_stream_engine
   logic                                  beat_full;
   logic                                  partial_beat_trigger;
 
-  assign word_ready_o = active_r && ~all_words_received_r;
+  assign word_ready_o = active_r && ~all_words_received_r && !write_pending_r;
 
   always_ff @(posedge clk_i) begin
     if (!rst_n_i) begin
@@ -94,11 +94,12 @@ module write_stream_engine
       word_cnt_r   <= '0;
       beat_assembler_r <= '0;
     end else begin
-      if (desc_valid_i && desc_ready_o) begin
+      if (desc_valid_i && desc_ready_o && !(word_valid_i && word_ready_o)) begin
         word_idx_r   <= '0;
         word_cnt_r   <= '0;
         beat_assembler_r <= '0;
-      end else if (word_valid_i && word_ready_o) begin
+      end
+      if (word_valid_i && word_ready_o) begin
         beat_assembler_r[word_idx_r] <= word_data_i;
         word_idx_r <= word_idx_r + 1'b1;
         word_cnt_r <= word_cnt_r + 16'd1;

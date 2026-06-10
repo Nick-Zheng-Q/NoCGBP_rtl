@@ -12,7 +12,7 @@ module gbp_compute_engine
     parameter int LANES = 16,
     parameter int MAX_DOFS = 6,
     parameter int MAX_ADJACENT = 8,
-    parameter int STAGING_DEPTH = 128,
+    parameter int STAGING_DEPTH = 1024,
     parameter int FP_EXP_WIDTH_P = 8,
     parameter int FP_MANT_WIDTH_P = 23,
     parameter int DIV_BITS_PER_ITER_P = 1
@@ -27,6 +27,8 @@ module gbp_compute_engine
     input  logic [2:0]         cmd_dofs_i,        // Node dimension (2, 3, or 6)
     input  logic [3:0]         cmd_adj_count_i,   // Number of adjacent nodes
     input  logic [3:0]         cmd_msg_count_i,   // 本轮需要消费的 message 条数
+    input  logic [MAX_ADJACENT-1:0][2:0] cmd_neighbor_dofs_i, // Per-edge DOF for factor nodes
+    input  logic [9:0]         cmd_state_words_i, // STATE words count for load/store
     input  logic [15:0]        cmd_wr_xfer_bytes_i,
     output logic               cmd_ready_o,
     output logic               compute_done_o,
@@ -52,19 +54,21 @@ module gbp_compute_engine
 
   localparam int ADDR_W = $clog2(STAGING_DEPTH);
 
+  // Strict compact form: words = dof + dof*(dof+1)/2
+  // Beats = ceil(words / 8)
+  function automatic int compact_words(input logic [2:0] dofs);
+    begin
+      compact_words = int'(dofs) + (int'(dofs) * (int'(dofs) + 1)) / 2;
+    end
+  endfunction
+
   function automatic logic [15:0] compact_payload_beats(
       input logic [2:0] dofs
   );
+    int words;
     begin
-      unique case (dofs)
-        3'd1,
-        3'd2: compact_payload_beats = 16'd1;
-        3'd3,
-        3'd4: compact_payload_beats = 16'd2;
-        3'd5: compact_payload_beats = 16'd3;
-        3'd6: compact_payload_beats = 16'd4;
-        default: compact_payload_beats = 16'd0;
-      endcase
+      words = compact_words(dofs);
+      compact_payload_beats = 16'((words + 7) / 8);
     end
   endfunction
 
@@ -76,17 +80,18 @@ module gbp_compute_engine
     end
   endfunction
 
+  // Accumulate beats for messages with potentially different sizes (per-edge DOF)
   function automatic logic [15:0] accumulate_message_beats(
       input logic [3:0] msg_count,
-      input logic [15:0] beats_per_message
+      input logic [MAX_ADJACENT-1:0][2:0] neighbor_dofs
   );
     logic [15:0] total;
     int unsigned idx;
     begin
       total = 16'd0;
-      for (idx = 0; idx < 16; idx = idx + 1) begin
+      for (idx = 0; idx < MAX_ADJACENT; idx = idx + 1) begin
         if (idx < msg_count) begin
-          total = total + beats_per_message;
+          total = total + compact_payload_beats(neighbor_dofs[idx]);
         end
       end
       accumulate_message_beats = total;
@@ -135,9 +140,9 @@ module gbp_compute_engine
   logic [ADDR_W-1:0]  mat_cmd_base_a;
   logic [ADDR_W-1:0]  mat_cmd_base_b;
   logic [ADDR_W-1:0]  mat_cmd_base_dest;
-  logic [3:0]         mat_cmd_m;
-  logic [3:0]         mat_cmd_n;
-  logic [3:0]         mat_cmd_k;
+  logic [5:0]         mat_cmd_m;
+  logic [5:0]         mat_cmd_n;
+  logic [5:0]         mat_cmd_k;
   logic               mat_cmd_ready;
   logic               mat_done;
   logic               mat_done_r;  // Sampling register for Verilator
@@ -152,7 +157,6 @@ module gbp_compute_engine
   logic               stream_out_hs;
   logic [15:0]        stream_target_beats;
   logic [15:0]        state_target_beats;
-  logic [15:0]        message_target_beats;
   logic [15:0]        stream_in_beats_r, stream_in_beats_n;
   logic [15:0]        stream_out_beats_r, stream_out_beats_n;
   logic               stream_dir_out_r, stream_dir_out_n;
@@ -172,10 +176,16 @@ module gbp_compute_engine
   logic [ADDR_W-1:0]  gbp_buf_wr_addr;
   logic [255:0]       gbp_buf_wr_data;
   logic               gbp_buf_wr_valid;
-  logic [2:0]         cmd_dofs_r;
+  logic               gbp_internal_rd_valid;
+  logic [ADDR_W-1:0]  gbp_internal_rd_addr;
+  logic [255:0]       gbp_internal_rd_data;
   logic [3:0]         cmd_msg_count_r;
-  logic [15:0]              cmd_wr_xfer_bytes_r;
-  logic [ADDR_W-1:0]       stream_out_base_addr;
+  logic [15:0]        cmd_wr_xfer_bytes_r;
+  logic [15:0]        cmd_stream_xfer_bytes_r;
+  logic [MAX_ADJACENT-1:0][2:0] cmd_neighbor_dofs_r;
+  logic [9:0]         cmd_state_words_r;
+  logic               cmd_is_factor_r;
+  logic [ADDR_W-1:0]  stream_out_base_addr;
   
   // SIMD array signals
   logic [LANES-1:0]             simd_op_add;
@@ -315,6 +325,8 @@ module gbp_compute_engine
     .cmd_dofs(cmd_dofs_i),
     .cmd_adj_count(cmd_adj_count_i),
     .cmd_msg_count(cmd_msg_count_i),
+    .cmd_neighbor_dofs(cmd_neighbor_dofs_i),
+    .cmd_state_words(cmd_state_words_i),
     .cmd_ready(cmd_ready_o),
     .done_o(rsp_done_o),
     
@@ -346,7 +358,10 @@ module gbp_compute_engine
     .buf_wr_addr(gbp_buf_wr_addr),
     .buf_wr_data(gbp_buf_wr_data),
     .buf_wr_valid(gbp_buf_wr_valid),
-    
+    .internal_rd_valid(gbp_internal_rd_valid),
+    .internal_rd_addr(gbp_internal_rd_addr),
+    .internal_rd_data(gbp_internal_rd_data),
+
     .damping_factor(damping_factor_i)
   );
   
@@ -360,27 +375,44 @@ module gbp_compute_engine
   assign gbp_stream_in_data = stream_in_data;
   
   // Buffer write: Connect GBP control FSM to staging buffer
-  assign buf_stream_wr_valid = gbp_buf_wr_valid;
-  assign buf_stream_wr_data = gbp_buf_wr_data;
-  assign buf_stream_wr_addr = stream_wr_addr_r;
-  
+  // Include start_input_stream to capture the first beat before stream_active_r is set
+  logic stream_wr_sel;
+  assign stream_wr_sel = stream_active_r || start_input_stream;
+  assign buf_stream_wr_valid = stream_wr_sel ? stream_in_hs : gbp_buf_wr_valid;
+  assign buf_stream_wr_data  = stream_wr_sel ? stream_in_data : gbp_buf_wr_data;
+  assign buf_stream_wr_addr  = stream_wr_sel ? (start_input_stream ? ADDR_W'(0) : stream_wr_addr_r) : gbp_buf_wr_addr;
+
+  // Internal read data for FSM
+  assign gbp_internal_rd_data = buf_stream_rd_data;
+
   // Output stream: store state/message 时从 staging_buffer 逐 beat 读出真实结果。
   assign stream_out_valid = gbp_stream_out_valid;
   assign gbp_stream_out_ready = stream_out_ready;
   assign stream_out_base_addr = gbp_stream_out_data[ADDR_W-1:0];
-  assign buf_stream_rd_valid = (stream_active_r && stream_dir_out_r) || start_output_stream;
-  assign buf_stream_rd_addr = stream_out_base_addr
-                              + ADDR_W'((start_output_stream ? 16'd0 : stream_out_beats_r) << 3);
+  // Internal read takes priority over output stream when FSM needs direct buffer access
+  assign buf_stream_rd_valid = gbp_internal_rd_valid
+                               || ((stream_active_r && stream_dir_out_r) || start_output_stream);
+  assign buf_stream_rd_addr = gbp_internal_rd_valid
+                              ? gbp_internal_rd_addr
+                              : stream_out_base_addr
+                                + ADDR_W'((start_output_stream ? 16'd0 : stream_out_beats_r) << 3);
   assign stream_out_data = buf_stream_rd_data;
   
   // Stream grant/done (simplified - always grant for now)
   assign gbp_stream_grant = 1'b1;
   // stream_done 必须对应整条 xfer 完成，不能把单 beat 握手误判成整次传输结束。
-  assign state_target_beats = compact_payload_beats(cmd_dofs_r);
-  assign message_target_beats = compact_payload_beats(cmd_dofs_r);
+  assign state_target_beats = bytes_to_beats(cmd_stream_xfer_bytes_r);
+  // Factor path: state already includes old messages; do NOT add message beats.
+  // Variable path: state (prior) + messages are separate streams.
   assign stream_target_beats =
       stream_dir_out_r ? bytes_to_beats(cmd_wr_xfer_bytes_r)
-                       : (state_target_beats + accumulate_message_beats(cmd_msg_count_r, message_target_beats));
+                       : (cmd_is_factor_r
+                          ? state_target_beats
+                          : ((gbp_stream_req_state && gbp_stream_req_messages)
+                             ? (state_target_beats + accumulate_message_beats(cmd_msg_count_r, cmd_neighbor_dofs_r))
+                             : (gbp_stream_req_state ? state_target_beats
+                                : (gbp_stream_req_messages ? accumulate_message_beats(cmd_msg_count_r, cmd_neighbor_dofs_r)
+                                   : 16'd0))));
 
   assign stream_in_hs =
       ((stream_active_r && !stream_dir_out_r) || start_input_stream)
@@ -398,9 +430,11 @@ module gbp_compute_engine
       || ((stream_dir_out_r || start_output_stream)
           && stream_out_hs
           && ((start_output_stream ? 16'd1 : (stream_out_beats_r + 16'd1)) >= stream_target_beats));
-  
+
   // Compute done (pulse when computation completes)
   logic compute_done_r;
+  logic               cmd_accepted_r;  // pulse: command was accepted previous cycle
+
   always_ff @(posedge clk_i) begin
     if (reset_i) begin
       compute_done_r <= 1'b0;
@@ -409,9 +443,13 @@ module gbp_compute_engine
       stream_dir_out_r <= 1'b0;
       stream_active_r <= 1'b0;
       stream_wr_addr_r <= '0;
-      cmd_dofs_r <= '0;
       cmd_msg_count_r <= '0;
       cmd_wr_xfer_bytes_r <= '0;
+      cmd_stream_xfer_bytes_r <= '0;
+      cmd_neighbor_dofs_r <= '0;
+      cmd_state_words_r <= '0;
+      cmd_is_factor_r <= 1'b0;
+      cmd_accepted_r <= 1'b0;
     end else begin
       compute_done_r <= rsp_done_o;
       stream_in_beats_r <= stream_in_beats_n;
@@ -419,10 +457,17 @@ module gbp_compute_engine
       stream_dir_out_r <= stream_dir_out_n;
       stream_active_r <= stream_active_n;
       stream_wr_addr_r <= stream_wr_addr_n;
+      cmd_accepted_r <= (cmd_valid_i && cmd_ready_o);
       if (cmd_valid_i && cmd_ready_o) begin
-        cmd_dofs_r <= cmd_dofs_i;
         cmd_msg_count_r <= cmd_msg_count_i;
         cmd_wr_xfer_bytes_r <= cmd_wr_xfer_bytes_i;
+        cmd_neighbor_dofs_r <= cmd_neighbor_dofs_i;
+        cmd_state_words_r <= cmd_state_words_i;
+        cmd_is_factor_r <= cmd_is_factor_i;
+      end
+      // Capture stream_xfer_bytes one cycle after cmd accepted (FSM now in load state)
+      if (cmd_accepted_r) begin
+        cmd_stream_xfer_bytes_r <= gbp_stream_xfer_bytes;
       end
     end
   end

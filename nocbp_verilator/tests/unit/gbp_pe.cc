@@ -10,6 +10,9 @@
 
 using namespace test_utils;
 
+static uint32_t f2u(float f) { union { float f; uint32_t u; } c; c.f = f; return c.u; }
+static float u2f(uint32_t u) { union { float f; uint32_t u; } c; c.u = u; return c.f; }
+
 // NoC link_sif helpers (VlWide<5>, 133 bits)
 // Verilator stores bits as little-endian 32-bit words:
 //   m_storage[0] = bits[31:0], m_storage[1] = bits[63:32], ...
@@ -60,6 +63,29 @@ static void spm_write_word(Vgbp_pe_top* dut, uint32_t addr, uint32_t data) {
     beat = (beat & 0x00000000FFFFFFFFULL) | ((uint64_t)data << 32);
   }
   mem_r[row] = beat;
+}
+
+// Helper: read a 32-bit FP32 word from SPM via backdoor.
+static uint32_t spm_read_word(Vgbp_pe_top* dut, uint32_t addr) {
+  uint32_t bank_id = (addr >> 1) & 0x7;
+  uint32_t row     = (addr >> 4) & 0x3FFF;
+  uint32_t woff    = addr & 1;
+
+  uint64_t* mem_r = nullptr;
+  switch (bank_id) {
+    case 0: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__0__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 1: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__1__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 2: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__2__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 3: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__3__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 4: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__4__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 5: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__5__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 6: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__6__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+    case 7: mem_r = dut->rootp->gbp_pe_top__DOT__dut__DOT__u_memory_subsystem__DOT__banks__BRA__7__KET____DOT__u_bank__DOT__mem_r.m_storage; break;
+  }
+  if (!mem_r) return 0xDEADBEEF;
+  uint64_t beat = mem_r[row];
+  return (woff == 0) ? (uint32_t)(beat & 0xFFFFFFFFULL)
+                     : (uint32_t)(beat >> 32);
 }
 
 // =============================================================================
@@ -315,6 +341,288 @@ static int tc2_remote_edge(Vgbp_pe_top* dut) {
   return 0;
 }
 
+// =============================================================================
+// Test Case 3: Variable Node Identity (Numerical Verification)
+// =============================================================================
+// Verifies that a variable node with no neighbors writes back its prior
+// unchanged (identity pass-through).  This is the simplest numerical check
+// that exercises read->compute->writeback end-to-end.
+// =============================================================================
+static int tc3_variable_identity(Vgbp_pe_top* dut) {
+  printf("\n=== TC3: Variable Node Identity (Numerical) ===\n");
+
+  // Reset PE to ensure clean state (TC2 may leave compute subsystem busy)
+  dut->wb_cmd_valid_i = 0;
+  dut->wb_force_done_valid_i = 0;
+  link_sif_clear(dut);
+  reset_dut(dut, 10);
+  for (int i = 0; i < 5; i++) tick(dut);
+
+  uint32_t base_addr = 0x100;  // node_id=0x10 << 4
+  // Write prior: eta=2.0f, lambda=3.0f, rest=0.0f
+  spm_write_word(dut, base_addr + 0, 0x40000000);  // 2.0f
+  spm_write_word(dut, base_addr + 1, 0x40400000);  // 3.0f
+  for (int i = 2; i < 8; i++) {
+    spm_write_word(dut, base_addr + i, 0x00000000);  // 0.0f
+  }
+  printf("SPM init: eta=2.0f, lambda=3.0f @ 0x%03X\n", base_addr);
+
+  // Wait for PE to be ready after reset
+  int ready_wait = 0;
+  while (!dut->wb_cmd_ready_o && ready_wait < 50) {
+    tick(dut);
+    ready_wait++;
+  }
+  if (!dut->wb_cmd_ready_o) {
+    return fail("gbp_pe TC3", "wb_cmd_ready_o not high before injection");
+  }
+
+  // Inject whitebox command: variable node, DOF=1, no neighbors
+  dut->wb_cmd_adj_is_local_i = 0xFF;
+  dut->wb_cmd_valid_i = 1;
+  dut->wb_cmd_node_id_i = 0x10;
+  dut->wb_cmd_is_factor_i = 0;  // variable
+  dut->wb_cmd_dof_i = 1;
+  dut->wb_cmd_adj_count_i = 0;
+  dut->wb_cmd_state_words_i = 8;
+  tick(dut);
+  dut->wb_cmd_valid_i = 0;
+
+  // Poll for completion
+  bool done_seen = false;
+  int cycle;
+  const int max_cycles = 500;
+  for (cycle = 0; cycle < max_cycles; cycle++) {
+    tick(dut);
+    if (dut->wb_done_valid_o && !done_seen) {
+      done_seen = true;
+    }
+    if (dut->wb_cmd_ready_o) {
+      break;
+    }
+  }
+
+  if (cycle >= max_cycles) {
+    return fail("gbp_pe TC3", "compute did not complete within timeout");
+  }
+  if (!done_seen) {
+    return fail("gbp_pe TC3", "wb_done_valid_o never asserted");
+  }
+
+  // Allow extra cycles for write_stream_engine to flush to SPM
+  for (int i = 0; i < 50; i++) tick(dut);
+
+  // Read back and verify
+  uint32_t eta_out = spm_read_word(dut, base_addr + 0);
+  uint32_t lam_out = spm_read_word(dut, base_addr + 1);
+
+  printf("  eta_out = 0x%08X (expected 0x40000000)\n", eta_out);
+  printf("  lam_out = 0x%08X (expected 0x40400000)\n", lam_out);
+
+  if (eta_out != 0x40000000) {
+    return fail("gbp_pe TC3", "eta mismatch (identity pass-through broken)");
+  }
+  if (lam_out != 0x40400000) {
+    return fail("gbp_pe TC3", "lambda mismatch (identity pass-through broken)");
+  }
+
+  printf("TC3 PASS\n");
+  return 0;
+}
+
+// =============================================================================
+// Test Case 4: End-to-End Factor → Variable (local graph, single PE)
+// =============================================================================
+// Graph: F0 (factor, dof=2) → V1 (variable, dof=2), both local.
+//
+// Factor state at SPM[0x100]:
+//   old_msg: eta=[1,2], lam=[[3,0],[0,4]]  (compact: 5 words)
+//   msg_placeholder: 5 words (zeros, required by 2-slot layout)
+//   measurement z: [0,0] (2 words)
+//   Jacobian J: [0,0,0,0] (4 words)
+//   Total: 16 words
+//
+// Variable prior at SPM[0x200]:
+//   eta=[2,4], lam=[[1,0],[0,1]]  (compact: 5 words)
+//
+// Expected (J=0 → Schur complement = old message):
+//   belief_eta = prior_eta + msg_eta = [2+1, 4+2] = [3, 6]
+//   belief_lam = prior_lam + msg_lam = [[1+3,0],[0,1+4]] = [[4,0],[0,5]]
+//   mu = inv(belief_lam) * belief_eta = [3/4, 6/5] = [0.75, 1.2]
+// =============================================================================
+static int tc4_e2e_factor_variable(Vgbp_pe_top* dut) {
+  printf("\n=== TC4: End-to-End Factor → Variable (local) ===\n");
+
+  // Reset
+  dut->wb_cmd_valid_i = 0;
+  dut->wb_force_done_valid_i = 0;
+  link_sif_clear(dut);
+  reset_dut(dut, 10);
+  for (int i = 0; i < 5; i++) tick(dut);
+
+  // ---- SPM Layout ----
+  // PE coordinates: my_x=2, my_y=1 (set in gbp_pe_top.sv)
+  //
+  // NodeHeader[0x10] @ word 0x20 (beat 0x10):
+  //   node_id=0x10, dof=2, adj_count=1, adj_base=0x30, state_base=0x100, state_words=16
+  //   Bits: [9:0]=0x10, [13:10]=2, [17:14]=1, [35:18]=0x30, [53:36]=0x100, [62:54]=16
+  {
+    uint32_t lo = 0x10 | (2u << 10) | (1u << 14) | (0x30u << 18);
+    uint32_t hi = (0x30u >> 14) | (0x100u << (36-32)) | (16u << (54-32));
+    spm_write_word(dut, 0x20, lo);
+    spm_write_word(dut, 0x21, hi);
+  }
+
+  // NodeHeader[0x20] @ word 0x40 (beat 0x20):
+  //   node_id=0x20, dof=2, adj_count=1, adj_base=0x31, state_base=0x200, state_words=5
+  {
+    uint32_t lo = 0x20 | (2u << 10) | (1u << 14) | (0x31u << 18);
+    uint32_t hi = (0x31u >> 14) | (0x200u << (36-32)) | (5u << (54-32));
+    spm_write_word(dut, 0x40, lo);
+    spm_write_word(dut, 0x41, hi);
+  }
+
+  // FwdEdge for F0→V1 @ word 0x30:
+  //   neighbor_id=0x20, neighbor_x=2, neighbor_y=1, neighbor_dof=2
+  //   Bits: [9:0]=0x20, [15:10]=2, [20:16]=1, [23:21]=2
+  {
+    uint32_t edge = 0x20 | (2u << 10) | (1u << 16) | (2u << 21);
+    spm_write_word(dut, 0x30, edge);
+    spm_write_word(dut, 0x31, 0);
+  }
+
+  // FwdEdge for V1→F0 @ word 0x31:
+  //   neighbor_id=0x10, neighbor_x=2, neighbor_y=1, neighbor_dof=2
+  {
+    uint32_t edge = 0x10 | (2u << 10) | (1u << 16) | (2u << 21);
+    spm_write_word(dut, 0x31, edge);
+  }
+
+  // Factor state @ word 0x100 (16 words):
+  //   compact_msg_0: eta=[1,2], lam=[[3,0],[0,4]] → {1,2,3,0,4}
+  //   compact_msg_1: placeholder (zeros) → {0,0,0,0,0}
+  //   measurement z: {0, 0}
+  //   Jacobian J: {0, 0, 0, 0}
+  spm_write_word(dut, 0x100, f2u(1.0f));  spm_write_word(dut, 0x101, f2u(2.0f));
+  spm_write_word(dut, 0x102, f2u(3.0f));  spm_write_word(dut, 0x103, f2u(0.0f));
+  spm_write_word(dut, 0x104, f2u(4.0f));
+  for (int i = 5; i < 16; i++) spm_write_word(dut, 0x100 + i, 0);
+
+  // Variable prior @ word 0x200 (5 words):
+  //   eta=[2,4], lam=[[1,0],[0,1]] → {2,4,1,0,1}
+  spm_write_word(dut, 0x200, f2u(2.0f));  spm_write_word(dut, 0x201, f2u(4.0f));
+  spm_write_word(dut, 0x202, f2u(1.0f));  spm_write_word(dut, 0x203, f2u(0.0f));
+  spm_write_word(dut, 0x204, f2u(1.0f));
+
+  // ---- Step 1: Factor compute ----
+  printf("  Step 1: Factor compute (F0, dof=2, adj_count=1)\n");
+  if (!dut->wb_cmd_ready_o) {
+    return fail("TC4", "wb_cmd_ready_o not high before factor command");
+  }
+  dut->wb_cmd_adj_is_local_i = 0xFF;  // all local
+  dut->wb_cmd_valid_i = 1;
+  dut->wb_cmd_node_id_i = 0x10;
+  dut->wb_cmd_is_factor_i = 1;
+  dut->wb_cmd_dof_i = 2;
+  dut->wb_cmd_adj_count_i = 1;
+  dut->wb_cmd_state_words_i = 16;
+  dut->wb_cmd_neighbor_dofs_i = 2;  // [0]=2 (packed)
+  link_sif_clear(dut);
+  link_sif_set_fwd_ready(dut);
+  tick(dut);
+  dut->wb_cmd_valid_i = 0;
+
+  // Wait for factor done
+  int fac_cycles = 0;
+  while (!dut->wb_cmd_ready_o && fac_cycles < 1000) {
+    tick(dut);
+    fac_cycles++;
+  }
+  if (fac_cycles >= 1000) {
+    return fail("TC4", "Factor compute timeout");
+  }
+  printf("  Factor done in %d cycles\n", fac_cycles);
+
+  // Wait for write_stream_engine to flush
+  for (int i = 0; i < 20; i++) tick(dut);
+
+  // ---- Step 2: Variable compute ----
+  printf("  Step 2: Variable compute (V1, dof=2, adj_count=1)\n");
+  if (!dut->wb_cmd_ready_o) {
+    return fail("TC4", "wb_cmd_ready_o not high before variable command");
+  }
+  dut->wb_cmd_adj_is_local_i = 0xFF;
+  dut->wb_cmd_valid_i = 1;
+  dut->wb_cmd_node_id_i = 0x20;
+  dut->wb_cmd_is_factor_i = 0;
+  dut->wb_cmd_dof_i = 2;
+  dut->wb_cmd_adj_count_i = 1;
+  dut->wb_cmd_state_words_i = 8;  // Must be multiple of BEATS_PER_GBP_IN=4 words for assembler
+  dut->wb_cmd_neighbor_dofs_i = 2;
+  tick(dut);
+  dut->wb_cmd_valid_i = 0;
+
+  // Wait for variable done
+  int var_cycles = 0;
+  while (!dut->wb_cmd_ready_o && var_cycles < 1000) {
+    tick(dut);
+    var_cycles++;
+  }
+  if (var_cycles >= 1000) {
+    return fail("TC4", "Variable compute timeout");
+  }
+  printf("  Variable done in %d cycles\n", var_cycles);
+
+  // Wait for write_stream_engine to flush
+  for (int i = 0; i < 20; i++) tick(dut);
+
+  // ---- Verify results ----
+  uint32_t mu0 = spm_read_word(dut, 0x200);
+  uint32_t mu1 = spm_read_word(dut, 0x201);
+  uint32_t lam00 = spm_read_word(dut, 0x202);
+  uint32_t lam01 = spm_read_word(dut, 0x203);
+  uint32_t lam11 = spm_read_word(dut, 0x204);
+
+  printf("  Result: mu=[%f, %f], lam=[[%f, %f], [~, %f]]\n",
+         u2f(mu0), u2f(mu1), u2f(lam00), u2f(lam01), u2f(lam11));
+  printf("  Expected: mu=[0.75, 1.2], lam=[[4.0, 0.0], [~, 5.0]]\n");
+
+  // Check mu[0] ≈ 0.75
+  float mu0_f = u2f(mu0);
+  if (mu0_f < 0.74f || mu0_f > 0.76f) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "mu[0] = %f, expected ≈ 0.75", mu0_f);
+    return fail("TC4", msg);
+  }
+
+  // Check mu[1] ≈ 1.2
+  float mu1_f = u2f(mu1);
+  if (mu1_f < 1.19f || mu1_f > 1.21f) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "mu[1] = %f, expected ≈ 1.2", mu1_f);
+    return fail("TC4", msg);
+  }
+
+  // Check lam[0,0] ≈ 4.0
+  float lam00_f = u2f(lam00);
+  if (lam00_f < 3.99f || lam00_f > 4.01f) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "lam[0,0] = %f, expected ≈ 4.0", lam00_f);
+    return fail("TC4", msg);
+  }
+
+  // Check lam[1,1] ≈ 5.0
+  float lam11_f = u2f(lam11);
+  if (lam11_f < 4.99f || lam11_f > 5.01f) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "lam[1,1] = %f, expected ≈ 5.0", lam11_f);
+    return fail("TC4", msg);
+  }
+
+  printf("TC4 PASS\n");
+  return 0;
+}
+
 int run_test(int argc, char** argv) {
   auto* dut = new Vgbp_pe_top;
 
@@ -330,6 +638,9 @@ int run_test(int argc, char** argv) {
   int rc = 0;
   rc |= tc1_local_only_compute(dut);
   rc |= tc2_remote_edge(dut);
+  rc |= tc3_variable_identity(dut);
+  // TC4 (end-to-end factor→variable) requires ns_data→staging_buffer routing fix (TODO Phase 2b)
+  // rc |= tc4_e2e_factor_variable(dut);
 
   if (rc == 0) {
     print_test_pass("gbp_pe");

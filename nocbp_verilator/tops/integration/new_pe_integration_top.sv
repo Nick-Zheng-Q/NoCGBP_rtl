@@ -136,6 +136,7 @@ module new_pe_integration_top (
     .cmd_dof_i(cmd_dof_i),
     .cmd_adj_count_i(cmd_adj_count_i),
     .cmd_state_words_i(cmd_state_words_i),
+    .cmd_neighbor_dofs_i({8{gbp_pkg::DOF_W'(2)}}),
     .ns_valid_i(ns_valid_i),
     .ns_ready_o(ns_ready_o),
     .ns_data_i(ns_data_i),
@@ -192,7 +193,7 @@ module new_pe_integration_top (
   for (genvar b = 0; b < NUM_BANKS; b++) begin : banks
     spm_bank #(.BANK_ID(b)) u_bank (
       .clk_i(clk_i),
-      .reset_i(~rst_n_i),
+      .rst_n_i(rst_n_i),
       .bank_rd_en(bank_rd_en[b]),
       .bank_rd_addr(bank_rd_addr[b]),
       .bank_rd_data(bank_rd_data[b]),

@@ -25,6 +25,8 @@ module compute_unit
     input  logic [DOF_W-1:0]     cmd_dof_i,
     input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
     input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
+    input  logic [SPM_ADDR_W-1:0]  cmd_state_base_i,
+    input  logic [MAX_ADJ_COUNT-1:0][DOF_W-1:0] cmd_neighbor_dofs_i,
 
     // ── Neighbor state (from Accumulator) ──
     input  logic                 ns_valid_i,
@@ -92,6 +94,7 @@ module compute_unit
   logic [2:0]         gbp_cmd_dofs;
   logic [3:0]         gbp_cmd_adj_count;
   logic [3:0]         gbp_cmd_msg_count;
+  logic [7:0][2:0]    gbp_cmd_neighbor_dofs;
   logic               gbp_compute_done;
   logic               gbp_rsp_done;
 
@@ -103,11 +106,17 @@ module compute_unit
   logic               stream_out_valid;
   logic [GBP_OUT_BITS-1:0] stream_out_data;
 
+  // Output disassembler always produces WORDS_PER_GBP_OUT (8) words per beat.
+  // write_stream_engine expects wr_desc_word_count_o words; the engine must
+  // output exactly one beat so that disassembler finishes cleanly.
+  localparam int WR_WORDS_PER_BEAT = 8;
+  localparam int WR_XFER_BYTES = WR_WORDS_PER_BEAT * 4;
+
   gbp_compute_engine #(
     .LANES(16),
     .MAX_DOFS(6),
     .MAX_ADJACENT(8),
-    .STAGING_DEPTH(128)
+    .STAGING_DEPTH(1024)
   ) u_engine (
     .clk_i(clk_i),
     .rst_n_i(rst_n_i),
@@ -117,7 +126,9 @@ module compute_unit
     .cmd_dofs_i(gbp_cmd_dofs),
     .cmd_adj_count_i(gbp_cmd_adj_count),
     .cmd_msg_count_i(gbp_cmd_msg_count),
-    .cmd_wr_xfer_bytes_i(16'd0),
+    .cmd_neighbor_dofs_i(gbp_cmd_neighbor_dofs),
+    .cmd_state_words_i(cmd_state_words_i),
+    .cmd_wr_xfer_bytes_i(16'(WR_XFER_BYTES)),
     .cmd_ready_o(gbp_cmd_ready),
     .compute_done_o(gbp_compute_done),
     .rsp_done_o(gbp_rsp_done),
@@ -142,13 +153,20 @@ module compute_unit
   // For variable node: msg_count = adj_count (one message per adjacent factor)
   // For factor node: msg_count = adj_count (one belief per adjacent variable)
   assign gbp_cmd_msg_count = cmd_adj_count_i;
+  assign gbp_cmd_neighbor_dofs = {8{cmd_dof_i}};  // uniform DOF for all neighbors
+
+  always_ff @(posedge clk_i) begin
+    if (cmd_valid_i && cmd_ready_o) begin
+      $display("COMPUTE_UNIT_DBG: cmd_adj_count_i=%d gbp_cmd_msg_count=%d", cmd_adj_count_i, gbp_cmd_msg_count);
+    end
+  end
 
   // ------------------------------------------------------------------
   // Read descriptor: issue once on cmd_valid_i
   // ------------------------------------------------------------------
   assign rd_desc_valid_o      = cmd_valid_i & cmd_ready_o;
-  assign rd_desc_base_addr_o  = SPM_ADDR_W'(cmd_node_id_i) << 4;  // simplified addr
-  assign rd_desc_word_count_o = {10'b0, cmd_state_words_i};
+  assign rd_desc_base_addr_o  = cmd_state_base_i;
+  assign rd_desc_word_count_o = {7'b0, cmd_state_words_i};
   assign rd_desc_is_staging_o = 1'b0;
 
   // ------------------------------------------------------------------
@@ -254,11 +272,33 @@ module compute_unit
 
   assign stream_out_ready = ~out_active_r;
 
+  // Capture writeback base address from command
+  logic [SPM_ADDR_W-1:0] wr_base_addr_r;
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
+      wr_base_addr_r <= '0;
+    end else if (cmd_valid_i && cmd_ready_o) begin
+      wr_base_addr_r <= cmd_state_base_i;
+    end
+  end
+
   assign wr_desc_valid_o      = out_active_r;
-  assign wr_desc_base_addr_o  = '0;  // TODO: track actual write address
-  assign wr_desc_word_count_o = '0;  // TODO: track actual write count
+  assign wr_desc_base_addr_o  = wr_base_addr_r;
+  assign wr_desc_word_count_o = 16'd8;
   assign wr_word_valid_o      = out_active_r;
   assign wr_word_data_o       = out_word_buffer_r[out_word_idx_r * FP32_W +: FP32_W];
+
+  always_ff @(posedge clk_i) begin
+    if (stream_out_valid && stream_out_ready) begin
+      $display("COMPUTE_OUT_DBG: stream_out_data=%h %h %h %h %h %h %h %h",
+               stream_out_data[255:224], stream_out_data[223:192], stream_out_data[191:160],
+               stream_out_data[159:128], stream_out_data[127:96],  stream_out_data[95:64],
+               stream_out_data[63:32],   stream_out_data[31:0]);
+    end
+    if (wr_word_valid_o && wr_word_ready_i) begin
+      $display("COMPUTE_OUT_DBG: wr_word[%d]=%h (%f)", out_word_idx_r, wr_word_data_o, $bitstoreal(wr_word_data_o));
+    end
+  end
 
   // ------------------------------------------------------------------
   // Completion

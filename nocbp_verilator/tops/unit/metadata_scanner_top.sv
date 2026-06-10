@@ -44,80 +44,92 @@ module metadata_scanner_top (
   assign spm_rd_ready = spm_rd_valid & spm_rd_ready_i;
 
   // Fixed SPM responses based on {addr[7:4], addr[3:0]}.
-  // High nibble selects the test scenario/node; low nibble selects the word.
+  // Header address = cmd_node_id * HEADER_WORDS (HEADER_WORDS=2).
+  // Each "group" is 16 words; header occupies the first 2 words of its group.
+  // Adjacency entries follow immediately after the header words.
   always_comb begin
     spm_rd_data = '0;
     case ({spm_rd_addr[7:4], spm_rd_addr[3:0]})
-      // ---------- Node 0x00 : zero neighbors ----------
+      // ---------- Node 0x00 : zero neighbors (cmd_node_id=0x00, addr=0x00) ----------
       8'h00: begin
         spm_rd_data[9:0]    = 10'h000;  // node_id
         spm_rd_data[13:10]  = 4'd1;      // dof
         spm_rd_data[17:14]  = 4'd0;      // adj_count
-        spm_rd_data[35:18]  = 18'd4;     // adj_base
+        spm_rd_data[35:18]  = 18'd2;     // adj_base
         spm_rd_data[53:36]  = 18'h100;   // state_base
         spm_rd_data[59:54]  = 6'd2;      // state_words
       end
 
-      // ---------- Node 0x10 : 2 neighbors (original case) ----------
+      // ---------- Node 0x10 : 2 neighbors (cmd_node_id=0x08, addr=0x10) ----------
       8'h10: begin
         spm_rd_data[9:0]    = 10'h010;  // node_id
         spm_rd_data[13:10]  = 4'd3;      // dof
         spm_rd_data[17:14]  = 4'd2;      // adj_count
-        spm_rd_data[35:18]  = 18'h14;    // adj_base (high nibble matches node)
+        spm_rd_data[35:18]  = 18'h12;    // adj_base (header words 0x10,0x11; adj starts at 0x12)
         spm_rd_data[53:36]  = 18'd8;     // state_base
         spm_rd_data[59:54]  = 6'd6;      // state_words
       end
-      8'h14: begin
+      8'h12: begin
         spm_rd_data[9:0]    = 10'h020;  // neighbor_id
         spm_rd_data[15:10]  = 6'd1;      // neighbor_x
         spm_rd_data[20:16]  = 5'd0;      // neighbor_y (local: matches my_x=1,my_y=0)
       end
-      8'h15: begin
+      8'h13: begin
         spm_rd_data[9:0]    = 10'h030;  // neighbor_id
         spm_rd_data[15:10]  = 6'd2;      // neighbor_x
         spm_rd_data[20:16]  = 5'd1;      // neighbor_y (remote)
       end
 
-      // ---------- Node 0x20 : max neighbors, all local ----------
+      // ---------- Node 0x20 : max neighbors, all local (cmd_node_id=0x10, addr=0x20) ----------
       8'h20: begin
         spm_rd_data[9:0]    = 10'h020;  // node_id
         spm_rd_data[13:10]  = 4'd4;      // dof
         spm_rd_data[17:14]  = 4'd8;      // adj_count = MAX_ADJ_COUNT
-        spm_rd_data[35:18]  = 18'h24;    // adj_base
+        spm_rd_data[35:18]  = 18'h22;    // adj_base (header at 0x20,0x21; adj at 0x22+)
         spm_rd_data[53:36]  = 18'h200;   // state_base
         spm_rd_data[59:54]  = 6'd8;      // state_words
       end
-      8'h24, 8'h25, 8'h26, 8'h27,
-      8'h28, 8'h29, 8'h2A, 8'h2B: begin
-        spm_rd_data[9:0]    = 10'h020 + (spm_rd_addr[3:0] - 4'd4);
+      8'h22, 8'h23, 8'h24, 8'h25,
+      8'h26, 8'h27, 8'h28, 8'h29: begin
+        spm_rd_data[9:0]    = 10'h020 + (spm_rd_addr[3:0] - 4'd2);
         spm_rd_data[15:10]  = 6'd1;      // neighbor_x = my_x
         spm_rd_data[20:16]  = 5'd0;      // neighbor_y = my_y
       end
 
-      // ---------- Node 0x30 : max neighbors, all remote ----------
+      // ---------- Node 0x30 : max neighbors, all remote (cmd_node_id=0x18, addr=0x30) ----------
       8'h30: begin
         spm_rd_data[9:0]    = 10'h030;  // node_id
         spm_rd_data[13:10]  = 4'd4;      // dof
         spm_rd_data[17:14]  = 4'd8;      // adj_count = MAX_ADJ_COUNT
-        spm_rd_data[35:18]  = 18'h34;    // adj_base
+        spm_rd_data[35:18]  = 18'h32;    // adj_base (header at 0x30,0x31; adj at 0x32+)
         spm_rd_data[53:36]  = 18'h300;   // state_base
         spm_rd_data[59:54]  = 6'd8;      // state_words
       end
-      8'h34, 8'h35, 8'h36, 8'h37,
-      8'h38, 8'h39, 8'h3A, 8'h3B: begin
-        spm_rd_data[9:0]    = 10'h030 + (spm_rd_addr[3:0] - 4'd4);
+      8'h32, 8'h33, 8'h34, 8'h35,
+      8'h36, 8'h37, 8'h38, 8'h39: begin
+        spm_rd_data[9:0]    = 10'h030 + (spm_rd_addr[3:0] - 4'd2);
         spm_rd_data[15:10]  = 6'd2;      // neighbor_x != my_x
         spm_rd_data[20:16]  = 5'd1;      // neighbor_y != my_y
       end
 
-      // ---------- Node 0x40 : header for SPM error/reset tests ----------
+      // ---------- Node 0x40 : header for SPM error/reset tests (cmd_node_id=0x20, addr=0x40) ----------
       8'h40: begin
         spm_rd_data[9:0]    = 10'h040;  // node_id
         spm_rd_data[13:10]  = 4'd2;      // dof
         spm_rd_data[17:14]  = 4'd2;      // adj_count
-        spm_rd_data[35:18]  = 18'h44;    // adj_base
+        spm_rd_data[35:18]  = 18'h42;    // adj_base (header at 0x40,0x41; adj at 0x42+)
         spm_rd_data[53:36]  = 18'h400;   // state_base
         spm_rd_data[59:54]  = 6'd4;      // state_words
+      end
+      8'h42: begin
+        spm_rd_data[9:0]    = 10'h050;  // neighbor_id
+        spm_rd_data[15:10]  = 6'd3;      // neighbor_x
+        spm_rd_data[20:16]  = 5'd2;      // neighbor_y
+      end
+      8'h43: begin
+        spm_rd_data[9:0]    = 10'h060;  // neighbor_id
+        spm_rd_data[15:10]  = 6'd4;      // neighbor_x
+        spm_rd_data[20:16]  = 5'd3;      // neighbor_y
       end
 
       default: spm_rd_data = '0;

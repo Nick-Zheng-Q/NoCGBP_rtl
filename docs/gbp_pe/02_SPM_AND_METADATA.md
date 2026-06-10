@@ -86,8 +86,8 @@ One entry per local node. Indexed by `local_id` (0 .. NUM_LOCAL_NODES-1).
 typedef struct packed {
     logic [NODE_ID_W-1:0]        node_id;        // global node ID
     logic [DOF_W-1:0]            dof;
-    logic [ADJ_COUNT_W-1:0]      fwd_len;        // degree = number of neighbors
-    logic [SPM_WORD_ADDR_W-1:0]  fwd_base;       // word addr of first FwdEdgeArray entry
+    logic [ADJ_COUNT_W-1:0]      adj_count;      // degree = number of neighbors
+    logic [SPM_WORD_ADDR_W-1:0]  adj_base;       // word addr of first FwdEdgeArray entry
     logic [SPM_WORD_ADDR_W-1:0]  state_base;     // start of STATE block (word addr)
     logic [STATE_WORDS_W-1:0]    state_words;    // word count of STATE block
 } s1_node_header_t;
@@ -97,8 +97,8 @@ typedef struct packed {
 |-------|---------|
 | `node_id` | Global node ID (factor_id or variable_id) |
 | `dof` | Mathematical dimension |
-| `fwd_len` | Number of adjacent nodes (degree) |
-| `fwd_base` | Start word address of this node's edge list in FwdEdgeArray |
+| `adj_count` | Number of adjacent nodes (degree) |
+| `adj_base` | Start word address of this node's edge list in FwdEdgeArray |
 | `state_base` | Start word address of this node's STATE block |
 | `state_words` | Total word count of STATE block |
 
@@ -114,6 +114,7 @@ typedef struct packed {
     logic [X_CORD_W-1:0]       neighbor_x;     // PE x coordinate of neighbor's owner
     logic [Y_CORD_W-1:0]       neighbor_y;     // PE y coordinate of neighbor's owner
     logic [EDGE_IDX_W-1:0]     edge_slot;      // index into edge state / message table
+    logic [DOF_W-1:0]          neighbor_dof;   // DOF of adjacent variable node (for factor message sizing)
     logic                      is_local;       // 1 if neighbor is on same PE
 } fwd_edge_t;
 ```
@@ -124,9 +125,10 @@ typedef struct packed {
 | `neighbor_x` | NoC x coordinate of the PE that owns this neighbor |
 | `neighbor_y` | NoC y coordinate of the PE that owns this neighbor |
 | `edge_slot` | Runtime edge index (used by scoreboard_prefetcher, message table) |
+| `neighbor_dof` | DOF of the adjacent variable node; used by factor nodes to compute per-edge message size and offset |
 | `is_local` | Pre-computed `(neighbor_x == my_x) && (neighbor_y == my_y)` |
 
-**Address**: `fwd_edge_base + fwd_base + i` for edge i of node local_id.
+**Address**: `fwd_edge_base + adj_base + i` for edge i of node local_id.
 
 **Local/remote classification** is pre-computed at load time and stored in `is_local`. Metadata Scanner does not recompute it at runtime.
 
@@ -237,18 +239,18 @@ STATE is a variable-length block per node. Contents differ between variable and 
 
 ### 6.1 Variable Node STATE
 
+Variable node STATE contains **only the prior** (eta + Lambda). Incoming messages from factor neighbors are **not** stored in the STATE block; they are received on-demand via the accumulator during each compute cycle.
+
 ```
 state_base
   ↓
 [eta words]      dof × FP32
-[Lambda words]   dof × dof × FP32 (full matrix, or upper-triangular)
+[Lambda words]   dof × (dof+1) / 2 × FP32  (upper-triangular compact form)
   ↓
 state_base + state_words
 ```
 
-GBPSim stores: `prior` (eta + lam) + `belief` (eta + lam). But for pull purposes, only the **current belief** is transmitted to consumers.
-
-Compact form (for NoC transfer):
+**Compact form** (used for NoC transfer and STATE storage):
 
 ```
 compact_words(dof) = dof + dof*(dof+1)/2
@@ -256,19 +258,44 @@ compact_words(dof) = dof + dof*(dof+1)/2
 
 (eta vector + upper-triangular Lambda matrix)
 
-> **Bit-width constraint**: `STATE_WORDS_W` must be ≥ `$clog2(compact_words(MAX_DOF) + 1)`. For MAX_DOF = 8, `compact_words(8) = 44`, so `STATE_WORDS_W` ≥ 6.
+> **Compact form is frozen**. The full matrix is never stored in STATE or transferred over NoC. Only the upper-triangular compact representation is used.
+>
+> **Bit-width constraint**: `STATE_WORDS_W` must be ≥ `$clog2(max_state_words + 1)`.
+>
+> Typical factor (degree=2, DOF=6): 2×27 + measurement(6) + Jacobian(36) = 96 words.
+> Large factor (degree=4, DOF=8): 4×44 + measurement(6) + Jacobian(192) = 374 words.
+> **STATE_WORDS_W = 9** (max 512 words) covers all typical and most large factors.
+> The graph compiler must ensure `state_words ≤ 512` for every node.
 
 ### 6.2 Factor Node STATE
+
+Factor node STATE contains **per-edge old messages** (for damping), plus the measurement and Jacobian.
+
+**Per-edge message layout** (cumulative offset, variable size per edge):
 
 ```
 state_base
   ↓
-[per-edge message words]   adj_count × (dof_i + dof_i²) × FP32
-[measurement words]        measurement_dim × FP32
-[Jacobian words]           measurement_dim × dof × FP32
+[message_0]       compact_words(dof_0) words   // outgoing message to adjacent variable 0
+[message_1]       compact_words(dof_1) words   // outgoing message to adjacent variable 1
+...
+[message_{adj_count-1}]  compact_words(dof_{adj_count-1}) words
+[measurement]     measurement_dim × FP32
+[Jacobian]        measurement_dim × Σdof_i × FP32
   ↓
 state_base + state_words
 ```
+
+**Message offset formula**:
+
+```
+compact_words(d) = d + d*(d+1)/2
+msg_offset[i]    = Σ compact_words(dof_j) for j = 0 .. i-1
+msg_addr[i]      = state_base + msg_offset[i]
+msg_words[i]     = compact_words(dof_i)
+```
+
+`dof_i` is read from `fwd_edge_t.neighbor_dof` during SCAN. The control FSM accumulates `msg_offset[i]` and `msg_words[i]` in registers during the adjacency scan, then uses them to issue read/write descriptors for each edge's message.
 
 ---
 
@@ -301,7 +328,7 @@ Given the global graph `G` and the PE's assigned node subset `S1`:
    for each s in S1 (in local_id order):
        collect all neighbors v of s
        append fwd_edge_t for each neighbor to FwdEdgeArray
-       fill S1NodeHeader[local_id].fwd_base, fwd_len
+       fill S1NodeHeader[local_id].adj_base, adj_count
 
 3. Build Reverse relation:
    for each edge (s, v) where s ∈ S1:

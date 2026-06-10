@@ -104,7 +104,7 @@ module node_scheduler #(
 module metadata_scanner #(
     parameter int NODE_ID_W     = 10,
     parameter int SPM_ADDR_W    = 18,   // word address for 1MB SPM (32-bit words)
-    parameter int STATE_WORDS_W = 6,
+    parameter int STATE_WORDS_W = 9,
     parameter int ADJ_COUNT_W   = 4,
     parameter int DOF_W         = 4,
     parameter int BEAT_BITS     = 64    // 8-byte beat
@@ -130,9 +130,11 @@ module metadata_scanner #(
     output logic [NODE_ID_W-1:0] adj_neighbor_id_o,
     output logic [X_CORD_W-1:0]   adj_neighbor_x_o,
     output logic [Y_CORD_W-1:0]   adj_neighbor_y_o,
+    output logic [DOF_W-1:0]     adj_neighbor_dof_o,  // DOF of adjacent variable node
     output logic                 adj_is_local_o,
     output logic                 adj_last_o,       // last adjacency entry
     output logic [ADJ_COUNT_W-1:0] adj_edge_idx_o, // current edge index within node
+    output logic [NODE_ID_W-1:0] adj_current_node_id_o  // node ID being scanned (for fetch subsystem)
 
     // Node info output
     output logic                 info_valid_o,
@@ -142,6 +144,43 @@ module metadata_scanner #(
     output logic [STATE_WORDS_W-1:0] info_state_words_o
 );
 ```
+
+### 2.3b Reverse Index Lookup
+
+Queries Reverse CSR to find all local nodes affected by a NOTIFICATION.
+
+```systemverilog
+module reverse_index_lookup #(
+    parameter int NODE_ID_W     = 10,
+    parameter int SPM_ADDR_W    = 18,
+    parameter int REV_ID_W      = 8,
+    parameter int BEAT_BITS     = 64
+)(
+    input  logic clk_i,
+    input  logic rst_n_i,
+
+    // Notification ingress (from NoC Adapter RX)
+    input  logic                 rx_notif_valid_i,
+    output logic                 rx_notif_ready_o,
+    input  logic [NODE_ID_W-1:0] rx_notif_source_node_id_i,
+
+    // Affected node output (to Node Scheduler pending_queue)
+    output logic                 affected_valid_o,
+    input  logic                 affected_ready_i,
+    output logic [NODE_ID_W-1:0] affected_local_id_o,
+    output logic                 affected_last_o,  // last affected node for this notification
+
+    // SPM read port (to memory subsystem — Reverse CSR region)
+    output logic                 spm_rd_valid_o,
+    input  logic                 spm_rd_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd_data_i
+);
+```
+
+**Flow**: RevKeyHash → RevHeader → RevEntryArray stream. See `04_PE_MICROARCHITECTURE.md` §2.3b for detailed state machine.
+
+---
 
 ### 2.4 ScoreboardPrefetcher
 
@@ -390,7 +429,7 @@ module neighbor_state_accumulator #(
 ```systemverilog
 module spm_arbiter #(
     parameter int NUM_BANKS   = 8,
-    parameter int NUM_CLIENTS = 7,   // MetadataScanner, CU_state_rd, CU_staging_rd, CU_wb, PullServer, RespCollector, DMA
+    parameter int NUM_CLIENTS = 8,   // MetadataScanner, ReverseCSR, CU_state_rd, CU_staging_rd, CU_wb, PullServer, RespCollector, DMA
     parameter int SPM_ADDR_W  = 18,  // word address width
     parameter int BEAT_BITS   = 64,  // 8-byte beat
     parameter int ROW_ADDR_W  = 14   // bank row address (for 1MB SPM)
@@ -430,7 +469,7 @@ module compute_unit #(
     parameter int NODE_ID_W     = 10,
     parameter int DOF_W         = 4,
     parameter int ADJ_COUNT_W   = 4,
-    parameter int STATE_WORDS_W = 6,
+    parameter int STATE_WORDS_W = 9,
     parameter int SPM_ADDR_W    = 18,   // word address
     parameter int BEAT_BITS     = 64,   // 8-byte beat
     parameter int FP32_W        = 32
@@ -446,6 +485,8 @@ module compute_unit #(
     input  logic [DOF_W-1:0]     cmd_dof_i,
     input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
     input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
+    input  logic [SPM_ADDR_W-1:0]  cmd_state_base_i,
+    input  logic [FP32_W-1:0]      damping_factor_i,
 
     // Neighbor state input (from Accumulator)
     input  logic                 ns_valid_i,
@@ -763,14 +804,14 @@ The following wrappers group leaf modules defined in §2.1–2.15. They do not d
 
 ### 2.16.1 Control Subsystem (`gbp_pe_control_subsystem`)
 
-Encapsulates: `phase_controller`, `node_scheduler`, `metadata_scanner`.
+Encapsulates: `phase_controller`, `node_scheduler`, `metadata_scanner`, `reverse_index_lookup`.
 
 ```systemverilog
 module gbp_pe_control_subsystem #(
     parameter int NUM_NODES = 1024,
     parameter int NODE_ID_W = 10,
     parameter int SPM_ADDR_W = 18,
-    parameter int STATE_WORDS_W = 6,
+    parameter int STATE_WORDS_W = 9,
     parameter int ADJ_COUNT_W = 4,
     parameter int DOF_W = 4,
     parameter int BEAT_BITS = 64,
@@ -802,22 +843,30 @@ module gbp_pe_control_subsystem #(
     output logic [NODE_ID_W-1:0] adj_neighbor_id_o,
     output logic [X_CORD_W-1:0]  adj_neighbor_x_o,
     output logic [Y_CORD_W-1:0]  adj_neighbor_y_o,
+    output logic [DOF_W-1:0]     adj_neighbor_dof_o,
     output logic                 adj_is_local_o,
     output logic                 adj_last_o,
     output logic [ADJ_COUNT_W-1:0] adj_edge_idx_o,
+    output logic [NODE_ID_W-1:0] adj_current_node_id_o,
 
     // Scoreboard reset from writeback controller
     input  logic                 reset_valid_i,
     input  logic [NODE_ID_W-1:0] reset_node_id_i,
     input  logic                 reset_is_factor_i,
 
-    // SPM read port (to memory subsystem)
-    output logic                 spm_rd_valid_o,
-    input  logic                 spm_rd_ready_i,
-    output logic [SPM_ADDR_W-1:0] spm_rd_addr_o,
-    input  logic [BEAT_BITS-1:0]  spm_rd_data_i,
+    // SPM read port 0: Metadata Scanner (Forward CSR — NodeHeader, AdjEntry)
+    output logic                 spm_rd0_valid_o,
+    input  logic                 spm_rd0_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd0_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd0_data_i,
 
-    // My coordinates (for local/remote classification)
+    // SPM read port 1: reverse_index_lookup (Reverse CSR — RevKeyHash, RevHeader, RevEntryArray)
+    output logic                 spm_rd1_valid_o,
+    input  logic                 spm_rd1_ready_i,
+    output logic [SPM_ADDR_W-1:0] spm_rd1_addr_o,
+    input  logic [BEAT_BITS-1:0]  spm_rd1_data_i,
+
+    // My coordinates (for local/remote classification — only used at graph compile time)
     input  logic [X_CORD_W-1:0] my_x_i,
     input  logic [Y_CORD_W-1:0] my_y_i
 );
@@ -831,7 +880,7 @@ Encapsulates: `compute_unit`, `read_stream_engine`, `write_stream_engine`, inter
 module gbp_pe_compute_subsystem #(
     parameter int NODE_ID_W = 10,
     parameter int SPM_ADDR_W = 18,
-    parameter int STATE_WORDS_W = 6,
+    parameter int STATE_WORDS_W = 9,
     parameter int ADJ_COUNT_W = 4,
     parameter int DOF_W = 4,
     parameter int BEAT_BITS = 64,
@@ -849,6 +898,7 @@ module gbp_pe_compute_subsystem #(
     input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
     input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
     input  logic [SPM_ADDR_W-1:0]  cmd_state_base_i,
+    input  logic [FP32_W-1:0]      damping_factor_i,
 
     // Neighbor state from accumulator
     input  logic                 ns_valid_i,
@@ -893,7 +943,7 @@ Encapsulates: `spm_arbiter`, `spm_bank_array`.
 ```systemverilog
 module gbp_pe_memory_subsystem #(
     parameter int NUM_BANKS = 8,
-    parameter int NUM_CLIENTS = 7,
+    parameter int NUM_CLIENTS = 8,
     parameter int SPM_ADDR_W = 18,
     parameter int BEAT_BITS = 64,
     parameter int ROW_ADDR_W = 14
@@ -921,12 +971,13 @@ module gbp_pe_memory_subsystem #(
 | Index | Direction | Source Subsystem | Purpose |
 |-------|-----------|------------------|---------|
 | 0 | read | control | Metadata Scanner META reads |
-| 1 | read | compute | Read Stream Engine 0 (STATE) |
-| 2 | read | compute | Read Stream Engine 1 (STAGING) |
-| 3 | write | compute | Write Stream Engine (STATE writeback) |
-| 4 | read | fetch | Pull Server STATE reads |
-| 5 | write | fetch | Response Collector STAGING writes |
-| 6 | read+write | external | DMA / loader |
+| 1 | read | control | reverse_index_lookup Reverse CSR reads |
+| 2 | read | compute | Read Stream Engine 0 (STATE) |
+| 3 | read | compute | Read Stream Engine 1 (STAGING) |
+| 4 | write | compute | Write Stream Engine (STATE writeback) |
+| 5 | read | fetch | Pull Server STATE reads |
+| 6 | write | fetch | Response Collector STAGING writes |
+| 7 | read+write | external | DMA / loader |
 
 ### 2.16.4 Fetch Subsystem (`gbp_pe_fetch_subsystem`)
 
@@ -938,7 +989,7 @@ module gbp_pe_fetch_subsystem #(
     parameter int X_CORD_W = 6,
     parameter int Y_CORD_W = 5,
     parameter int ADJ_COUNT_W = 4,
-    parameter int STATE_WORDS_W = 6,
+    parameter int STATE_WORDS_W = 9,
     parameter int TXN_ID_W = 6,
     parameter int SCOREBOARD_DEPTH = 64,
     parameter int NUM_NODES = 1024,
@@ -1072,8 +1123,8 @@ localparam EDGE_READY    = 2'b11;
 Transition conditions:
 
 ```
-IDLE → NOTIFIED:    rx_notif_valid && matches edge
-IDLE → READY:       adj_valid && adj_is_local && matches edge  (local edge, skip lifecycle)
+IDLE → NOTIFIED:    adj_valid && !adj_is_local && matches edge  (remote edge, SCAN triggers)
+IDLE → READY:       adj_valid && adj_is_local && matches edge   (local edge, skip lifecycle)
 NOTIFIED → IN_FLIGHT: fetch_req_valid && fetch_req_ready && matches edge
 IN_FLIGHT → READY:  complete_valid && matches edge (via txn_id)
 READY → IDLE:       reset_valid && matches node (remote edges only; local edges remain READY)
