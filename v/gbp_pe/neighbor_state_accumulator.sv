@@ -28,6 +28,7 @@ module neighbor_state_accumulator
 
     // Pipeline control
     , input  logic                 start_i
+    , input  logic                 has_remote_i      // 1 if there are remote edges to wait for
     , output logic                 accumulator_done_o
 );
 
@@ -62,7 +63,7 @@ module neighbor_state_accumulator
       case (state_r)
         S_LOCAL: begin
           if (local_valid_i && out_ready_i && local_last_i) begin
-            state_r <= S_REMOTE;
+            state_r <= has_remote_i ? S_REMOTE : S_DONE;
           end
         end
         S_REMOTE: begin

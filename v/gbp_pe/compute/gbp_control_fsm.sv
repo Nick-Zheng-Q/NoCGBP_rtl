@@ -60,6 +60,9 @@ module gbp_control_fsm #(
     output logic [255:0]       buf_wr_data,
     output logic               buf_wr_valid,
 
+    // Message base address for ns data routing (variable accumulate path)
+    output logic [ADDR_W-1:0]  msg_base_addr_o,
+
     // Staging buffer internal read (for unpack/pack)
     output logic               internal_rd_valid,
     output logic [ADDR_W-1:0]  internal_rd_addr,
@@ -261,6 +264,7 @@ module gbp_control_fsm #(
   assign prior_eta_addr = ADDR_W'(0);
   assign prior_lam_addr = ADDR_W'(dofs_r);
   assign msg_base_addr = ADDR_W'(payload_size_int);
+  assign msg_base_addr_o = msg_base_addr;
   assign result_addr = ADDR_W'(STAGING_DEPTH - 64);
 
   // Accumulation counter
@@ -442,7 +446,7 @@ module gbp_control_fsm #(
       // Variable Node path
       S_VAR_LOAD_DATA: begin
         if (stream_done) begin
-          if (msg_count_r == 4'd0) state_n = S_VAR_STORE_RESULT;
+          if (msg_count_r == 4'd0) state_n = S_VAR_INVERT_LAM;
           else                     state_n = S_VAR_ACCUMULATE;
         end
       end
@@ -450,16 +454,16 @@ module gbp_control_fsm #(
       S_VAR_ACCUMULATE: begin
         if (mat_done_r && (msg_count_r != 4'd0)
             && (accum_count_r >= msg_count_r - 1'b1)) begin
-          state_n = S_VAR_STORE_RESULT;
+          state_n = S_VAR_INVERT_LAM;
         end
       end
 
       S_VAR_INVERT_LAM: begin
-        if (mat_done_r) state_n = S_VAR_MVMUL;
+        if (mat_done_r && mat_cmd_valid_r) state_n = S_VAR_MVMUL;
       end
 
       S_VAR_MVMUL: begin
-        if (mat_done_r) state_n = S_VAR_STORE_RESULT;
+        if (mat_done_r && mat_cmd_valid_r) state_n = S_VAR_STORE_RESULT;
       end
 
       S_VAR_STORE_RESULT: begin
@@ -661,12 +665,14 @@ module gbp_control_fsm #(
       end
 
       S_VAR_ACCUMULATE: begin
-        // Messages come from accumulator, not stream
+        // Messages come from accumulator via stream_in
+        stream_in_ready = 1'b1;
       end
 
       S_VAR_STORE_RESULT: begin
         stream_out_valid = 1'b1;
-        stream_out_data[ADDR_W-1:0] = prior_eta_addr;
+        // Output mu, stored at result_addr by MVMUL
+        stream_out_data[ADDR_W-1:0] = result_addr;
       end
 
       S_FAC_LOAD_DATA: begin
@@ -800,7 +806,18 @@ module gbp_control_fsm #(
       end
 
       S_VAR_INVERT_LAM: begin
-        mat_cmd_valid_next = mat_cmd_ready;
+        // mat_cmd_valid_r: 0 = no command issued yet, 1 = command issued
+        // mat_done_r: 0 = not done, 1 = done (or stale from previous op)
+        //
+        // Sequence:
+        //   Cycle 0: mat_cmd_valid_r=0, mat_done_r may be stale(1) → issue command
+        //   Cycle 1: mat_cmd_valid_r=1, matrix processes → wait
+        //   Cycle 2: mat_done_r=1 (new) → transition
+        //
+        // Key: always issue command on first cycle, then wait for fresh mat_done_r
+        if (!mat_cmd_valid_r) begin
+          mat_cmd_valid_next = mat_cmd_ready;
+        end
         mat_cmd_op = `GBP_OP_MAT_INV;
         mat_cmd_base_a = prior_lam_addr;
         mat_cmd_base_dest = result_addr;
@@ -813,7 +830,7 @@ module gbp_control_fsm #(
         mat_cmd_op = `GBP_OP_MAT_VEC_MUL;
         mat_cmd_base_a = result_addr;
         mat_cmd_base_b = prior_eta_addr;
-        mat_cmd_base_dest = result_addr + ADDR_W'(lam_size_int);
+        mat_cmd_base_dest = result_addr;  // mu overwrites inv_lam (no longer needed)
         mat_cmd_m = {3'b0, dofs_r};
         mat_cmd_n = 6'd1;
         mat_cmd_k = {3'b0, dofs_r};

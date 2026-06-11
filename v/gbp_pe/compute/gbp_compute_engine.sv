@@ -176,6 +176,7 @@ module gbp_compute_engine
   logic [ADDR_W-1:0]  gbp_buf_wr_addr;
   logic [255:0]       gbp_buf_wr_data;
   logic               gbp_buf_wr_valid;
+  logic [ADDR_W-1:0]  gbp_msg_base_addr;
   logic               gbp_internal_rd_valid;
   logic [ADDR_W-1:0]  gbp_internal_rd_addr;
   logic [255:0]       gbp_internal_rd_data;
@@ -358,6 +359,7 @@ module gbp_compute_engine
     .buf_wr_addr(gbp_buf_wr_addr),
     .buf_wr_data(gbp_buf_wr_data),
     .buf_wr_valid(gbp_buf_wr_valid),
+    .msg_base_addr_o(gbp_msg_base_addr),
     .internal_rd_valid(gbp_internal_rd_valid),
     .internal_rd_addr(gbp_internal_rd_addr),
     .internal_rd_data(gbp_internal_rd_data),
@@ -374,13 +376,36 @@ module gbp_compute_engine
   assign gbp_stream_in_valid = stream_in_valid;
   assign gbp_stream_in_data = stream_in_data;
   
+  // NS data write to staging buffer (variable accumulate path)
+  // When ns data arrives during accumulate (stream not active), write to msg region
+  logic [ADDR_W-1:0] ns_wr_offset_r;
+  logic               ns_write_active;
+
+  assign ns_write_active = !stream_active_r && !start_input_stream
+                           && stream_in_valid && stream_in_ready
+                           && !gbp_stream_req_state;
+
+  always_ff @(posedge clk_i) begin
+    if (reset_i) begin
+      ns_wr_offset_r <= '0;
+    end else begin
+      if (ns_write_active) begin
+        ns_wr_offset_r <= ns_wr_offset_r + ADDR_W'(8);
+      end
+      // Reset when FSM leaves accumulate (new command or done)
+      if (cmd_valid_i && cmd_ready_o) begin
+        ns_wr_offset_r <= '0;
+      end
+    end
+  end
+
   // Buffer write: Connect GBP control FSM to staging buffer
-  // Include start_input_stream to capture the first beat before stream_active_r is set
+  // Priority: ns_write > stream_write > fsm_write
   logic stream_wr_sel;
   assign stream_wr_sel = stream_active_r || start_input_stream;
-  assign buf_stream_wr_valid = stream_wr_sel ? stream_in_hs : gbp_buf_wr_valid;
-  assign buf_stream_wr_data  = stream_wr_sel ? stream_in_data : gbp_buf_wr_data;
-  assign buf_stream_wr_addr  = stream_wr_sel ? (start_input_stream ? ADDR_W'(0) : stream_wr_addr_r) : gbp_buf_wr_addr;
+  assign buf_stream_wr_valid = ns_write_active ? 1'b1 : (stream_wr_sel ? stream_in_hs : gbp_buf_wr_valid);
+  assign buf_stream_wr_data  = ns_write_active ? stream_in_data : (stream_wr_sel ? stream_in_data : gbp_buf_wr_data);
+  assign buf_stream_wr_addr  = ns_write_active ? (gbp_msg_base_addr + ns_wr_offset_r) : (stream_wr_sel ? (start_input_stream ? ADDR_W'(0) : stream_wr_addr_r) : gbp_buf_wr_addr);
 
   // Internal read data for FSM
   assign gbp_internal_rd_data = buf_stream_rd_data;
@@ -401,7 +426,7 @@ module gbp_compute_engine
   // Stream grant/done (simplified - always grant for now)
   assign gbp_stream_grant = 1'b1;
   // stream_done 必须对应整条 xfer 完成，不能把单 beat 握手误判成整次传输结束。
-  assign state_target_beats = bytes_to_beats(cmd_stream_xfer_bytes_r);
+  assign state_target_beats = bytes_to_beats(gbp_stream_xfer_bytes);
   // Factor path: state already includes old messages; do NOT add message beats.
   // Variable path: state (prior) + messages are separate streams.
   assign stream_target_beats =

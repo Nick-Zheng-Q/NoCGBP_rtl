@@ -17,6 +17,9 @@ module neighbor_state_accumulator_top (
     , input  logic        out_ready_i
     , output logic [31:0] out_data_o
     , output logic        out_last_o
+    // Pipeline control
+    , input  logic        start_i
+    , input  logic        has_remote_i
     // Status
     , output logic        accumulator_done_o
     , output logic        local_ready_o
@@ -38,6 +41,8 @@ module neighbor_state_accumulator_top (
     ,.out_ready_i(out_ready_i)
     ,.out_data_o(out_data_o)
     ,.out_last_o(out_last_o)
+    ,.start_i(start_i)
+    ,.has_remote_i(has_remote_i)
     ,.accumulator_done_o(accumulator_done_o)
   );
 

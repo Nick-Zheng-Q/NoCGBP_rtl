@@ -358,7 +358,7 @@ int run_test(int argc, char** argv) {
   }
   std::printf("\n");
 
-  // Test 12: 3DOF Variable Node completes after state + 3 messages (8 beats total)
+  // Test 12: 3DOF Variable Node completes (no neighbors, all data via stream)
   std::printf("[Test 12] 3DOF Variable completion with 8 input beats\n");
   {
     reset(dut);
@@ -367,8 +367,9 @@ int run_test(int argc, char** argv) {
     dut->cmd_valid_i = 1;
     dut->cmd_is_factor_i = 0;
     dut->cmd_dofs_i = 3;
-    dut->cmd_adj_count_i = 3;
-    dut->cmd_msg_count_i = 3;
+    dut->cmd_adj_count_i = 0;
+    dut->cmd_msg_count_i = 0;
+    dut->cmd_state_words_i = 8;  // 8 words = 1 engine word
     tick(dut);
     dut->cmd_valid_i = 0;
 
@@ -405,7 +406,7 @@ int run_test(int argc, char** argv) {
           (unsigned)root->gbp_compute_engine__DOT__stream_out_beats_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_active_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_dir_out_r,
-          (unsigned)root->gbp_compute_engine__DOT__cmd_stream_xfer_bytes_r,
+          (unsigned)root->gbp_compute_engine__DOT__cmd_wr_xfer_bytes_r,
           (unsigned)root->gbp_compute_engine__DOT__cmd_msg_count_r,
           (unsigned)root->gbp_compute_engine__DOT__cmd_is_factor_r,
           (unsigned)root->rsp_done_o,
@@ -513,31 +514,26 @@ int run_test(int argc, char** argv) {
     check(dut->stream_in_ready == 1, "stream_in_ready for factor data loading");
 
     // Beat 0: words [0..7]
-    //   msg_0: eta=[1.0, 2.0], lam=[[3.0, 0.0], [0.0, 4.0]]
-    //   msg_1 placeholder: [0, 0, 0]
     {
       uint32_t beat0[8] = {
-        f2u(1.0f), f2u(2.0f), f2u(3.0f), f2u(0.0f),  // msg_0: eta[0], eta[1], lam[0,0], lam[0,1]
-        f2u(4.0f), f2u(0.0f), f2u(0.0f), f2u(0.0f)   // msg_0: lam[1,1], msg_1[0..2]
+        f2u(1.0f), f2u(2.0f), f2u(3.0f), f2u(0.0f),
+        f2u(4.0f), f2u(0.0f), f2u(0.0f), f2u(0.0f)
       };
       dut->stream_in_valid = 1;
       for (int i = 0; i < 8; i++) dut->stream_in_data[i] = beat0[i];
       tick(dut);
     }
+    // Hold valid for one more cycle to ensure beat 0 is consumed
+    tick(dut);
 
     // Beat 1: words [8..15]
-    //   msg_1 placeholder: [0, 0]
-    //   measurement z: [0.0, 0.0]
-    //   Jacobian J: [0.0, 0.0, 0.0, 0.0]
     {
-      uint32_t beat1[8] = {
-        f2u(0.0f), f2u(0.0f), f2u(0.0f), f2u(0.0f),  // msg_1[3..4], z[0..1]
-        f2u(0.0f), f2u(0.0f), f2u(0.0f), f2u(0.0f)   // J[0..3]
-      };
-      dut->stream_in_valid = 1;
+      uint32_t beat1[8] = {0};
       for (int i = 0; i < 8; i++) dut->stream_in_data[i] = beat1[i];
       tick(dut);
     }
+    // Hold valid for one more cycle to ensure beat 1 is consumed
+    tick(dut);
     dut->stream_in_valid = 0;
 
     // Wait for factor computation to complete
@@ -560,7 +556,7 @@ int run_test(int argc, char** argv) {
           (unsigned)root->gbp_compute_engine__DOT__u_matrix_fsm__DOT__state_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_in_beats_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_out_beats_r,
-          (unsigned)root->gbp_compute_engine__DOT__cmd_stream_xfer_bytes_r,
+          (unsigned)root->gbp_compute_engine__DOT__cmd_wr_xfer_bytes_r,
           (unsigned)root->gbp_compute_engine__DOT__cmd_is_factor_r,
           (unsigned)root->compute_done_o,
           (unsigned)root->rsp_done_o);

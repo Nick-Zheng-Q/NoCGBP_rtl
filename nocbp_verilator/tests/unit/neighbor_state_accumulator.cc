@@ -24,6 +24,8 @@ static void reset_dut(Vneighbor_state_accumulator_top* dut) {
   dut->remote_data_i = 0;
   dut->remote_last_i = 0;
   dut->out_ready_i = 1;
+  dut->has_remote_i = 1;  // default: expect remote data after local
+  dut->start_i = 0;
   for (int i = 0; i < 5; ++i) tick(dut);
   dut->rst_n = 1;
   for (int i = 0; i < 3; ++i) tick(dut);  // let state settle after reset

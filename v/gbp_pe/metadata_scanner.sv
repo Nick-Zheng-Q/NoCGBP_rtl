@@ -169,7 +169,6 @@ module metadata_scanner
         S_RD_HEADER: begin
           if (spm_rd_ready_i) begin
             spm_rd_pending_r <= 1'b0;
-            // Parse header from spm_rd_data_i
             hdr_dof_r          <= spm_rd_data_i[NODE_ID_W +: DOF_W];
             hdr_adj_count_r    <= spm_rd_data_i[NODE_ID_W + DOF_W +: ADJ_COUNT_W];
             hdr_adj_base_r     <= spm_rd_data_i[NODE_ID_W + DOF_W + ADJ_COUNT_W +: SPM_ADDR_W];

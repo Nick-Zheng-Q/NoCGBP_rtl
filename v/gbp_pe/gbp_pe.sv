@@ -78,6 +78,12 @@ module gbp_pe
     , input logic [TXN_ID_W-1:0] wb_inject_fetch_resp_txn_id_i
     , input logic [NODE_ID_W-1:0] wb_inject_fetch_resp_node_id_i
     , input logic [NODE_ID_W-1:0] wb_inject_fetch_resp_consumer_node_id_i
+
+    // Whitebox local reader override
+    , input logic wb_lr_valid_i
+    , input logic [SPM_ADDR_W-1:0] wb_lr_state_base_i
+    , input logic [STATE_WORDS_W-1:0] wb_lr_state_words_i
+    , input logic [NODE_ID_W-1:0] wb_lr_neighbor_id_i
 `endif
   );
 
@@ -318,10 +324,18 @@ module gbp_pe
     ,.wb_ms_cmd_valid_i(wb_cmd_valid_i)
     ,.wb_ms_cmd_node_id_i(wb_cmd_node_id_i)
     ,.wb_ms_cmd_is_factor_i(wb_cmd_is_factor_i)
+    ,.wb_lr_valid_i(wb_lr_valid_i)
+    ,.wb_lr_state_base_i(wb_lr_state_base_i)
+    ,.wb_lr_state_words_i(wb_lr_state_words_i)
+    ,.wb_lr_neighbor_id_i(wb_lr_neighbor_id_i)
 `else
     ,.wb_ms_cmd_valid_i(1'b0)
     ,.wb_ms_cmd_node_id_i('0)
     ,.wb_ms_cmd_is_factor_i(1'b0)
+    ,.wb_lr_valid_i(1'b0)
+    ,.wb_lr_state_base_i('0)
+    ,.wb_lr_state_words_i('0)
+    ,.wb_lr_neighbor_id_i('0)
 `endif
     ,.spm_rd_valid_o(ctrl_spm_rd_valid)
     ,.spm_rd_ready_i(ctrl_spm_rd_ready)
@@ -615,6 +629,7 @@ module gbp_pe
     ,.out_data_o(comp_ns_data)
     ,.out_last_o(comp_ns_last)
     ,.start_i(ctrl_cmd_valid && comp_cmd_ready)
+    ,.has_remote_i(~&ctrl_wb_adj_is_local)
     ,.accumulator_done_o()
   );
 

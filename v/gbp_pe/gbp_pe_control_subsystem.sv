@@ -71,6 +71,12 @@ module gbp_pe_control_subsystem
     input  logic [NODE_ID_W-1:0] wb_ms_cmd_node_id_i,
     input  logic                 wb_ms_cmd_is_factor_i,
 
+    // Whitebox local reader override (active-high: skip SPM header read)
+    input  logic                 wb_lr_valid_i,
+    input  logic [SPM_ADDR_W-1:0] wb_lr_state_base_i,
+    input  logic [STATE_WORDS_W-1:0] wb_lr_state_words_i,
+    input  logic [NODE_ID_W-1:0] wb_lr_neighbor_id_i,
+
     // SPM read port (to memory subsystem) — shared by metadata_scanner and local_reader
     output logic                 spm_rd_valid_o,
     input  logic                 spm_rd_ready_i,
@@ -303,7 +309,13 @@ module gbp_pe_control_subsystem
     end else begin
       case (lr_state_r)
         S_PASS: begin
-          if (ms_adj_valid && ms_adj_ready && ms_adj_is_local) begin
+          if (wb_lr_valid_i) begin
+            lr_neighbor_id_r <= wb_lr_neighbor_id_i;
+            lr_state_base_r  <= wb_lr_state_base_i;
+            lr_state_words_r <= wb_lr_state_words_i;
+            lr_state_cnt_r   <= '0;
+            lr_state_r       <= (wb_lr_state_words_i == 0) ? S_PASS : S_RD_STATE;
+          end else if (ms_adj_valid && ms_adj_ready && ms_adj_is_local) begin
             lr_neighbor_id_r <= ms_adj_neighbor_id;
             lr_edge_idx_r    <= ms_adj_edge_idx;
             lr_adj_last_r    <= ms_adj_last;

@@ -39,6 +39,12 @@ module gbp_pe_top (
   , input logic [5:0] wb_inject_fetch_resp_txn_id_i
   , input logic [9:0] wb_inject_fetch_resp_node_id_i
   , input logic [9:0] wb_inject_fetch_resp_consumer_node_id_i
+
+  // Whitebox local reader override
+  , input logic wb_lr_valid_i
+  , input logic [17:0] wb_lr_state_base_i
+  , input logic [8:0] wb_lr_state_words_i
+  , input logic [9:0] wb_lr_neighbor_id_i
 );
 
   import bsg_manycore_pkg::*;
@@ -130,6 +136,10 @@ module gbp_pe_top (
     ,.wb_inject_fetch_resp_txn_id_i(wb_inject_fetch_resp_txn_id_i)
     ,.wb_inject_fetch_resp_node_id_i(wb_inject_fetch_resp_node_id_i)
     ,.wb_inject_fetch_resp_consumer_node_id_i(wb_inject_fetch_resp_consumer_node_id_i)
+    ,.wb_lr_valid_i(wb_lr_valid_i)
+    ,.wb_lr_state_base_i(wb_lr_state_base_i)
+    ,.wb_lr_state_words_i(wb_lr_state_words_i)
+    ,.wb_lr_neighbor_id_i(wb_lr_neighbor_id_i)
   );
 
 endmodule
