@@ -1,0 +1,8 @@
+top: ldlt_solve_core_top
+top_sv: tops/unit/ldlt_solve_core_top.sv
+rtl_f: tests/unit/ldlt_solve_core.f
+
+incdirs:
+  - common
+  - tests/tools
+

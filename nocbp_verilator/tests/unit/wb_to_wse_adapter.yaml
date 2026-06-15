@@ -1,0 +1,3 @@
+top: wb_to_wse_adapter_top
+top_sv: tops/unit/wb_to_wse_adapter_top.sv
+rtl_f: tests/unit/wb_to_wse_adapter.f

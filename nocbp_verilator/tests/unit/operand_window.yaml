@@ -1,0 +1,3 @@
+top: operand_window_top
+top_sv: tops/unit/operand_window_top.sv
+rtl_f: tests/unit/operand_window.f

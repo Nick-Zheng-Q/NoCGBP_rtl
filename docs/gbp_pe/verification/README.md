@@ -72,7 +72,7 @@ verification/
 | 06_pull_server.md | ✅ Complete | 2 tests PASS |
 | 07_response_collector.md | ✅ Complete | 2 tests PASS |
 | 08_neighbor_state_accumulator.md | ✅ Complete | 4 tests PASS |
-| 09_compute_unit.md | ✅ **Complete** | 1 test PASS |
+| 09_compute_unit.md | 🟡 **Spec updated for v0.7** | Architecture changed; test spec rewritten for `gbp_compute_core` + `compute_unit_wrapper` |
 | 10_writeback_controller.md | ✅ Complete | 3 tests PASS |
 | 11_spm_arbiter.md | ✅ **Complete** | 1 test PASS |
 | 12_noc_adapter.md | ✅ Complete | 4 tests PASS |
@@ -88,16 +88,16 @@ verification/
 | 17_spm_bank_array.md | ✅ Complete | |
 | 18_gbp_pe_noc_bridge.md | ❌ DEPRECATED | Replaced by noc_adapter |
 | 19_gbp_pe_endpoint_adapter.md | ❌ DEPRECATED | Replaced by noc_adapter |
-| 18_read_stream_engine.md | ✅ **Complete** | 1 test PASS |
-| 19_write_stream_engine.md | ✅ **Complete** | 1 test PASS |
-| 20_agu.md | ✅ Complete | 3 tests PASS |
-| 21_gbp_compute_engine_test.md | ✅ Complete | 27 tests PASS |
+| 20_read_stream_engine.md | ✅ **Complete** | 1 test PASS |
+| 21_write_stream_engine.md | ✅ **Complete** | 1 test PASS |
+| 22_agu.md | ✅ Complete | 3 tests PASS |
+| (legacy `gbp_compute_engine_test.md`) | ❌ DEPRECATED | Replaced by `09_compute_unit.md` + `08_NEW_COMPUTE_UNIT.md` v0.7 |
 
 #### Subsystem Tests
 
 | Document | Status | Implemented / Total |
 |----------|--------|---------------------|
-| 01_compute_subsystem.md | 🔴 **Critical Gap** | 2 / 8 implemented. **Factor node (Test Case 2) is REQUIRED — currently NOT YET IMPLEMENTED and blocks algorithmic correctness.** Multi-DOF (Case 4), multi-edge (Case 5), batch_done (Case 6) also required. |
+| 01_compute_subsystem.md | 🟡 **Spec updated for v0.7** | Architecture changed; test spec rewritten for `compute_unit_wrapper` + `gbp_compute_core`. **Factor node (Test Case 2) is REQUIRED — currently NOT YET IMPLEMENTED and blocks algorithmic correctness.** Multi-DOF (Case 4), multi-edge (Case 5), batch_done (Case 6) also required. |
 | 02_memory_subsystem.md | 🟡 **Partial** | 4 / ~10 (missing write-then-read, zero-wstrb, all-clients) |
 | 03_fetch_subsystem.md | 🟡 **Partial** | 3 / ~10 (missing response full path, dedup, scoreboard-full) |
 | 04_control_subsystem.md | 🟡 **Partial** | 3 / ~8 (missing multi-edge, adj_last, local-state-reader) |
@@ -116,8 +116,8 @@ verification/
 
 #### System Tests
 
-| Document | Status |
-|----------|--------|
+| Document | Status | Notes |
+|----------|--------|-------|
 | 01_mesh_2x2_gbp_interconnect.md | 🟡 **Planned** | Direction B framework complete; awaiting `mesh_2x2_gbp_top.sv` |
 | 02_gbp_algorithm_golden_reference.md | 🔴 **REQUIRED** | Direction C document complete. **RTL testbench + Python reference integration is REQUIRED for algorithmic correctness gate.** Blocked by factor node implementation (see Compute Subsystem). |
 
@@ -141,7 +141,7 @@ Level 3: Integration Tests
     └── End-to-end flows (notification → fetch → response → compute → writeback)
 
 Level 2: Subsystem Tests
-    ├── Compute Subsystem (`gbp_pe_compute_subsystem` = compute_unit + read_stream_engine + write_stream_engine + agu)
+    ├── Compute Subsystem (`gbp_pe_compute_subsystem` = compute_unit_wrapper + gbp_compute_core + read_stream_engine + write_stream_engine + agu)
     ├── Memory Subsystem (`gbp_pe_memory_subsystem` = spm_arbiter + spm_bank_array)
     ├── Fetch Subsystem (`gbp_pe_fetch_subsystem` = scoreboard_prefetcher + pull_client + response_collector)
     ├── Control Subsystem (`gbp_pe_control_subsystem` = phase_controller + node_scheduler + metadata_scanner)

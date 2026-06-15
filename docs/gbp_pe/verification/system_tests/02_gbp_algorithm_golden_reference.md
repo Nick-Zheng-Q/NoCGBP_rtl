@@ -54,10 +54,10 @@ def compute_factor_messages(factor_eta, factor_lam, beliefs_eta, beliefs_lam,
 
 | Parameter | Value | RTL Source |
 |-----------|-------|------------|
-| Damping factor | `0.3` (FP32 `0x3E99999A`) | `compute_unit.sv`, `gbp_compute_engine` port |
+| Damping factor | `0.3` (FP32 `0x3E99999A`) | `compute_unit_wrapper` / `gbp_compute_core` port |
 | Max iterations | `10` | Convergence check in testbench |
 | Convergence threshold | `|delta_mu| < 1e-4` per DOF | Test-defined |
-| Message format | Information form (`eta`, `lam`) | `gbp_compute_engine` spec |
+| Message format | Information form (`eta`, `lam`) | `gbp_compute_core` spec |
 
 ### 2.3 Data Layout (Compact Payload)
 
@@ -299,7 +299,7 @@ For deep debugging, intermediate messages can be compared. However, because the 
 **Execution order**:
 1. Direction A passes → single PE pipeline is functionally correct.
 2. Direction B passes → mesh routing and multi-PE handshake work.
-3. Direction C passes → the arithmetic inside Compute Unit (`gbp_compute_engine`) produces correct GBP beliefs.
+3. Direction C passes → the arithmetic inside Compute Unit (`gbp_compute_core`) produces correct GBP beliefs.
 
 ---
 
@@ -324,5 +324,5 @@ For deep debugging, intermediate messages can be compared. However, because the 
 | `../../06_PE_CONTROL_FLOW.md` | PE-level scheduling and phase switching |
 | `../unit_tests/13_gbp_pe.md` | Direction A: single-PE top-level whitebox test |
 | `01_mesh_2x2_gbp_interconnect.md` | Direction B: 2×2 mesh functional test |
-| `../../compute/README.md` | `gbp_compute_engine` internal architecture and data formats |
+| `../../08_NEW_COMPUTE_UNIT.md` | `gbp_compute_core` internal architecture and data formats (v0.7) |
 | `../../CONTROL_COMPUTE_ABSTRACTION_DRAFT.md` | Exact GBP math (variable update, factor message, damping) |

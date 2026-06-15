@@ -1,0 +1,3 @@
+top: rhs_builder_for_message_top
+top_sv: tops/unit/rhs_builder_for_message_top.sv
+rtl_f: tests/unit/rhs_builder_for_message.f

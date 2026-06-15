@@ -11,79 +11,79 @@ module gbp_control_fsm #(
     parameter int MAX_ADJACENT = 8,
     parameter int STAGING_DEPTH = 1024,
     parameter int ADDR_W = $clog2(STAGING_DEPTH)
-)(
-    input  logic clk_i,
-    input  logic rst_n_i,
+) (
+    input logic clk_i,
+    input logic rst_n_i,
 
     // External command interface
-    input  logic               cmd_valid,
-    input  logic               cmd_is_factor,     // 0: variable, 1: factor
-    input  logic [7:0]         cmd_node_idx,
-    input  logic [2:0]         cmd_dofs,          // Node dimension (1, 2, 3, or 6)
-    input  logic [3:0]         cmd_adj_count,     // Number of adjacent nodes
-    input  logic [3:0]         cmd_msg_count,     // Messages to consume this round
-    input  logic [MAX_ADJACENT-1:0][2:0] cmd_neighbor_dofs, // Per-edge DOF for factor nodes
-    input  logic [9:0]         cmd_state_words,   // STATE words count for load/store
-    output logic               cmd_ready,
-    output logic               done_o,
+    input  logic                         cmd_valid,
+    input  logic                         cmd_is_factor,      // 0: variable, 1: factor
+    input  logic [             7:0]      cmd_node_idx,
+    input  logic [             2:0]      cmd_dofs,           // Node dimension (1, 2, 3, or 6)
+    input  logic [             3:0]      cmd_adj_count,      // Number of adjacent nodes
+    input  logic [             3:0]      cmd_msg_count,      // Messages to consume this round
+    input  logic [MAX_ADJACENT-1:0][2:0] cmd_neighbor_dofs,  // Per-edge DOF for factor nodes
+    input  logic [             9:0]      cmd_state_words,    // STATE words count for load/store
+    output logic                         cmd_ready,
+    output logic                         done_o,
 
     // Stream control (to load/store data from SPM)
-    output logic               stream_req_state,
-    output logic               stream_req_messages,
-    output logic [15:0]        stream_xfer_bytes,
-    input  logic               stream_grant,
-    input  logic               stream_done,
+    output logic        stream_req_state,
+    output logic        stream_req_messages,
+    output logic [15:0] stream_xfer_bytes,
+    input  logic        stream_grant,
+    input  logic        stream_done,
 
     // Stream data interface
-    output logic               stream_in_ready,
-    input  logic               stream_in_valid,
-    input  logic [255:0]       stream_in_data,
+    output logic         stream_in_ready,
+    input  logic         stream_in_valid,
+    input  logic [255:0] stream_in_data,
 
-    output logic               stream_out_valid,
-    input  logic               stream_out_ready,
-    output logic [255:0]       stream_out_data,
+    output logic         stream_out_valid,
+    input  logic         stream_out_ready,
+    output logic [255:0] stream_out_data,
 
     // Matrix FSM interface
-    output logic               mat_cmd_valid,
-    output logic [2:0]         mat_cmd_op,
-    output logic [ADDR_W-1:0]  mat_cmd_base_a,
-    output logic [ADDR_W-1:0]  mat_cmd_base_b,
-    output logic [ADDR_W-1:0]  mat_cmd_base_dest,
-    output logic [5:0]         mat_cmd_m,
-    output logic [5:0]         mat_cmd_n,
-    output logic [5:0]         mat_cmd_k,
-    input  logic               mat_cmd_ready,
-    input  logic               mat_done,
+    output logic              mat_cmd_valid,
+    output logic [       2:0] mat_cmd_op,
+    output logic [ADDR_W-1:0] mat_cmd_base_a,
+    output logic [ADDR_W-1:0] mat_cmd_base_b,
+    output logic [ADDR_W-1:0] mat_cmd_base_dest,
+    output logic [       5:0] mat_cmd_m,
+    output logic [       5:0] mat_cmd_n,
+    output logic [       5:0] mat_cmd_k,
+    input  logic              mat_cmd_ready,
+    input  logic              mat_done,
 
     // Staging buffer direct access (for data movement)
-    output logic [ADDR_W-1:0]  buf_wr_addr,
-    output logic [255:0]       buf_wr_data,
-    output logic               buf_wr_valid,
+    output logic [ADDR_W-1:0] buf_wr_addr,
+    output logic [     255:0] buf_wr_data,
+    output logic              buf_wr_valid,
 
     // Message base address for ns data routing (variable accumulate path)
-    output logic [ADDR_W-1:0]  msg_base_addr_o,
+    output logic [ADDR_W-1:0] msg_base_addr_o,
 
     // Staging buffer internal read (for unpack/pack)
-    output logic               internal_rd_valid,
-    output logic [ADDR_W-1:0]  internal_rd_addr,
-    input  logic [255:0]       internal_rd_data,
+    output logic              internal_rd_valid,
+    output logic [ADDR_W-1:0] internal_rd_addr,
+    input  logic [     255:0] internal_rd_data,
 
     // Configuration
-    input  logic [31:0]        damping_factor     // FP32 damping (e.g., 0.4)
+    input logic [31:0] damping_factor  // FP32 damping (e.g., 0.4)
 );
+
+  import gbp_pkg::*;
 
   logic reset_i;
   assign reset_i = ~rst_n_i;
 
   // Strict compact form lookup (words = dof + dof*(dof+1)/2)
-  localparam int COMPACT_PAYLOAD_WORDS [0:7] = '{0, 2, 5, 9, 14, 20, 27, 0};
-  localparam int SQUARE_WORDS [0:7] = '{0, 1, 4, 9, 16, 25, 36, 0};
+  localparam int COMPACT_PAYLOAD_WORDS[0:7] = '{0, 2, 5, 9, 14, 20, 27, 0};
+  localparam int SQUARE_WORDS[0:7] = '{0, 1, 4, 9, 16, 25, 36, 0};
 
   // Cumulative message offset for factor nodes (supports mixed DOF)
-  function automatic int message_offset_words(
-      input logic [3:0] msg_index,
-      input logic [MAX_ADJACENT-1:0][2:0] neighbor_dofs
-  );
+  function automatic int message_offset_words(input logic [3:0] msg_index,
+                                              input logic [MAX_ADJACENT-1:0][2:0] neighbor_dofs);
     int offset;
     int j;
     begin
@@ -98,10 +98,8 @@ module gbp_control_fsm #(
   endfunction
 
   // Compute total words for all per-edge messages
-  function automatic int total_message_words(
-      input logic [3:0] msg_count,
-      input logic [MAX_ADJACENT-1:0][2:0] neighbor_dofs
-  );
+  function automatic int total_message_words(input logic [3:0] msg_count,
+                                             input logic [MAX_ADJACENT-1:0][2:0] neighbor_dofs);
     int total;
     int j;
     begin
@@ -119,58 +117,70 @@ module gbp_control_fsm #(
   // Address allocation for factor node (binary, uniform DOF)
   // ============================================================
   function automatic int fac_msg_compact_base(input int idx, input int d);
-    fac_msg_compact_base = idx * (d + (d*(d+1))/2);
+    fac_msg_compact_base = idx * (d + (d * (d + 1)) / 2);
   endfunction
 
   function automatic int fac_msg_dense_base(input int idx, input int d);
-    int c = d + (d*(d+1))/2;
-    fac_msg_dense_base = 2*c + idx*(d + d*d);
+    int c = d + (d * (d + 1)) / 2;
+    fac_msg_dense_base = 2 * c + idx * (d + d * d);
   endfunction
 
   function automatic int fac_out_dense_base(input int d);
-    int c = d + (d*(d+1))/2;
-    fac_out_dense_base = 2*c + 2*(2*d) + (2*d)*(2*d) + (2*d) + d + d*d;
+    int c = d + (d * (d + 1)) / 2;
+    fac_out_dense_base = 2 * c + 2 * (2 * d) + (2 * d) * (2 * d) + (2 * d) + d + d * d;
   endfunction
 
   function automatic int fac_out_compact_base(input int d);
-    int c = d + (d*(d+1))/2;
-    fac_out_compact_base = fac_out_dense_base(d) + d + d*d;
+    int c = d + (d * (d + 1)) / 2;
+    fac_out_compact_base = fac_out_dense_base(d) + d + d * d;
   endfunction
 
   // J, z, J^T, Lambda_f, eta_f bases (measurement_dim = d assumed)
   function automatic int fac_j_base(input int d);
-    int c = d + (d*(d+1))/2;
-    fac_j_base = 2*c;
+    int c = d + (d * (d + 1)) / 2;
+    fac_j_base = 2 * c;
   endfunction
   function automatic int fac_z_base(input int d);
-    fac_z_base = fac_j_base(d) + d*(2*d);
+    fac_z_base = fac_j_base(d) + d * (2 * d);
   endfunction
   function automatic int fac_jt_base(input int d);
     fac_jt_base = fac_z_base(d) + d;
   endfunction
   function automatic int fac_lf_base(input int d);
-    fac_lf_base = fac_jt_base(d) + (2*d)*d;
+    fac_lf_base = fac_jt_base(d) + (2 * d) * d;
   endfunction
 
-  function automatic int fac_lf_00(input int d); fac_lf_00 = fac_lf_base(d); endfunction
-  function automatic int fac_lf_01(input int d); fac_lf_01 = fac_lf_base(d) + d*d; endfunction
-  function automatic int fac_lf_10(input int d); fac_lf_10 = fac_lf_base(d) + 2*d*d; endfunction
-  function automatic int fac_lf_11(input int d); fac_lf_11 = fac_lf_base(d) + 3*d*d; endfunction
+  function automatic int fac_lf_00(input int d);
+    fac_lf_00 = fac_lf_base(d);
+  endfunction
+  function automatic int fac_lf_01(input int d);
+    fac_lf_01 = fac_lf_base(d) + d * d;
+  endfunction
+  function automatic int fac_lf_10(input int d);
+    fac_lf_10 = fac_lf_base(d) + 2 * d * d;
+  endfunction
+  function automatic int fac_lf_11(input int d);
+    fac_lf_11 = fac_lf_base(d) + 3 * d * d;
+  endfunction
 
   function automatic int fac_ef_base(input int d);
-    fac_ef_base = fac_lf_base(d) + 4*d*d;
+    fac_ef_base = fac_lf_base(d) + 4 * d * d;
   endfunction
-  function automatic int fac_ef_0(input int d); fac_ef_0 = fac_ef_base(d); endfunction
-  function automatic int fac_ef_1(input int d); fac_ef_1 = fac_ef_base(d) + d; endfunction
+  function automatic int fac_ef_0(input int d);
+    fac_ef_0 = fac_ef_base(d);
+  endfunction
+  function automatic int fac_ef_1(input int d);
+    fac_ef_1 = fac_ef_base(d) + d;
+  endfunction
 
   function automatic int fac_tmp1_base(input int d);
-    fac_tmp1_base = fac_ef_base(d) + 2*d;
+    fac_tmp1_base = fac_ef_base(d) + 2 * d;
   endfunction
   function automatic int fac_tmp2_base(input int d);
-    fac_tmp2_base = fac_tmp1_base(d) + d*d;
+    fac_tmp2_base = fac_tmp1_base(d) + d * d;
   endfunction
   function automatic int fac_tmp3_base(input int d);
-    fac_tmp3_base = fac_tmp2_base(d) + d*d;
+    fac_tmp3_base = fac_tmp2_base(d) + d * d;
   endfunction
   function automatic int fac_tmp4_base(input int d);
     fac_tmp4_base = fac_tmp3_base(d) + d;
@@ -184,47 +194,16 @@ module gbp_control_fsm #(
       row = (j < i) ? j : i;
       col = (j < i) ? i : j;
       offset = d;  // skip eta
-      for (k = 0; k < row; k = k + 1)
-        offset = offset + (d - k);
+      for (k = 0; k < row; k = k + 1) offset = offset + (d - k);
       compact_lambda_idx = offset + (col - row);
     end
   endfunction
 
   // ============================================================
-  // State definitions
+  // State definitions (from gbp_pkg)
   // ============================================================
 
-  typedef enum logic [4:0] {
-    S_IDLE,
-    // Variable node
-    S_VAR_LOAD_DATA,
-    S_VAR_ACCUMULATE,
-    S_VAR_INVERT_LAM,
-    S_VAR_MVMUL,
-    S_VAR_STORE_RESULT,
-    S_VAR_DONE,
-    // Factor node
-    S_FAC_LOAD_DATA,
-    S_FAC_BUILD_JT,
-    S_FAC_COMPUTE_ETAF,
-    S_FAC_COMPUTE_LF,
-    S_FAC_UNPACK_MSG0,
-    S_FAC_UNPACK_MSG1,
-    S_FAC_ADD_BLOCK,
-    S_FAC_INVERT_BLOCK,
-    S_FAC_MUL_BLOCK1,
-    S_FAC_MUL_BLOCK2,
-    S_FAC_SUB_LAMBDA,
-    S_FAC_ADD_ETA,
-    S_FAC_MVMUL_ETA,
-    S_FAC_SUB_ETA,
-    S_FAC_PACK_MSG,
-    S_FAC_STORE_MESSAGE,
-    S_FAC_NEXT_ADJACENT,
-    S_FAC_DONE
-  } top_state_e;
-
-  top_state_e state_r, state_n;
+  gbp_fsm_state_e state_r, state_n;
 
   // Unpack/Pack sub-states
   typedef enum logic [2:0] {
@@ -300,13 +279,12 @@ module gbp_control_fsm #(
   logic [255:0] modified_beat;
   always_comb begin
     modified_beat = fmt_beat_r;
-    if (fmt_substate_r == FMT_WR)
-      modified_beat[{fmt_elem_r[2:0], 5'b0} +: 32] = fmt_val_r;
+    if (fmt_substate_r == FMT_WR) modified_beat[{fmt_elem_r[2:0], 5'b0}+:32] = fmt_val_r;
   end
 
   // Debug
   always_ff @(posedge clk_i) begin
-    if (state_r == S_VAR_DONE || state_r == S_FAC_DONE)
+    if (state_r == GFSM_VAR_DONE || state_r == GFSM_FAC_DONE)
       $display("GBP_FSM_DBG: DONE state=%b done_o=%b reset_i=%b", state_r, done_o, reset_i);
   end
 
@@ -321,7 +299,7 @@ module gbp_control_fsm #(
   // ============================================================
   always_ff @(posedge clk_i) begin
     if (reset_i) begin
-      state_r <= S_IDLE;
+      state_r <= GFSM_IDLE;
       is_factor_r <= 1'b0;
       dofs_r <= '0;
       adj_count_r <= '0;
@@ -350,7 +328,10 @@ module gbp_control_fsm #(
       fmt_is_pack_r <= 1'b0;
     end else begin
       state_r <= state_n;
-      mat_cmd_valid_r <= mat_cmd_valid_next;
+      // Clear mat_cmd_valid_r when matrix operation completes to prevent
+      // stale value from triggering a new operation in the next state
+      if (mat_done_r) mat_cmd_valid_r <= 1'b0;
+      else mat_cmd_valid_r <= mat_cmd_valid_next;
       mat_done_r <= mat_done;
       fmt_substate_r <= fmt_substate_n;
       fmt_elem_r <= fmt_elem_n;
@@ -373,7 +354,7 @@ module gbp_control_fsm #(
         accum_count_r <= '0;
       end else begin
         case (state_r)
-          S_VAR_ACCUMULATE: begin
+          GFSM_VAR_ACCUMULATE: begin
             if (mat_done_r) begin
               if (msg_count_r != 4'd0 && accum_count_r >= msg_count_r - 1'b1) begin
                 accum_count_r <= '0;
@@ -383,22 +364,26 @@ module gbp_control_fsm #(
             end
           end
 
-          S_FAC_BUILD_JT: begin
+          GFSM_FAC_BUILD_JT: begin
             // Build J^T from J using internal read/write
             case (jt_col_r)
               3'd0: begin
-                jt_rd_addr_r <= ADDR_W'((fac_j_base(dofs_r) + jt_col_r * (2*dofs_r) + jt_row_r) & (~7));
-                jt_word_in_beat_r <= 3'((fac_j_base(dofs_r) + jt_col_r * (2*dofs_r) + jt_row_r) & 7);
+                jt_rd_addr_r <= ADDR_W'((fac_j_base(
+                    dofs_r
+                ) + jt_col_r * (2 * dofs_r) + jt_row_r) & (~7));
+                jt_word_in_beat_r <= 3'((fac_j_base(
+                    dofs_r
+                ) + jt_col_r * (2 * dofs_r) + jt_row_r) & 7);
               end
               default: ;
             endcase
             if (jt_done_r) begin
-              jt_row_r <= '0;
-              jt_col_r <= '0;
+              jt_row_r  <= '0;
+              jt_col_r  <= '0;
               jt_done_r <= 1'b0;
             end else if (internal_rd_valid) begin
-              jt_val_r <= internal_rd_data[{jt_word_in_beat_r, 5'b0} +: 32];
-              jt_row_buffer_r[jt_col_r] <= internal_rd_data[{jt_word_in_beat_r, 5'b0} +: 32];
+              jt_val_r <= internal_rd_data[{jt_word_in_beat_r, 5'b0}+:32];
+              jt_row_buffer_r[jt_col_r] <= internal_rd_data[{jt_word_in_beat_r, 5'b0}+:32];
               if (jt_col_r + 1 >= dofs_r) begin
                 // Write J^T row
                 jt_done_r <= 1'b1;
@@ -408,7 +393,7 @@ module gbp_control_fsm #(
             end
           end
 
-          S_FAC_NEXT_ADJACENT: begin
+          GFSM_FAC_NEXT_ADJACENT: begin
             current_adj_r <= current_adj_r + 1'b1;
             accum_count_r <= '0;
           end
@@ -436,159 +421,158 @@ module gbp_control_fsm #(
     fmt_is_pack_n = fmt_is_pack_r;
 
     case (state_r)
-      S_IDLE: begin
+      GFSM_IDLE: begin
         if (cmd_valid) begin
-          if (cmd_is_factor) state_n = S_FAC_LOAD_DATA;
-          else               state_n = S_VAR_LOAD_DATA;
+          if (cmd_is_factor) state_n = GFSM_FAC_LOAD_DATA;
+          else state_n = GFSM_VAR_LOAD_DATA;
         end
       end
 
       // Variable Node path
-      S_VAR_LOAD_DATA: begin
+      GFSM_VAR_LOAD_DATA: begin
         if (stream_done) begin
-          if (msg_count_r == 4'd0) state_n = S_VAR_INVERT_LAM;
-          else                     state_n = S_VAR_ACCUMULATE;
+          if (msg_count_r == 4'd0) state_n = GFSM_VAR_INVERT_LAM;
+          else state_n = GFSM_VAR_ACCUMULATE;
         end
       end
 
-      S_VAR_ACCUMULATE: begin
-        if (mat_done_r && (msg_count_r != 4'd0)
-            && (accum_count_r >= msg_count_r - 1'b1)) begin
-          state_n = S_VAR_INVERT_LAM;
+      GFSM_VAR_ACCUMULATE: begin
+        if (mat_done_r && (msg_count_r != 4'd0) && (accum_count_r >= msg_count_r - 1'b1)) begin
+          state_n = GFSM_VAR_INVERT_LAM;
         end
       end
 
-      S_VAR_INVERT_LAM: begin
-        if (mat_done_r && mat_cmd_valid_r) state_n = S_VAR_MVMUL;
+      GFSM_VAR_INVERT_LAM: begin
+        if (mat_done_r && mat_cmd_valid_r) state_n = GFSM_VAR_MVMUL;
       end
 
-      S_VAR_MVMUL: begin
-        if (mat_done_r && mat_cmd_valid_r) state_n = S_VAR_STORE_RESULT;
+      GFSM_VAR_MVMUL: begin
+        if (mat_done_r && mat_cmd_valid_r) state_n = GFSM_VAR_STORE_RESULT;
       end
 
-      S_VAR_STORE_RESULT: begin
-        if (stream_done) state_n = S_VAR_DONE;
+      GFSM_VAR_STORE_RESULT: begin
+        if (stream_done) state_n = GFSM_VAR_DONE;
       end
 
-      S_VAR_DONE: state_n = S_IDLE;
+      GFSM_VAR_DONE: state_n = GFSM_IDLE;
 
       // Factor Node path
-      S_FAC_LOAD_DATA: begin
-        if (stream_done) state_n = S_FAC_BUILD_JT;
+      GFSM_FAC_LOAD_DATA: begin
+        if (stream_done) state_n = GFSM_FAC_BUILD_JT;
       end
 
-      S_FAC_BUILD_JT: begin
-        if (jt_done_r) state_n = S_FAC_COMPUTE_ETAF;
+      GFSM_FAC_BUILD_JT: begin
+        if (jt_done_r) state_n = GFSM_FAC_COMPUTE_ETAF;
       end
 
-      S_FAC_COMPUTE_ETAF: begin
-        if (mat_done_r) state_n = S_FAC_COMPUTE_LF;
+      GFSM_FAC_COMPUTE_ETAF: begin
+        if (mat_done_r) state_n = GFSM_FAC_COMPUTE_LF;
       end
 
-      S_FAC_COMPUTE_LF: begin
-        if (mat_done_r) state_n = S_FAC_UNPACK_MSG0;
+      GFSM_FAC_COMPUTE_LF: begin
+        if (mat_done_r) state_n = GFSM_FAC_UNPACK_MSG0;
       end
 
-      S_FAC_UNPACK_MSG0: begin
+      GFSM_FAC_UNPACK_MSG0: begin
         if (fmt_substate_r == FMT_IDLE) begin
           fmt_src_base_n = ADDR_W'(fac_msg_compact_base(0, dofs_r));
           fmt_dst_base_n = ADDR_W'(fac_msg_dense_base(0, dofs_r));
-          fmt_total_elems_n = 6'(dofs_r + dofs_r*dofs_r);
+          fmt_total_elems_n = 6'(dofs_r + dofs_r * dofs_r);
           fmt_is_pack_n = 1'b0;
           fmt_elem_n = '0;
           fmt_row_n = '0;
           fmt_col_n = '0;
           fmt_substate_n = FMT_RD_COMPACT;
         end else if (fmt_substate_r == FMT_DONE) begin
-          state_n = S_FAC_UNPACK_MSG1;
+          state_n = GFSM_FAC_UNPACK_MSG1;
         end
       end
 
-      S_FAC_UNPACK_MSG1: begin
+      GFSM_FAC_UNPACK_MSG1: begin
         if (fmt_substate_r == FMT_IDLE) begin
           fmt_src_base_n = ADDR_W'(fac_msg_compact_base(1, dofs_r));
           fmt_dst_base_n = ADDR_W'(fac_msg_dense_base(1, dofs_r));
-          fmt_total_elems_n = 6'(dofs_r + dofs_r*dofs_r);
+          fmt_total_elems_n = 6'(dofs_r + dofs_r * dofs_r);
           fmt_is_pack_n = 1'b0;
           fmt_elem_n = '0;
           fmt_row_n = '0;
           fmt_col_n = '0;
           fmt_substate_n = FMT_RD_COMPACT;
         end else if (fmt_substate_r == FMT_DONE) begin
-          state_n = S_FAC_ADD_BLOCK;
+          state_n = GFSM_FAC_ADD_BLOCK;
         end
       end
 
-      S_FAC_ADD_BLOCK: begin
-        if (mat_done_r) state_n = S_FAC_INVERT_BLOCK;
+      GFSM_FAC_ADD_BLOCK: begin
+        if (mat_done_r) state_n = GFSM_FAC_INVERT_BLOCK;
       end
 
-      S_FAC_INVERT_BLOCK: begin
-        if (mat_done_r) state_n = S_FAC_MUL_BLOCK1;
+      GFSM_FAC_INVERT_BLOCK: begin
+        if (mat_done_r) state_n = GFSM_FAC_MUL_BLOCK1;
       end
 
-      S_FAC_MUL_BLOCK1: begin
-        if (mat_done_r) state_n = S_FAC_MUL_BLOCK2;
+      GFSM_FAC_MUL_BLOCK1: begin
+        if (mat_done_r) state_n = GFSM_FAC_MUL_BLOCK2;
       end
 
-      S_FAC_MUL_BLOCK2: begin
-        if (mat_done_r) state_n = S_FAC_SUB_LAMBDA;
+      GFSM_FAC_MUL_BLOCK2: begin
+        if (mat_done_r) state_n = GFSM_FAC_SUB_LAMBDA;
       end
 
-      S_FAC_SUB_LAMBDA: begin
-        if (mat_done_r) state_n = S_FAC_ADD_ETA;
+      GFSM_FAC_SUB_LAMBDA: begin
+        if (mat_done_r) state_n = GFSM_FAC_ADD_ETA;
       end
 
-      S_FAC_ADD_ETA: begin
-        if (mat_done_r) state_n = S_FAC_MVMUL_ETA;
+      GFSM_FAC_ADD_ETA: begin
+        if (mat_done_r) state_n = GFSM_FAC_MVMUL_ETA;
       end
 
-      S_FAC_MVMUL_ETA: begin
-        if (mat_done_r) state_n = S_FAC_SUB_ETA;
+      GFSM_FAC_MVMUL_ETA: begin
+        if (mat_done_r) state_n = GFSM_FAC_SUB_ETA;
       end
 
-      S_FAC_SUB_ETA: begin
-        if (mat_done_r) state_n = S_FAC_PACK_MSG;
+      GFSM_FAC_SUB_ETA: begin
+        if (mat_done_r) state_n = GFSM_FAC_PACK_MSG;
       end
 
-      S_FAC_PACK_MSG: begin
+      GFSM_FAC_PACK_MSG: begin
         if (fmt_substate_r == FMT_IDLE) begin
           fmt_src_base_n = ADDR_W'(fac_out_dense_base(dofs_r));
           fmt_dst_base_n = ADDR_W'(fac_out_compact_base(dofs_r));
-          fmt_total_elems_n = 6'(dofs_r + dofs_r*dofs_r);
+          fmt_total_elems_n = 6'(dofs_r + dofs_r * dofs_r);
           fmt_is_pack_n = 1'b1;
           fmt_elem_n = '0;
           fmt_row_n = '0;
           fmt_col_n = '0;
           fmt_substate_n = FMT_RD_COMPACT;
         end else if (fmt_substate_r == FMT_DONE) begin
-          state_n = S_FAC_STORE_MESSAGE;
+          state_n = GFSM_FAC_STORE_MESSAGE;
         end
       end
 
-      S_FAC_STORE_MESSAGE: begin
-        if (stream_done) state_n = S_FAC_NEXT_ADJACENT;
+      GFSM_FAC_STORE_MESSAGE: begin
+        if (stream_done) state_n = GFSM_FAC_NEXT_ADJACENT;
       end
 
-      S_FAC_NEXT_ADJACENT: begin
+      GFSM_FAC_NEXT_ADJACENT: begin
         if (msg_count_r == 4'd0) begin
-          state_n = S_FAC_DONE;
+          state_n = GFSM_FAC_DONE;
         end else if (current_adj_r >= msg_count_r - 1) begin
-          state_n = S_FAC_DONE;
+          state_n = GFSM_FAC_DONE;
         end else begin
-          state_n = S_FAC_ADD_BLOCK;
+          state_n = GFSM_FAC_ADD_BLOCK;
         end
       end
 
-      S_FAC_DONE: state_n = S_IDLE;
+      GFSM_FAC_DONE: state_n = GFSM_IDLE;
 
-      default: state_n = S_IDLE;
+      default: state_n = GFSM_IDLE;
     endcase
 
     // Format sub-state machine (shared for unpack/pack)
     case (fmt_substate_r)
       FMT_IDLE: begin
-        // Initiated by entering S_FAC_UNPACK_MSGx or S_FAC_PACK_MSG
+        // Initiated by entering S_FAC_UNPACK_MSGx or GFSM_FAC_PACK_MSG
       end
 
       FMT_RD_COMPACT: begin
@@ -598,20 +582,20 @@ module gbp_control_fsm #(
       FMT_WAIT_COMPACT: begin
         int cidx, word_in_beat;
         if (!fmt_is_pack_r) begin
-          if (fmt_elem_r < dofs_r)
-            cidx = fmt_elem_r;
+          if (fmt_elem_r < dofs_r) cidx = fmt_elem_r;
           else
-            cidx = compact_lambda_idx((fmt_elem_r - dofs_r) / dofs_r,
-                                       (fmt_elem_r - dofs_r) % dofs_r, dofs_r);
+            cidx = compact_lambda_idx(
+              (fmt_elem_r - dofs_r) / dofs_r, (fmt_elem_r - dofs_r) % dofs_r, dofs_r
+            );
         end else begin
-          if (fmt_elem_r < dofs_r)
-            cidx = fmt_elem_r;
+          if (fmt_elem_r < dofs_r) cidx = fmt_elem_r;
           else
-            cidx = compact_lambda_idx((fmt_elem_r - dofs_r) / dofs_r,
-                                       (fmt_elem_r - dofs_r) % dofs_r, dofs_r);
+            cidx = compact_lambda_idx(
+              (fmt_elem_r - dofs_r) / dofs_r, (fmt_elem_r - dofs_r) % dofs_r, dofs_r
+            );
         end
         word_in_beat = cidx & 7;
-        fmt_val_n = internal_rd_data[{3'(word_in_beat), 5'b0} +: 32];
+        fmt_val_n = internal_rd_data[{3'(word_in_beat), 5'b0}+:32];
         fmt_substate_n = FMT_RD_DENSE;
       end
 
@@ -646,7 +630,7 @@ module gbp_control_fsm #(
   // Output logic
   // ============================================================
 
-  assign cmd_ready = (state_r == S_IDLE);
+  assign cmd_ready = (state_r == GFSM_IDLE);
 
   // Stream control
   always_comb begin
@@ -658,24 +642,24 @@ module gbp_control_fsm #(
     stream_out_data = '0;
 
     case (state_r)
-      S_VAR_LOAD_DATA: begin
-        stream_req_state = 1'b1;
+      GFSM_VAR_LOAD_DATA: begin
+        stream_req_state  = 1'b1;
         stream_xfer_bytes = 16'(payload_size_int * 4);
-        stream_in_ready = 1'b1;
+        stream_in_ready   = 1'b1;
       end
 
-      S_VAR_ACCUMULATE: begin
+      GFSM_VAR_ACCUMULATE: begin
         // Messages come from accumulator via stream_in
         stream_in_ready = 1'b1;
       end
 
-      S_VAR_STORE_RESULT: begin
+      GFSM_VAR_STORE_RESULT: begin
         stream_out_valid = 1'b1;
         // Output mu, stored at result_addr by MVMUL
         stream_out_data[ADDR_W-1:0] = result_addr;
       end
 
-      S_FAC_LOAD_DATA: begin
+      GFSM_FAC_LOAD_DATA: begin
         stream_req_state = 1'b1;
         stream_req_messages = 1'b1;
         // Load STATE: use cmd_state_words provided by control unit
@@ -683,7 +667,7 @@ module gbp_control_fsm #(
         stream_in_ready = 1'b1;
       end
 
-      S_FAC_STORE_MESSAGE: begin
+      GFSM_FAC_STORE_MESSAGE: begin
         stream_out_valid = 1'b1;
         stream_out_data[ADDR_W-1:0] = ADDR_W'(message_offset_words(current_adj_r, neighbor_dofs_r));
       end
@@ -701,17 +685,29 @@ module gbp_control_fsm #(
     internal_rd_addr = ADDR_W'(0);
 
     // Build J^T outputs
-    if (state_r == S_FAC_BUILD_JT) begin
+    if (state_r == GFSM_FAC_BUILD_JT) begin
       if (!jt_done_r) begin
         internal_rd_valid = 1'b1;
-        internal_rd_addr = ADDR_W'((fac_j_base(dofs_r) + jt_col_r * (2*dofs_r) + jt_row_r) & (~ADDR_W'(7)));
+        internal_rd_addr =
+            ADDR_W'((fac_j_base(dofs_r) + jt_col_r * (2 * dofs_r) + jt_row_r) & (~ADDR_W'(7)));
       end else begin
         // Write J^T row
         buf_wr_valid = 1'b1;
         buf_wr_addr = ADDR_W'(fac_jt_base(dofs_r) + jt_row_r * dofs_r);
-        buf_wr_data = {128'h0, jt_row_buffer_r[3], jt_row_buffer_r[2], jt_row_buffer_r[1], jt_row_buffer_r[0]};
+        buf_wr_data = {
+          128'h0, jt_row_buffer_r[3], jt_row_buffer_r[2], jt_row_buffer_r[1], jt_row_buffer_r[0]
+        };
         case (dofs_r)
-          3'd6: buf_wr_data = {jt_row_buffer_r[5], jt_row_buffer_r[4], jt_row_buffer_r[3], jt_row_buffer_r[2], jt_row_buffer_r[1], jt_row_buffer_r[0], 64'h0};
+          3'd6:
+          buf_wr_data = {
+            jt_row_buffer_r[5],
+            jt_row_buffer_r[4],
+            jt_row_buffer_r[3],
+            jt_row_buffer_r[2],
+            jt_row_buffer_r[1],
+            jt_row_buffer_r[0],
+            64'h0
+          };
           3'd3: buf_wr_data = {jt_row_buffer_r[2], jt_row_buffer_r[1], jt_row_buffer_r[0], 160'h0};
           3'd1: buf_wr_data = {jt_row_buffer_r[0], 224'h0};
           default: ;
@@ -775,8 +771,8 @@ module gbp_control_fsm #(
         end
         word_in_beat = didx & 7;
         buf_wr_valid = 1'b1;
-        buf_wr_addr = fmt_dst_base_r + ADDR_W'((didx >> 3) << 3);
-        buf_wr_data = modified_beat;
+        buf_wr_addr  = fmt_dst_base_r + ADDR_W'((didx >> 3) << 3);
+        buf_wr_data  = modified_beat;
       end
 
       default: ;
@@ -795,7 +791,7 @@ module gbp_control_fsm #(
     mat_cmd_k = 6'd1;
 
     case (state_r)
-      S_VAR_ACCUMULATE: begin
+      GFSM_VAR_ACCUMULATE: begin
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_ADD;
         mat_cmd_base_a = prior_eta_addr;
@@ -805,7 +801,7 @@ module gbp_control_fsm #(
         mat_cmd_n = 6'(payload_size_int);
       end
 
-      S_VAR_INVERT_LAM: begin
+      GFSM_VAR_INVERT_LAM: begin
         // mat_cmd_valid_r: 0 = no command issued yet, 1 = command issued
         // mat_done_r: 0 = not done, 1 = done (or stale from previous op)
         //
@@ -825,7 +821,7 @@ module gbp_control_fsm #(
         mat_cmd_n = {3'b0, dofs_r};
       end
 
-      S_VAR_MVMUL: begin
+      GFSM_VAR_MVMUL: begin
         mat_cmd_valid_next = mat_cmd_ready;
         mat_cmd_op = `GBP_OP_MAT_VEC_MUL;
         mat_cmd_base_a = result_addr;
@@ -836,31 +832,31 @@ module gbp_control_fsm #(
         mat_cmd_k = {3'b0, dofs_r};
       end
 
-      S_FAC_COMPUTE_ETAF: begin
+      GFSM_FAC_COMPUTE_ETAF: begin
         // eta_f = J^T * z
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_VEC_MUL;
         mat_cmd_base_a = ADDR_W'(fac_jt_base(dofs_r));
         mat_cmd_base_b = ADDR_W'(fac_z_base(dofs_r));
         mat_cmd_base_dest = ADDR_W'(fac_ef_base(dofs_r));
-        mat_cmd_m = 6'(2*dofs_r);
+        mat_cmd_m = 6'(2 * dofs_r);
         mat_cmd_n = 6'd1;
         mat_cmd_k = {3'b0, dofs_r};
       end
 
-      S_FAC_COMPUTE_LF: begin
+      GFSM_FAC_COMPUTE_LF: begin
         // Lambda_f = J^T * J
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_MUL;
         mat_cmd_base_a = ADDR_W'(fac_jt_base(dofs_r));
         mat_cmd_base_b = ADDR_W'(fac_j_base(dofs_r));
         mat_cmd_base_dest = ADDR_W'(fac_lf_base(dofs_r));
-        mat_cmd_m = 6'(2*dofs_r);
-        mat_cmd_n = 6'(2*dofs_r);
+        mat_cmd_m = 6'(2 * dofs_r);
+        mat_cmd_n = 6'(2 * dofs_r);
         mat_cmd_k = {3'b0, dofs_r};
       end
 
-      S_FAC_ADD_BLOCK: begin
+      GFSM_FAC_ADD_BLOCK: begin
         // Lambda_jj_plus = Lambda_f[j,j] + Lambda_msg_j
         int lf_jj, msg_j_lam, d;
         d = dofs_r;
@@ -880,7 +876,7 @@ module gbp_control_fsm #(
         mat_cmd_n = {3'b0, dofs_r};
       end
 
-      S_FAC_INVERT_BLOCK: begin
+      GFSM_FAC_INVERT_BLOCK: begin
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_INV;
         mat_cmd_base_a = ADDR_W'(fac_tmp1_base(dofs_r));
@@ -889,14 +885,12 @@ module gbp_control_fsm #(
         mat_cmd_n = {3'b0, dofs_r};
       end
 
-      S_FAC_MUL_BLOCK1: begin
+      GFSM_FAC_MUL_BLOCK1: begin
         // tmp = Lambda_f[i,j] * Lambda_jj_inv
         int lf_ij, d;
         d = dofs_r;
-        if (current_adj_r == 0)
-          lf_ij = fac_lf_01(d);
-        else
-          lf_ij = fac_lf_10(d);
+        if (current_adj_r == 0) lf_ij = fac_lf_01(d);
+        else lf_ij = fac_lf_10(d);
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_MUL;
         mat_cmd_base_a = ADDR_W'(lf_ij);
@@ -907,14 +901,12 @@ module gbp_control_fsm #(
         mat_cmd_k = {3'b0, dofs_r};
       end
 
-      S_FAC_MUL_BLOCK2: begin
+      GFSM_FAC_MUL_BLOCK2: begin
         // tmp2 = tmp * Lambda_f[j,i]
         int lf_ji, d;
         d = dofs_r;
-        if (current_adj_r == 0)
-          lf_ji = fac_lf_10(d);
-        else
-          lf_ji = fac_lf_01(d);
+        if (current_adj_r == 0) lf_ji = fac_lf_10(d);
+        else lf_ji = fac_lf_01(d);
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_MUL;
         mat_cmd_base_a = ADDR_W'(fac_tmp2_base(d));
@@ -925,14 +917,12 @@ module gbp_control_fsm #(
         mat_cmd_k = {3'b0, dofs_r};
       end
 
-      S_FAC_SUB_LAMBDA: begin
+      GFSM_FAC_SUB_LAMBDA: begin
         // Lambda_out = Lambda_f[i,i] - tmp2
         int lf_ii, d;
         d = dofs_r;
-        if (current_adj_r == 0)
-          lf_ii = fac_lf_00(d);
-        else
-          lf_ii = fac_lf_11(d);
+        if (current_adj_r == 0) lf_ii = fac_lf_00(d);
+        else lf_ii = fac_lf_11(d);
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_SUB;
         mat_cmd_base_a = ADDR_W'(lf_ii);
@@ -942,7 +932,7 @@ module gbp_control_fsm #(
         mat_cmd_n = {3'b0, dofs_r};
       end
 
-      S_FAC_ADD_ETA: begin
+      GFSM_FAC_ADD_ETA: begin
         // eta_j_plus = eta_f[j] + eta_msg_j
         int ef_j, msg_j_eta, d;
         d = dofs_r;
@@ -962,7 +952,7 @@ module gbp_control_fsm #(
         mat_cmd_n = {3'b0, dofs_r};
       end
 
-      S_FAC_MVMUL_ETA: begin
+      GFSM_FAC_MVMUL_ETA: begin
         // tmp_eta = tmp * eta_j_plus
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_VEC_MUL;
@@ -974,14 +964,12 @@ module gbp_control_fsm #(
         mat_cmd_k = {3'b0, dofs_r};
       end
 
-      S_FAC_SUB_ETA: begin
+      GFSM_FAC_SUB_ETA: begin
         // eta_out = eta_f[i] - tmp_eta
         int ef_i, d;
         d = dofs_r;
-        if (current_adj_r == 0)
-          ef_i = fac_ef_0(d);
-        else
-          ef_i = fac_ef_1(d);
+        if (current_adj_r == 0) ef_i = fac_ef_0(d);
+        else ef_i = fac_ef_1(d);
         mat_cmd_valid_next = mat_cmd_ready && !mat_done_r;
         mat_cmd_op = `GBP_OP_MAT_SUB;
         mat_cmd_base_a = ADDR_W'(ef_i);
@@ -996,7 +984,7 @@ module gbp_control_fsm #(
   end
 
   // done_o driven by state
-  assign done_o = (state_r == S_VAR_DONE) || (state_r == S_FAC_DONE);
+  assign done_o = (state_r == GFSM_VAR_DONE) || (state_r == GFSM_FAC_DONE);
   assign mat_cmd_valid = mat_cmd_valid_r;
 
 endmodule

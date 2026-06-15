@@ -1,0 +1,3 @@
+top: belief_solve_adapter_top
+top_sv: tops/unit/belief_solve_adapter_top.sv
+rtl_f: tests/unit/belief_solve_adapter.f

@@ -151,8 +151,29 @@ module phase_scheduling_top (
   logic [gbp_pkg::BEAT_BITS-1:0]  comp_spm_wr_data;
   logic [gbp_pkg::WSTRB_W-1:0]   comp_spm_wr_wstrb;
 
-  assign comp_spm_rd0_data = {32'd0, 32'(comp_spm_rd0_addr)};
-  assign comp_spm_rd1_data = {32'd0, 32'(comp_spm_rd1_addr)};
+  // Fake compute SPM with one-cycle read latency to match read_stream_engine's
+  // delayed-ready protocol.
+  logic comp_spm_rd0_valid_r, comp_spm_rd1_valid_r;
+  logic comp_spm_rd0_ready_int, comp_spm_rd1_ready_int;
+  logic [gbp_pkg::SPM_ADDR_W-1:0] comp_spm_rd0_sample_addr, comp_spm_rd1_sample_addr;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      comp_spm_rd0_valid_r <= 1'b0;
+      comp_spm_rd1_valid_r <= 1'b0;
+    end else begin
+      comp_spm_rd0_valid_r <= comp_spm_rd0_valid;
+      comp_spm_rd1_valid_r <= comp_spm_rd1_valid;
+    end
+    if (comp_spm_rd0_valid) comp_spm_rd0_sample_addr <= comp_spm_rd0_addr;
+    if (comp_spm_rd1_valid) comp_spm_rd1_sample_addr <= comp_spm_rd1_addr;
+  end
+
+  assign comp_spm_rd0_ready_int = comp_spm_rd0_valid_r;
+  assign comp_spm_rd1_ready_int = comp_spm_rd1_valid_r;
+
+  assign comp_spm_rd0_data = {32'd0, 32'(comp_spm_rd0_sample_addr)};
+  assign comp_spm_rd1_data = {32'd0, 32'(comp_spm_rd1_sample_addr)};
 
   gbp_pe_compute_subsystem u_compute (
     .clk(clk)
@@ -170,11 +191,11 @@ module phase_scheduling_top (
     ,.ns_data_i(ns_data_i)
     ,.ns_last_i(ns_last_i)
     ,.spm_rd0_valid_o(comp_spm_rd0_valid)
-    ,.spm_rd0_ready_i(1'b1)
+    ,.spm_rd0_ready_i(comp_spm_rd0_ready_int)
     ,.spm_rd0_addr_o(comp_spm_rd0_addr)
     ,.spm_rd0_data_i(comp_spm_rd0_data)
     ,.spm_rd1_valid_o(comp_spm_rd1_valid)
-    ,.spm_rd1_ready_i(1'b1)
+    ,.spm_rd1_ready_i(comp_spm_rd1_ready_int)
     ,.spm_rd1_addr_o(comp_spm_rd1_addr)
     ,.spm_rd1_data_i(comp_spm_rd1_data)
     ,.spm_wr_valid_o(comp_spm_wr_valid)

@@ -1,5 +1,8 @@
 top: gbp_pe_top
 top_sv: tops/unit/gbp_pe_top.sv
 rtl_f: tests/unit/gbp_pe.f
+incdirs:
+  - common
+  - tests/tools
 defines:
   - GBP_WHITEBOX_TEST

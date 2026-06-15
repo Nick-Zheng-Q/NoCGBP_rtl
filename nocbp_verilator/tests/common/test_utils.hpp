@@ -6,15 +6,30 @@
 #include <cstdlib>
 #include <string>
 
+#ifdef TRACE_VCD
+#include "verilated_vcd_c.h"
+#endif
+
 namespace test_utils {
+
+#ifdef TRACE_VCD
+static VerilatedVcdC* g_tfp = nullptr;
+static uint64_t g_sim_time = 0;
+#endif
 
 // 通用tick函数模板（需要针对具体DUT类型特化）
 template<typename DUT>
 static void tick(DUT* dut) {
   dut->clk = 0;
   dut->eval();
+#ifdef TRACE_VCD
+  if (g_tfp) g_tfp->dump(g_sim_time++);
+#endif
   dut->clk = 1;
   dut->eval();
+#ifdef TRACE_VCD
+  if (g_tfp) g_tfp->dump(g_sim_time++);
+#endif
 }
 
 // 通用reset函数模板
@@ -26,6 +41,30 @@ static void reset_dut(DUT* dut, int cycles = 2) {
   }
   dut->rst_n = 1;
 }
+
+// VCD trace 初始化
+#ifdef TRACE_VCD
+template<typename DUT>
+static void trace_init(DUT* dut, const char* filename = "dump.vcd", int levels = 99) {
+  Verilated::traceEverOn(true);
+  g_tfp = new VerilatedVcdC;
+  dut->trace(g_tfp, levels);
+  g_tfp->open(filename);
+  g_sim_time = 0;
+}
+
+static void trace_close() {
+  if (g_tfp) {
+    g_tfp->close();
+    delete g_tfp;
+    g_tfp = nullptr;
+  }
+}
+#else
+template<typename DUT>
+static void trace_init(DUT*, const char* = "dump.vcd", int = 99) {}
+static void trace_close() {}
+#endif
 
 // 通用失败报告函数
 static int fail(const char* test_name, const char* msg) {

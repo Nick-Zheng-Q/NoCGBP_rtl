@@ -54,25 +54,23 @@ module staging_buffer #(
   
   logic [31:0] mem [DEPTH];
   
-  // Stream write: 8 consecutive words
+  // Unified write port (single always_ff block)
+  // Stream writes and SIMD writes are mutually exclusive by FSM state.
+  // SIMD writes are placed last so they take priority on address conflicts.
   always_ff @(posedge clk_i) begin
+    // Stream write: 8 consecutive words
     if (stream_wr_valid && stream_wr_ready) begin
-      mem[stream_wr_addr + 0] <= stream_wr_data[31:0];
-      mem[stream_wr_addr + 1] <= stream_wr_data[63:32];
-      mem[stream_wr_addr + 2] <= stream_wr_data[95:64];
-      mem[stream_wr_addr + 3] <= stream_wr_data[127:96];
-      mem[stream_wr_addr + 4] <= stream_wr_data[159:128];
-      mem[stream_wr_addr + 5] <= stream_wr_data[191:160];
-      mem[stream_wr_addr + 6] <= stream_wr_data[223:192];
-      mem[stream_wr_addr + 7] <= stream_wr_data[255:224];
+      for (int w = 0; w < 8; w++) begin
+        mem[stream_wr_addr + ADDR_W'(w)] <= stream_wr_data[w*32 +: 32];
+      end
+      $display("STG_WR: addr=%0d data=%h", stream_wr_addr, stream_wr_data[63:0]);
     end
-  end
-  
-  // SIMD writes: each lane can write independently
-  always_ff @(posedge clk_i) begin
+    // SIMD writes: per-lane (last assignment wins on conflict)
     for (int i = 0; i < LANES; i++) begin
       if (simd_wr_valid[i]) begin
         mem[simd_wr_addr[i]] <= simd_wr_data[i];
+        if (simd_wr_addr[i] < 10)
+          $display("STG_SIMD: lane=%0d addr=%0d data=%h", i, simd_wr_addr[i], simd_wr_data[i]);
       end
     end
   end

@@ -17,11 +17,11 @@
 -I../v/gbp_pe/compute/include
 -I../imports/HardFloat/source
 -I../imports/HardFloat/source/RISCV
--I../v/gbp_pe
 
 ../basejump_stl/bsg_misc/bsg_defines.sv
 ../v/bsg_manycore_pkg.sv
 ../v/gbp_pe/gbp_pkg.sv
+../v/gbp_pe/compute_core/gbp_op_pkg.sv
 
 ../v/gbp_pe/phase_controller.sv
 ../v/gbp_pe/node_scheduler.sv
@@ -31,13 +31,25 @@
 ../v/gbp_pe/agu.sv
 ../v/gbp_pe/read_stream_engine.sv
 ../v/gbp_pe/write_stream_engine.sv
-../v/gbp_pe/compute_unit.sv
-../v/gbp_pe/compute/gbp_compute_engine.sv
-../v/gbp_pe/compute/gbp_control_fsm.sv
-../v/gbp_pe/compute/matrix_fsm.sv
-../v/gbp_pe/compute/simd_array.sv
-../v/gbp_pe/compute/staging_buffer.sv
-../v/gbp_pe/compute/matrix_alu/mat_inv_gauss_jordan.sv
+
+../v/gbp_pe/compute_core/operand_stream_assembler.sv
+../v/gbp_pe/compute_core/operand_stream_dispatcher.sv
+../v/gbp_pe/compute_core/op_decoder.sv
+../v/gbp_pe/compute_core/operand_window.sv
+../v/gbp_pe/compute_core/cavity_builder.sv
+../v/gbp_pe/compute_core/rhs_builder_for_message.sv
+../v/gbp_pe/compute_core/ldlt_solve_core.sv
+../v/gbp_pe/compute_core/schur_update_unit.sv
+../v/gbp_pe/compute_core/damping_unit.sv
+../v/gbp_pe/compute_core/belief_operand_unpacker.sv
+../v/gbp_pe/compute_core/packed_accumulator.sv
+../v/gbp_pe/compute_core/belief_solve_adapter.sv
+../v/gbp_pe/compute_core/belief_result_builder.sv
+../v/gbp_pe/compute_core/writeback_packer.sv
+../v/gbp_pe/compute_core/wb_to_wse_adapter.sv
+../v/gbp_pe/compute_core/gbp_compute_core.sv
+../v/gbp_pe/compute_core/compute_unit_wrapper.sv
+
 ../v/gbp_pe/gbp_pe_compute_subsystem.sv
 
 ../basejump_stl/bsg_fpu/bsg_fpu_add_sub.sv

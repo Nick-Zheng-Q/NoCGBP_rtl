@@ -94,7 +94,7 @@ gbp_pe_top
 | T+12  | Clear  | `wb_cmd_valid_i=0` | Command accepted (`wb_cmd_ready_o` should be 1 at T+11) |
 | T+13  | —      | —              | Compute Unit reads STATE via RSE |
 | T+13..T+18 | — | —              | 6 words = 3 beats read from SPM |
-| T+19..T+30 | — | —              | `gbp_compute_engine` computes (MAT_ADD, etc.) |
+| T+19..T+30 | — | —              | `gbp_compute_core` computes (op_decoder → cavity_builder / packed_accumulator → ldlt_solve_core → schur_update_unit / belief_result_builder) |
 | T+31  | Observe| `done_valid_o=1` | Compute done |
 | T+32  | Observe| `tx_notif_valid=1` | Writeback sends NOTIFICATION to local consumer |
 | T+33  | Observe| `reset_valid_o=1` | Writeback triggers scoreboard reset for node 0x10 |

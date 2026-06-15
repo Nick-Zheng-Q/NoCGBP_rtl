@@ -1,0 +1,3 @@
+top: damping_unit_top
+top_sv: tops/unit/damping_unit_top.sv
+rtl_f: tests/unit/damping_unit.f

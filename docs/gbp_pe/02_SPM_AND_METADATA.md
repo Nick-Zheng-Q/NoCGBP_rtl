@@ -239,7 +239,7 @@ STATE is a variable-length block per node. Contents differ between variable and 
 
 ### 6.1 Variable Node STATE
 
-Variable node STATE contains **only the prior** (eta + Lambda). Incoming messages from factor neighbors are **not** stored in the STATE block; they are received on-demand via the accumulator during each compute cycle.
+Variable node STATE contains the current belief, which acts as the prior for the next message-passing round. It stores `eta + Lambda` in compact form. Incoming messages from factor neighbors are **not** stored in the STATE block; they are received on-demand via the accumulator during each compute cycle. After a belief update, `compute_unit_wrapper` writes the new `eta + Lambda` back to the same STATE slot (see `08_NEW_COMPUTE_UNIT.md` §22.6 for writeback payload order).
 
 ```
 state_base

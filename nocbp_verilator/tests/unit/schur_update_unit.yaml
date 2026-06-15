@@ -1,0 +1,3 @@
+top: schur_update_unit_top
+top_sv: tops/unit/schur_update_unit_top.sv
+rtl_f: tests/unit/schur_update_unit.f

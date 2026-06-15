@@ -56,3 +56,4 @@ ppa/
 nocbp_verilator/build/
 nocbp_verilator/.clangd
 *.yaml.mk
+kimi*

@@ -1,0 +1,3 @@
+top: op_decoder_top
+top_sv: tops/unit/op_decoder_top.sv
+rtl_f: tests/unit/op_decoder.f

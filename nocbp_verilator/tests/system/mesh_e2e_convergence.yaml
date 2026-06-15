@@ -1,0 +1,7 @@
+top: mesh_2x2_gbp_top
+top_sv: tops/system/mesh_2x2_gbp_top.sv
+rtl_f: tests/system/mesh_2x2_gbp_interconnect.f
+tb: tests/system/mesh_e2e_convergence.cc
+verilator_warnings: minimal
+defines:
+  - GBP_WHITEBOX_TEST

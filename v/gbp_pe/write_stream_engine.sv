@@ -145,6 +145,11 @@ module write_stream_engine
   // ------------------------------------------------------------------
   // AGU (beat-level addressing)
   // ------------------------------------------------------------------
+  // Delay the AGU start by one cycle so it samples the registered
+  // descriptor count (desc_count_r) after it has been latched.  This
+  // avoids a Verilator evaluation-order race where the AGU could latch
+  // a stale combinational word_count_i in the same cycle that the
+  // descriptor is accepted.
   logic                 agu_start;
   logic [SPM_ADDR_W-1:0] agu_base_addr;
   logic [15:0]          agu_beat_count;
@@ -155,12 +160,21 @@ module write_stream_engine
 
   assign agu_start      = desc_valid_i && desc_ready_o;
   assign agu_base_addr  = desc_base_addr_i >> BEAT_ADDR_SHIFT;
-  assign agu_beat_count = (desc_word_count_i + WORDS_PER_BEAT[15:0] - 16'd1) >> BEAT_ADDR_SHIFT;
+  assign agu_beat_count = (desc_count_r + WORDS_PER_BEAT[15:0] - 16'd1) >> BEAT_ADDR_SHIFT;
+
+  logic agu_start_r;
+  always_ff @(posedge clk_i) begin
+    if (!rst_n_i) begin
+      agu_start_r <= 1'b0;
+    end else begin
+      agu_start_r <= agu_start;
+    end
+  end
 
   agu #(.SPM_ADDR_W(SPM_ADDR_W)) u_agu (
     .clk_i        (clk_i),
     .rst_n_i      (rst_n_i),
-    .start_i      (agu_start),
+    .start_i      (agu_start_r),
     .base_addr_i  (agu_base_addr),
     .word_count_i (agu_beat_count),
     .addr_valid_o (agu_addr_valid),

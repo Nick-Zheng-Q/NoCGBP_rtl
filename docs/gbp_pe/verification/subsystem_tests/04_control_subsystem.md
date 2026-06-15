@@ -41,7 +41,7 @@ Verify that the Control Subsystem correctly:
 
 **Modules under test:** `phase_controller`, `node_scheduler`, `metadata_scanner`
 
-**Mocked modules:** `scoreboard_prefetcher` (node_ready vector), `writeback_controller` (wb_done), `compute_unit` (cmd_ready)
+**Mocked modules:** `scoreboard_prefetcher` (node_ready vector), `writeback_controller` (wb_done), `compute_unit_wrapper` (cmd_ready)
 
 ## 3. Preconditions
 

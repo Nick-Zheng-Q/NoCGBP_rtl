@@ -552,6 +552,76 @@ int run_test(int argc, char** argv) {
   }
 
   // ---------------------------------------------------------------
+  // Test 10: dim6 belief prior (33 words = 17 beats, last partial)
+  // ---------------------------------------------------------------
+  std::printf("[Test 10] word_count=33 (dim6 belief prior)\n");
+  reset_dut(dut);
+  dut->i_beat_ready = 1;
+  dut->i_desc_valid = 1;
+  dut->i_desc_base_addr = 0xC00;
+  dut->i_desc_word_count = 33;
+  tick(dut);
+  dut->i_desc_valid = 0;
+
+  int rse_errors = 0;
+  uint32_t prev33_w0 = 0, prev33_w1 = 0;
+  for (int b = 0; b < 17; ++b) {
+    dut->clk = 0;
+    dut->eval();
+    if (!dut->o_spm_rd_valid) {
+      std::fprintf(stderr, "  [FAIL] Beat %d: no spm_rd_valid\n", b);
+      rse_errors++;
+      break;
+    }
+    uint32_t exp_addr = 0xC00u + static_cast<uint32_t>(b) * 2u;
+    if (dut->o_spm_rd_addr != exp_addr) {
+      std::fprintf(stderr, "  [FAIL] Beat %d: expected addr 0x%x, got 0x%x\n",
+                   b, exp_addr, dut->o_spm_rd_addr);
+      rse_errors++;
+    }
+    if (b > 0) {
+      if (!dut->o_beat_valid) {
+        std::fprintf(stderr, "  [FAIL] Beat %d: previous beat not valid\n", b);
+        rse_errors++;
+      } else if (!beat_data_eq(dut, prev33_w0, prev33_w1)) {
+        std::fprintf(stderr, "  [FAIL] Beat %d: previous beat data mismatch\n", b);
+        rse_errors++;
+      }
+    }
+    uint32_t w0 = 0xC0000000u + static_cast<uint32_t>(b) * 2u;
+    uint32_t w1 = 0xC0000001u + static_cast<uint32_t>(b) * 2u;
+    set_spm_data(dut, w0, w1);
+    prev33_w0 = w0;
+    prev33_w1 = w1;
+
+    dut->clk = 1;
+    dut->eval();
+  }
+  if (rse_errors == 0) {
+    dut->clk = 0;
+    dut->eval();
+    if (!dut->o_beat_valid || !beat_data_eq(dut, prev33_w0, prev33_w1)) {
+      std::fprintf(stderr, "  [FAIL] Final beat data mismatch\n");
+      rse_errors++;
+    } else {
+      std::printf("  [PASS] All 17 beats for word_count=33 correct\n");
+    }
+  }
+  dut->clk = 1;
+  dut->eval();
+  dut->i_beat_ready = 0;
+  errors += rse_errors;
+
+  cycles = 0;
+  while (!dut->o_desc_ready && cycles < 20) { tick(dut); cycles++; }
+  if (!dut->o_desc_ready) {
+    std::fprintf(stderr, "  [FAIL] desc_ready did not re-assert after word_count=33\n");
+    errors++;
+  } else {
+    std::printf("  [PASS] desc_ready re-asserted after word_count=33\n");
+  }
+
+  // ---------------------------------------------------------------
   // Summary
   // ---------------------------------------------------------------
   if (errors == 0) {

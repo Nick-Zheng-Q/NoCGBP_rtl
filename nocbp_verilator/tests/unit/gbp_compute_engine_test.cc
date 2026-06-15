@@ -67,6 +67,7 @@ int run_test(int argc, char** argv) {
   dut->cmd_dofs_i = 0;
   dut->cmd_adj_count_i = 0;
   dut->cmd_msg_count_i = 0;
+  dut->cmd_wr_xfer_bytes_i = 32;  // 8 words × 4 bytes = 1 beat output
   dut->stream_in_valid = 0;
   dut->stream_out_ready = 0;
   dut->damping_factor_i = f2u(0.4f);  // Default damping 0.4
@@ -405,7 +406,7 @@ int run_test(int argc, char** argv) {
           (unsigned)root->gbp_compute_engine__DOT__stream_in_beats_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_out_beats_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_active_r,
-          (unsigned)root->gbp_compute_engine__DOT__stream_dir_out_r,
+          (unsigned)root->gbp_compute_engine__DOT__is_output_dir,
           (unsigned)root->gbp_compute_engine__DOT__cmd_wr_xfer_bytes_r,
           (unsigned)root->gbp_compute_engine__DOT__cmd_msg_count_r,
           (unsigned)root->gbp_compute_engine__DOT__cmd_is_factor_r,
@@ -472,7 +473,7 @@ int run_test(int argc, char** argv) {
           (unsigned)root->gbp_compute_engine__DOT__stream_in_beats_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_out_beats_r,
           (unsigned)root->gbp_compute_engine__DOT__stream_active_r,
-          (unsigned)root->gbp_compute_engine__DOT__stream_dir_out_r,
+          (unsigned)root->gbp_compute_engine__DOT__is_output_dir,
           (unsigned)root->stream_out_valid,
           (unsigned)root->stream_out_ready,
           (unsigned)root->rsp_done_o,

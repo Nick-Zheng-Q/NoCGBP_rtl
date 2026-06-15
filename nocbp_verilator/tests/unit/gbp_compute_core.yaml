@@ -1,0 +1,4 @@
+top: gbp_compute_core_top
+top_sv: tops/unit/gbp_compute_core_top.sv
+rtl_f: tests/unit/gbp_compute_core.f
+verilator_warnings: none

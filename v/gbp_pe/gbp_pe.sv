@@ -480,11 +480,6 @@ module gbp_pe
   assign comp_cmd_adj_count    = wb_cmd_adj_count_i;
   assign comp_cmd_neighbor_dofs = wb_cmd_neighbor_dofs_i;
 
-  always_ff @(posedge clk_i) begin
-    if (wb_cmd_valid_i) begin
-      $display("GBP_PE_DBG: wb_cmd_adj_count_i=%d comp_cmd_adj_count=%d", wb_cmd_adj_count_i, comp_cmd_adj_count);
-    end
-  end
   assign comp_cmd_state_words  = wb_cmd_state_words_i;
   assign comp_cmd_state_base   = SPM_ADDR_W'(wb_cmd_node_id_i) << 4;
   assign wb_cmd_ready_o        = comp_cmd_ready;

@@ -1,0 +1,3 @@
+top: belief_result_builder_top
+top_sv: tops/unit/belief_result_builder_top.sv
+rtl_f: tests/unit/belief_result_builder.f

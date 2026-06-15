@@ -1,0 +1,4 @@
+top: compute_unit_wrapper_top
+top_sv: tops/unit/compute_unit_wrapper_top.sv
+rtl_f: tests/unit/compute_unit_wrapper.f
+verilator_warnings: none

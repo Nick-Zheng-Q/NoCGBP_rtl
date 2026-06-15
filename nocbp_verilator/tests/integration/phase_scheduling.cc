@@ -7,6 +7,7 @@
 
 #include "verilated.h"
 #include "Vphase_scheduling_top.h"
+#include "Vphase_scheduling_top___024root.h"
 
 static void tick(Vphase_scheduling_top* dut) {
   dut->clk = 0;
@@ -55,6 +56,28 @@ static int test_factor_phase(Vphase_scheduling_top* dut) {
   int ns_word_idx = 0;
   cycles = 0;
   while (!dut->done_valid_o && cycles < 2000) {
+    if (cycles < 50) {
+      auto* r = dut->rootp;
+      printf("  dbg cyc%3d: cmd_v=%d done=%d ns_ready=%d wrap_state=%d op_asm_state=%d rse_vr=%d%d rd_valid=%d ready=%d sample_addr=0x%X rse_active=%d agu_ready=%d rd_active=%d rsp_valid=%d retry=%d wr_rd_v=%d desc_idx=%d core_op_rdy=%d op_v=%d\n",
+             cycles, dut->comp_cmd_valid_o, dut->done_valid_o,
+             dut->ns_ready_o,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__state_r,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__state_r,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__rse_beat_valid,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__rse_beat_ready,
+             (int)r->phase_scheduling_top__DOT__comp_spm_rd0_valid,
+             (int)r->phase_scheduling_top__DOT__comp_spm_rd0_valid_r,
+             (unsigned)r->phase_scheduling_top__DOT__comp_spm_rd0_sample_addr,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__u_rse__DOT__active_r,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__u_rse__DOT__agu_addr_ready,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__u_rse__DOT__rd_req_active_r,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__u_rse__DOT__rsp_valid,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__u_rse__DOT__retrying,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__rd_req_valid_r,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__desc_idx_r,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__core_operand_ready,
+             (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__operand_valid_r);
+    }
     if (dut->ns_ready_o && ns_word_idx < 8) {
       dut->ns_valid_i = 1;
       dut->ns_data_i = (ns_word_idx == 0) ? 0x3F800000u
@@ -191,11 +214,47 @@ static int test_round_robin(Vphase_scheduling_top* dut) {
         nodes_seen++;
         prev_sched_id = sid;
 
-        // Complete compute
-        feed_neighbor_state(dut);
+        // Complete compute — feed neighbor state on demand (when core is ready)
+        int ns_fed = 0;
         int w = 0;
-        while (!dut->done_valid_o && w < 200) { tick(dut); w++; }
-        if (w >= 200) {
+        while (!dut->done_valid_o && w < 2000) {
+          tick(dut); w++;
+          if (dut->ns_ready_o && ns_fed < 8) {
+            dut->ns_valid_i = 1;
+            dut->ns_data_i = (ns_fed == 0) ? 0x3F800000u : (0x40000000u + (uint32_t)ns_fed);
+            dut->ns_last_i = (ns_fed == 7);
+            ns_fed++;
+          } else {
+            dut->ns_valid_i = 0;
+            dut->ns_last_i = 0;
+          }
+          if (w % 100 == 0) {
+            auto* r = dut->rootp;
+            fprintf(stderr, "\n    [node%d w=%d] wrap=%d asm=%d rse=%d cmd_v=%d done=%d rd_req_v=%d disp_valid=%d disp_empty=%d desc_idx=%d core_state=%d core_rsp_v=%d op_v=%d ns_rdy=%d bop_st=%d bop_prior=%d/%d bop_msg_in=%d bop_buf=%d",
+                    sid, w,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__state_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__state_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__u_rse__DOT__active_r,
+                    (int)dut->comp_cmd_valid_o,
+                    (int)dut->done_valid_o,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__rd_req_valid_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_dispatcher__DOT__desc_valid_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_dispatcher__DOT__empty,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__desc_idx_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__u_core__DOT__state_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__core_rsp_valid,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_op_asm__DOT__operand_valid_r,
+                    (int)dut->ns_ready_o,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__u_core__DOT__u_bop__DOT__state_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__u_core__DOT__u_bop__DOT__prior_cnt_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__u_core__DOT__u_bop__DOT__prior_total,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__u_core__DOT__u_bop__DOT__msg_in_cnt_r,
+                    (int)r->phase_scheduling_top__DOT__u_compute__DOT__u_compute_unit_wrapper__DOT__u_core__DOT__u_bop__DOT__buf_cnt_r);
+          }
+        }
+        dut->ns_valid_i = 0;
+        dut->ns_last_i = 0;
+        if (w >= 2000) {
           fprintf(stderr, "\n    FAIL: done never asserted for node %d", sid);
           pass = 0;
           break;
@@ -230,8 +289,8 @@ static int test_visited_mask_clear(Vphase_scheduling_top* dut) {
   if (pass) {
     feed_neighbor_state(dut);
     int w = 0;
-    while (!dut->done_valid_o && w < 200) { tick(dut); w++; }
-    if (w >= 200) { fprintf(stderr, "\n    FAIL: done never asserted"); pass = 0; }
+    while (!dut->done_valid_o && w < 2000) { tick(dut); w++; }
+    if (w >= 2000) { fprintf(stderr, "\n    FAIL: done never asserted"); pass = 0; }
   }
 
   // Wait for phase switch (node 0 no longer ready)

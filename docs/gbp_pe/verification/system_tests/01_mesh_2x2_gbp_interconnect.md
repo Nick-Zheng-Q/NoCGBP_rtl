@@ -177,7 +177,7 @@ PE(0,0) computes N0 (factor). When done, Writeback Controller sends NOTIFICATION
 
 | Cycle | Expected Event | Source | Destination | Description |
 |-------|---------------|--------|-------------|-------------|
-| T+10..T+50 | Compute | PE(0,0) | internal | N0 factor compute (MAT_ADD, etc.) |
+| T+10..T+50 | Compute | PE(0,0) | internal | N0 factor compute (OP_MSG_F2V: static read → cavity accumulation → LDLT solve → Schur update → damping → writeback) |
 | T+51 | NOTIFICATION store | PE(0,0) | PE(1,0) | `{is_factor=1, source=0, target=1}` |
 | T+52 | NOTIFICATION store | PE(0,0) | PE(1,1) | `{is_factor=1, source=0, target=3}` (diagonal, 2-hop) |
 

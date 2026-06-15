@@ -16,7 +16,8 @@ gbp_pe (manycore tile interface)
 │   ├── metadata_scanner
 │   └── reverse_index_lookup       // NEW: Reverse CSR query for notifications
 ├── gbp_pe_compute_subsystem
-│   ├── compute_unit
+│   ├── compute_unit_wrapper
+│   │   └── gbp_compute_core
 │   ├── read_stream_engine
 │   │   └── agu
 │   └── write_stream_engine
@@ -264,55 +265,92 @@ remote response -----/
 
 Compute Unit does not care whether data comes from local or remote.
 
-### 2.9 Compute Unit (PEComputeEngine)
+### 2.9 Compute Unit (GBP Compute Core v0.7)
 
-Handles current node update. Coarse-grain operation scheduler with 16-lane FP32 SIMD model.
+Handles current node update using canonical Gaussian belief propagation primitives.
 
-**Architecture**: Stream-based, descriptor-driven SPM access. The compute_unit does not have direct SPM read/write ports. Instead, it uses `read_stream_if` and `write_stream_if` interfaces. Descriptors are sent to stream engines (`read_stream_engine`, `write_stream_engine`), which contain AGUs that translate descriptors into per-beat SPM addresses and drive the SPM Arbiter.
+**Architecture**: The compute subsystem is split into two layers:
+
+```
+gbp_pe_compute_subsystem
+├── compute_unit_wrapper (stream framing + writeback)
+│   ├── gbp_compute_core (arithmetic only)
+│   │   ├── op_decoder
+│   │   ├── operand_window
+│   │   ├── cavity_builder (stream accumulator)
+│   │   ├── rhs_builder_for_message
+│   │   ├── ldlt_solve_core (LDLT + multi-RHS solve)
+│   │   ├── schur_update_unit
+│   │   ├── damping_unit
+│   │   ├── belief_operand_unpacker
+│   │   ├── packed_accumulator
+│   │   ├── belief_solve_adapter
+│   │   ├── belief_result_builder
+│   │   └── rsp_assembler
+│   └── writeback_packer
+├── read_stream_engine (×2: STATE + STAGING)
+│   └── agu
+└── write_stream_engine
+    └── agu
+```
+
+**Key design principles** (from `08_NEW_COMPUTE_UNIT.md` v0.7):
+- `gbp_compute_core` receives typed operand streams and produces packed result packets. It contains no SPM address-generation logic.
+- `compute_unit_wrapper` handles stream framing, descriptor issuance, and writeback conversion.
+- Cavity-side operand streams are consumed on-the-fly by `cavity_builder` and discarded.
+- V0 uses streaming operand window; no `MAX_DEGREE` buffer.
+- Regularization uses additive diagonal loading inside the solver; pivot failure is reported, not silently corrected.
 
 **Data flow**:
 ```
-Accumulator ──[ns_valid/data/last]──▶ Compute Unit (neighbor state stream in)
-                                          │
-Descriptor ──[read_stream_if]──▶ Read Stream Engine ──[AGU]──▶ SPM Arbiter ──▶ SPM Bank Array
-                                          │                              │
-                                          └── stream data in ◀───────────┘
-                                          │
-Compute Unit ──[write_stream_if]──▶ Write Stream Engine ──[AGU]──▶ SPM Arbiter ──▶ SPM Bank Array
+Scheduler ──[cmd_valid/ready]──▶ Compute Unit Wrapper
+                                      │
+Read Stream Engine ──[operand_stream]──▶ gbp_compute_core
+                                      │
+Neighbor State Accumulator ──[ns_valid/data/last]──▶ gbp_compute_core
+                                      │
+gbp_compute_core ──[rsp_valid/ready]──▶ Compute Unit Wrapper
+                                      │
+Compute Unit Wrapper ──[writeback_record]──▶ Write Stream Engine ──[AGU]──▶ SPM
 ```
 
-**Supported operations:**
+**Supported operations** (V0):
 
 | Op | Description | Cycle Model |
 |---|---|---|
-| `MAT_ADD` | matrix/vector addition | `base(2) + ops * (3 + ceil(words/16))` |
-| `MAT_SUB` | matrix/vector subtraction | same as MAT_ADD |
-| `MAT_MUL` | matrix multiplication | `base(2) + 3 + ceil(m*n*k / 16)` |
-| `MAT_VEC_MUL` | matrix-vector multiply | `base(2) + 3 + ceil(dofs² / 16)` |
-| `MAT_INV` | matrix inversion (Gauss-Jordan) | `base(2) + (dofs + dofs*(dofs-1)) * (2 + ceil(2*dofs/16))` |
-| `FACTOR_MSG_SOLVE` | LDLT + multi-RHS solve | PartialPivLU pipeline |
-| `ROBUSTIFY` | robust loss | 2 cycles |
-| `RELINEARIZE` | Jacobian update | `base(2) + 3 + ceil(obs_dim*dofs / 16)` |
+| `OP_MSG_F2V` | Factor-to-variable message update | See §25–§26 in `08_NEW_COMPUTE_UNIT.md` |
+| `OP_BELIEF` | Variable belief update | See §25 and §27 in `08_NEW_COMPUTE_UNIT.md` |
+| `OP_RELIN_CHECK` | Relinearization check (V1) | — |
+| `OP_ROBUST_SCALE` | Robust rescale (V1) | — |
 
-Note: `LOAD` and `STORE` are not compute operations — they are handled by the stream engines via descriptors. The compute_unit receives data through `read_stream_if` and outputs results through `write_stream_if`.
+**Latency estimates** (from `08_NEW_COMPUTE_UNIT.md` §25):
 
-**Staging buffer**: 128 words (512B) for MAT_INV. Constraint: `2 * dofs² ≤ 128` (dofs ≤ 8).
+| Operation | dim=1 | dim=3 | dim=6 |
+|---|---:|---:|---:|
+| Message (scalar) | 24 | — | — |
+| Message (SE2) | — | 40 | — |
+| Message (SE3) | — | — | 90 |
+| Belief (degree=2) | 14 | 29 | 55 |
+| Belief (degree=10) | 17 | 41 | 94 |
 
-**Accumulator depth**: 128 words (512B). Supports dof=8 compact form (44 words).
+**Batch completion**: Compute Unit Wrapper asserts `batch_done` when the current batch completes. `done_valid` indicates the entire node's compute is complete.
 
-**Batch completion**: Compute Unit asserts `batch_done` when the current batch of neighbor state accumulation and compute completes. This triggers the STAGING Allocator to reset (`staging_bump = staging_base`, `staging_reserved = 0`). `batch_done` is distinct from `done_valid`, which indicates the entire node's compute is complete. In batched staging mode, one node update may produce multiple `batch_done` pulses before the final `done_valid`.
-
-**Variable Node schedule (`schedule_vn`):**
-
-```
-Issue read descriptor for prior + msgs → stream in → MAT_ADD accumulate → MAT_INV → MAT_VEC_MUL → stream out belief via write descriptor
-```
-
-**Factor Node schedule (`schedule_fn`):**
+**Variable Node schedule (`OP_BELIEF`):**
 
 ```
-Issue read descriptor → stream in → [ROBUSTIFY] → [RELINEARIZE] → MAT_ADD total →
-  per-edge { MAT_SUB cavity → MAT_INV cavity → MAT_MUL msg → stream out msg via write descriptor }
+belief_operand_unpacker unpacks OST_BELIEF_PRIOR → packed_accumulator
+packed_accumulator consumes degree incoming OST_BELIEF_MSG beats
+belief_solve_adapter → ldlt_solve_core → belief_result_builder
+wrapper writeback_packer emits WB_BELIEF (includes residual)
+```
+
+**Factor Node schedule (`OP_MSG_F2V`):**
+
+```
+operand_window loads OST_MSG_STATIC (target-side + cross + old target msg)
+cavity_builder consumes OST_CAV_FACTOR_O / OST_CAV_BELIEF_O / OST_CAV_OLD_TO_O
+rhs_builder_for_message → ldlt_solve_core → schur_update_unit → damping_unit
+wrapper writeback_packer emits WB_MSG
 ```
 
 ### 2.10 Writeback Controller
@@ -338,7 +376,7 @@ SPM clients (8), accessed through `gbp_pe_memory_subsystem`:
 7. Response Collector write (STAGING — write pull response data) — from `gbp_pe_fetch_subsystem`
 8. DMA / loader (META + STATE — initialization) — external
 
-Note: Clients 3-5 are driven by stream engines inside `gbp_pe_compute_subsystem`. The compute_unit itself does not directly drive the SPM Arbiter.
+Note: Clients 3-5 are driven by stream engines inside `gbp_pe_compute_subsystem`. Neither `compute_unit_wrapper` nor `gbp_compute_core` directly drives the SPM Arbiter.
 
 First version: round-robin, no priority.
 
@@ -358,7 +396,7 @@ External interfaces:
 - To `gbp_pe`: `sched_valid`, `no_schedulable_nodes`, `wb_done`.
 
 #### 2.12.2 `gbp_pe_compute_subsystem`
-Encapsulates: `compute_unit`, `read_stream_engine`, `write_stream_engine`, and internal `agu` instances.
+Encapsulates: `compute_unit_wrapper` (detailed in `08_NEW_COMPUTE_UNIT.md` v0.7), `read_stream_engine`, `write_stream_engine`, and internal `agu` instances.
 
 External interfaces:
 - From `gbp_pe_control_subsystem`: compute command (`cmd_valid`, `cmd_node_id`, etc.).

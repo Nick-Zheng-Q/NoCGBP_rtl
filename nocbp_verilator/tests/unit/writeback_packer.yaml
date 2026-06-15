@@ -1,0 +1,3 @@
+top: writeback_packer_top
+top_sv: tops/unit/writeback_packer_top.sv
+rtl_f: tests/unit/writeback_packer.f

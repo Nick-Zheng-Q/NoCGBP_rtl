@@ -268,45 +268,44 @@ Command merge rule: `cmd_valid` to Compute Unit is asserted when **both** `sched
 
 Both must be valid simultaneously when `accumulator_done` fires.
 
-Note: The compute_unit does not receive `state_base` as a direct SPM address. It issues read/write descriptors to stream engines, which contain AGUs that generate SPM addresses.
+Note: `compute_unit_wrapper` does not receive `state_base` as a direct SPM address. It issues read/write descriptors to stream engines, which contain AGUs that generate SPM addresses. The arithmetic module inside the wrapper is `gbp_compute_core`.
 
-**Flow**:
+**Flow** (v0.7 canonical GBP primitives):
 
 ```
-Variable node (schedule_vn):
-  Issue read descriptor for prior + msgs → stream in via rd_beat_valid/rd_beat_data
-  MAT_ADD accumulate (partial accumulator from batches, if any)
-  MAT_INV (uses internal staging buffer, 128 words)
-  MAT_VEC_MUL
-  Issue write descriptor for belief → stream out via wr_word_valid/wr_word_data
+Variable node (OP_BELIEF):
+  compute_unit_wrapper issues read descriptors for the prior and all incoming belief-side messages
+  gbp_compute_core receives:
+    - OST_BELIEF_PRIOR beat(s) via operand stream
+    - OST_BELIEF_MSG beat per neighbor via operand stream (degree beats total)
+  belief_operand_unpacker converts prior beat → packed_accumulator
+  packed_accumulator adds each OST_BELIEF_MSG contribution
+  belief_solve_adapter → ldlt_solve_core → belief_result_builder
+  compute_unit_wrapper packs WB_BELIEF record and issues write descriptor to SPM
+  Optional: if the target consumer is remote, writeback_packer also emits a notification payload
 
-Factor node (schedule_fn):
-  // Step 1: Read factor's own STATE (per-edge old messages + measurement + Jacobian)
-  Issue read descriptor → stream in via rd_beat_valid/rd_beat_data
-    - First adj_count segments: per-edge old messages (each sized by msg_words[i])
-    - Next segment: measurement
-    - Final segment: Jacobian
+Factor node (OP_MSG_F2V):
+  // Step 1: Read factor's own STATE (target-side info, cross info, and old outgoing messages)
+  compute_unit_wrapper issues read descriptors for OST_MSG_STATIC data
 
-  // Step 2: Accumulate incoming neighbor beliefs (via accumulator)
-  [ROBUSTIFY] (if applicable)
-  [RELINEARIZE] (if applicable)
-  MAT_ADD total (build joint belief from measurement + Jacobian + incoming messages)
+  // Step 2: Read cavity operands and compute outgoing message for one target variable
+  For each target edge i (0 .. adj_count-1):
+    gbp_compute_core receives:
+      - OST_CAV_FACTOR_O, OST_CAV_BELIEF_O, OST_CAV_OLD_TO_O cavity beats via operand stream
+    cavity_builder accumulates cavity information matrix/right-hand side
+    rhs_builder_for_message builds the target-specific RHS
+    ldlt_solve_core solves the (possibly regularized) cavity system
+    schur_update_unit extracts the outgoing message (info vector + info matrix)
+    damping_unit applies damping: msg_new = (1-damping)*msg_new + damping*msg_old[i]
+    compute_unit_wrapper packs WB_MSG record and issues write descriptor to SPM at msg_addr[i]
 
-  // Step 3: Per-edge message computation
-  For each edge i (0 .. adj_count-1):
-    // Extract cavity = joint - variable_i's contribution
-    MAT_SUB cavity
-    MAT_INV cavity
-    MAT_MUL msg (Schur complement to extract message for variable i)
-    DAMPING: msg_new = (1-damping)*msg_new + damping*msg_old[i]
-    // Writeback
-    STORE msg_new to SPM STATE at msg_addr[i] (factor's own per-edge message slot)
-    // Notification sent by Writeback Controller after all edges complete
+  // Step 3: Notifications
+  After all per-edge writebacks complete, Writeback Controller sends NOTIFICATIONs to consuming neighbors.
 ```
 
 **Completion**: Compute Unit asserts `done_valid` with `done_node_id` and `done_is_factor`.
 
-**Latency**: Depends on schedule. See `04_PE_MICROARCHITECTURE.md` Section 2.9 cycle models.
+**Latency**: Depends on schedule. See `08_NEW_COMPUTE_UNIT.md` §25 for the compute-core latency model and `04_PE_MICROARCHITECTURE.md` §2.9 for PE-level estimates.
 
 ### 3.6 Stage 5: WRITEBACK
 

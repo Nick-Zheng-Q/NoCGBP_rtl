@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "gbp_golden_reference",
+  "config": {
+    "schema_version": "1.0",
+    "test_name": "4node_mesh_stress",
+    "description": "4 local-only nodes with stress-test values across 2x2 mesh",
+    "num_pes": 4,
+    "num_rounds": 5,
+    "nodes": [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 0.0,
+          "lambda": 0.1
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": -100.0,
+          "lambda": 50.0
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 1e-06,
+          "lambda": 1000000.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 3.14159,
+          "lambda": 2.71828
+        }
+      }
+    ],
+    "edges": []
+  },
+  "num_rounds": 1,
+  "final_state": [
+    {
+      "id": 0,
+      "pe": 0,
+      "dof": 1,
+      "state": {
+        "eta": 0.0,
+        "lambda": 0.1
+      }
+    },
+    {
+      "id": 1,
+      "pe": 1,
+      "dof": 1,
+      "state": {
+        "eta": -100.0,
+        "lambda": 50.0
+      }
+    },
+    {
+      "id": 2,
+      "pe": 2,
+      "dof": 1,
+      "state": {
+        "eta": 1e-06,
+        "lambda": 1000000.0
+      }
+    },
+    {
+      "id": 3,
+      "pe": 3,
+      "dof": 1,
+      "state": {
+        "eta": 3.14159,
+        "lambda": 2.71828
+      }
+    }
+  ],
+  "history": [
+    [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 0.0,
+          "lambda": 0.1
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": -100.0,
+          "lambda": 50.0
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 1e-06,
+          "lambda": 1000000.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 3.14159,
+          "lambda": 2.71828
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 0.0,
+          "lambda": 0.1
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": -100.0,
+          "lambda": 50.0
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 1e-06,
+          "lambda": 1000000.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 3.14159,
+          "lambda": 2.71828
+        }
+      }
+    ]
+  ]
+}

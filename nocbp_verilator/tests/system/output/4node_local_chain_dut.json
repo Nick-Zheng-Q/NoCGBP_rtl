@@ -1,0 +1,43 @@
+{
+  "test_name": "4node_local_chain",
+  "num_nodes": 4,
+  "num_rounds": 3,
+  "final_state": [
+    {
+      "id": 0,
+      "pe": 0,
+      "dof": 1,
+      "state": {
+        "eta": 0.5,
+        "lambda": 1.0
+      }
+    },
+    {
+      "id": 1,
+      "pe": 0,
+      "dof": 1,
+      "state": {
+        "eta": -1.0,
+        "lambda": 2.0
+      }
+    },
+    {
+      "id": 2,
+      "pe": 0,
+      "dof": 1,
+      "state": {
+        "eta": 2.5,
+        "lambda": 0.5
+      }
+    },
+    {
+      "id": 3,
+      "pe": 0,
+      "dof": 1,
+      "state": {
+        "eta": -0.25,
+        "lambda": 4.0
+      }
+    }
+  ]
+}

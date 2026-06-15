@@ -57,8 +57,14 @@ VFLAGS += $(addprefix -I, $(call abs_list,$(INCDIRS)))
 VFLAGS += $(foreach d,$(call abs_list,$(INCDIRS)),-CFLAGS -I$(d))
 VFLAGS += $(addprefix +define+, $(DEFINES))
 
+# C++ debug macro control. Set NOCBP_DEBUG=1 to enable testbench debug prints.
+ifdef NOCBP_DEBUG
+VFLAGS += -CFLAGS -DNOCBP_DEBUG=$(NOCBP_DEBUG)
+endif
+
 ifeq ($(TRACE),1)
 VFLAGS += --trace
+VFLAGS += -CFLAGS -DTRACE_VCD
 endif
 
 .PHONY: all build lint run clean show show-config list-tests clean-all
@@ -132,7 +138,7 @@ clean-all:
 	rm -f .clangd
 
 # ── Regression suite: all verified tests ──
-REGRESSION_UNIT_TESTS := agu compute_unit gbp_compute_engine_test gbp_pe gbp_pe_compute_subsystem gbp_pe_control_subsystem gbp_pe_fetch_subsystem gbp_pe_memory_subsystem metadata_scanner neighbor_state_accumulator noc_adapter node_scheduler phase_controller pull_client pull_server read_stream_engine_top response_collector scoreboard_prefetcher spm_arbiter spm_bank spm_bank_array writeback_controller write_stream_engine_top
+REGRESSION_UNIT_TESTS := agu belief_operand_unpacker belief_result_builder belief_solve_adapter cavity_builder compute_unit compute_unit_wrapper damping_unit gbp_compute_core gbp_compute_engine_test gbp_pe gbp_pe_compute_subsystem gbp_pe_control_subsystem gbp_pe_fetch_subsystem gbp_pe_memory_subsystem ldlt_solve_core metadata_scanner neighbor_state_accumulator noc_adapter node_scheduler op_decoder operand_window packed_accumulator phase_controller pull_client pull_server read_stream_engine_top response_collector rhs_builder_for_message scoreboard_prefetcher schur_update_unit spm_arbiter spm_bank spm_bank_array writeback_controller writeback_packer write_stream_engine_top
 REGRESSION_INTEG_TESTS := control_subsystem fetch_request_flow fetch_response_flow fetch_subsystem full_pull_cycle multi_node_concurrent notification_flow phase_scheduling
 
 .PHONY: regression

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "test_name": "4node_local_chain",
+  "description": "4 local-only variable nodes on PE0 (conceptual chain)",
+  "num_pes": 1,
+  "num_rounds": 3,
+  "nodes": [
+    {"id": 0, "pe": 0, "dof": 1, "state": {"eta": 0.5, "lambda": 1.0}},
+    {"id": 1, "pe": 0, "dof": 1, "state": {"eta": -1.0, "lambda": 2.0}},
+    {"id": 2, "pe": 0, "dof": 1, "state": {"eta": 2.5, "lambda": 0.5}},
+    {"id": 3, "pe": 0, "dof": 1, "state": {"eta": -0.25, "lambda": 4.0}}
+  ],
+  "edges": []
+}

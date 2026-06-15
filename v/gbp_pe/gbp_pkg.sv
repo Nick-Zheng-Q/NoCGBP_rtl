@@ -50,6 +50,39 @@ package gbp_pkg;
   parameter int unsigned GBP_BASE_ADDR = 32'h0000_1000;
 
   // ============================================================
+  // GBP Control FSM state encoding
+  // ============================================================
+  typedef enum logic [4:0] {
+    GFSM_IDLE,
+    // Variable node
+    GFSM_VAR_LOAD_DATA,
+    GFSM_VAR_ACCUMULATE,
+    GFSM_VAR_INVERT_LAM,
+    GFSM_VAR_MVMUL,
+    GFSM_VAR_STORE_RESULT,
+    GFSM_VAR_DONE,
+    // Factor node
+    GFSM_FAC_LOAD_DATA,
+    GFSM_FAC_BUILD_JT,
+    GFSM_FAC_COMPUTE_ETAF,
+    GFSM_FAC_COMPUTE_LF,
+    GFSM_FAC_UNPACK_MSG0,
+    GFSM_FAC_UNPACK_MSG1,
+    GFSM_FAC_ADD_BLOCK,
+    GFSM_FAC_INVERT_BLOCK,
+    GFSM_FAC_MUL_BLOCK1,
+    GFSM_FAC_MUL_BLOCK2,
+    GFSM_FAC_SUB_LAMBDA,
+    GFSM_FAC_ADD_ETA,
+    GFSM_FAC_MVMUL_ETA,
+    GFSM_FAC_SUB_ETA,
+    GFSM_FAC_PACK_MSG,
+    GFSM_FAC_STORE_MESSAGE,
+    GFSM_FAC_NEXT_ADJACENT,
+    GFSM_FAC_DONE
+  } gbp_fsm_state_e;
+
+  // ============================================================
   // New descriptor type (replaces legacy desc_t)
   // ============================================================
   typedef struct packed {

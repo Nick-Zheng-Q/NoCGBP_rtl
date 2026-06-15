@@ -262,6 +262,11 @@ module mesh_2x2_gbp_top (
         ,.wb_inject_fetch_resp_txn_id_i(wb_inject_fetch_resp_txn_id_i[pe_idx])
         ,.wb_inject_fetch_resp_node_id_i(wb_inject_fetch_resp_node_id_i[pe_idx])
         ,.wb_inject_fetch_resp_consumer_node_id_i(wb_inject_fetch_resp_consumer_node_id_i[pe_idx])
+        ,.wb_cmd_neighbor_dofs_i('0)
+        ,.wb_lr_valid_i(1'b0)
+        ,.wb_lr_state_base_i('0)
+        ,.wb_lr_state_words_i('0)
+        ,.wb_lr_neighbor_id_i('0)
       );
     end
   end

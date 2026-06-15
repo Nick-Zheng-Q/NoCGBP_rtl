@@ -300,7 +300,77 @@ int run_test(int argc, char** argv) {
   }
 
   // -------------------------------------------------------------
-  // Test 5: FSM returns to IDLE (desc_ready re-asserts)
+  // Test 5: dim6 belief writeback (34 words = 17 beats)
+  // -------------------------------------------------------------
+  std::printf("[Test 5] dim6 belief writeback (34 words = 17 beats)\n");
+  reset_dut(dut);
+  dut->i_desc_valid = 1;
+  dut->i_desc_base_addr = 0x120;
+  dut->i_desc_word_count = 34;
+  tick(dut);
+  dut->i_desc_valid = 0;
+
+  uint32_t dim6_words[34];
+  for (int i = 0; i < 34; ++i) dim6_words[i] = 0xD0000000u + static_cast<uint32_t>(i);
+
+  int dim6_beat = 0;
+  int dim6_word = 0;
+  int dim6_errors = 0;
+  for (int cycle = 0; cycle < 100 && (dim6_word < 34 || dim6_beat < 17); ++cycle) {
+    if (dim6_word < 34) {
+      dut->i_word_valid = 1;
+      dut->i_word_data = dim6_words[dim6_word];
+      dim6_word++;
+    } else {
+      dut->i_word_valid = 0;
+    }
+    tick(dut);
+    if (dut->o_spm_wr_valid) {
+      uint32_t exp_addr = 0x120u + static_cast<uint32_t>(dim6_beat) * 2u;
+      uint32_t exp0 = dim6_words[dim6_beat * 2];
+      uint32_t exp1 = dim6_words[dim6_beat * 2 + 1];
+      if (dut->o_spm_wr_addr != exp_addr) {
+        std::fprintf(stderr, "  [FAIL] Beat %d: expected addr 0x%x, got 0x%x\n",
+                     dim6_beat, exp_addr, dut->o_spm_wr_addr);
+        dim6_errors++;
+      }
+      uint64_t data = dut->o_spm_wr_data;
+      if (lo32(data) != exp0 || hi32(data) != exp1) {
+        std::fprintf(stderr, "  [FAIL] Beat %d: data mismatch (got 0x%08x_%08x, exp 0x%08x_%08x)\n",
+                     dim6_beat, hi32(data), lo32(data), exp1, exp0);
+        dim6_errors++;
+      } else {
+        std::printf("  [PASS] Beat %d: addr=0x%x data=0x%08x_%08x wstrb=0x%x\n",
+                    dim6_beat, dut->o_spm_wr_addr, hi32(data), lo32(data), dut->o_spm_wr_wstrb);
+      }
+      if (dut->o_spm_wr_wstrb != 0xFF) {
+        std::fprintf(stderr, "  [FAIL] Beat %d: expected wstrb 0xFF, got 0x%x\n",
+                     dim6_beat, dut->o_spm_wr_wstrb);
+        dim6_errors++;
+      }
+      tick(dut);  // accept
+      dim6_beat++;
+    }
+  }
+  if (dim6_beat != 17) {
+    std::fprintf(stderr, "  [FAIL] Only %d of 17 beats observed\n", dim6_beat);
+    dim6_errors++;
+  } else if (dim6_errors == 0) {
+    std::printf("  [PASS] All 17 beats for dim6 belief written\n");
+  }
+  errors += dim6_errors;
+
+  cyc = 0;
+  while (!dut->o_desc_ready && cyc < 20) { tick(dut); cyc++; }
+  if (!dut->o_desc_ready) {
+    std::fprintf(stderr, "  [FAIL] desc_ready did not re-assert after dim6 write\n");
+    errors++;
+  } else {
+    std::printf("  [PASS] desc_ready re-asserted after dim6 write\n");
+  }
+
+  // -------------------------------------------------------------
+  // Test 6: FSM returns to IDLE (desc_ready re-asserts)
   // -------------------------------------------------------------
   std::printf("[Test 5] FSM returns to IDLE after transaction\n");
   reset_dut(dut);

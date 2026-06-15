@@ -1,0 +1,3 @@
+top: operand_stream_assembler_top
+top_sv: tops/unit/operand_stream_assembler_top.sv
+rtl_f: tests/unit/operand_stream_assembler.f

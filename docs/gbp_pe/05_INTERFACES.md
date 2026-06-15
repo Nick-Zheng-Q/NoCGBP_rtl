@@ -460,74 +460,22 @@ module spm_arbiter #(
 );
 ```
 
-### 2.10 Compute Unit (PEComputeEngine)
+### 2.10 Compute Unit (`compute_unit_wrapper` / `gbp_compute_core`)
 
-Stream-based architecture. SPM access is through descriptor-driven stream engines, not direct ports.
+> **Superseded by `08_NEW_COMPUTE_UNIT.md`**: The detailed compute-core interfaces, command/response structs, operand stream formats, and internal module hierarchy are specified in `08_NEW_COMPUTE_UNIT.md` v0.7. This section only describes the subsystem boundary.
 
-```systemverilog
-module compute_unit #(
-    parameter int NODE_ID_W     = 10,
-    parameter int DOF_W         = 4,
-    parameter int ADJ_COUNT_W   = 4,
-    parameter int STATE_WORDS_W = 9,
-    parameter int SPM_ADDR_W    = 18,   // word address
-    parameter int BEAT_BITS     = 64,   // 8-byte beat
-    parameter int FP32_W        = 32
-)(
-    input  logic clk_i,
-    input  logic rst_n_i,
+The compute subsystem internally instantiates:
 
-    // Command (from Node Scheduler + Metadata Scanner, both valid when accumulator_done)
-    input  logic                 cmd_valid_i,
-    output logic                 cmd_ready_o,
-    input  logic [NODE_ID_W-1:0] cmd_node_id_i,
-    input  logic                 cmd_is_factor_i,
-    input  logic [DOF_W-1:0]     cmd_dof_i,
-    input  logic [ADJ_COUNT_W-1:0] cmd_adj_count_i,
-    input  logic [STATE_WORDS_W-1:0] cmd_state_words_i,
-    input  logic [SPM_ADDR_W-1:0]  cmd_state_base_i,
-    input  logic [FP32_W-1:0]      damping_factor_i,
-
-    // Neighbor state input (from Accumulator)
-    input  logic                 ns_valid_i,
-    output logic                 ns_ready_o,
-    input  logic [FP32_W-1:0]    ns_data_i,
-    input  logic                 ns_last_i,
-
-    // Read Stream Engine interface (descriptor + data)
-    // Compute Unit issues read descriptors; Read Stream Engine returns 64-bit SPM beats
-    output logic                 rd_desc_valid_o,
-    input  logic                 rd_desc_ready_i,
-    output logic [SPM_ADDR_W-1:0] rd_desc_base_addr_o,  // word address
-    output logic [15:0]              rd_desc_word_count_o,  // number of 32-bit words to read
-    output logic                 rd_desc_is_staging_o, // 1=STAGING region, 0=STATE region
-
-    input  logic                 rd_beat_valid_i,
-    output logic                 rd_beat_ready_o,
-    input  logic [BEAT_BITS-1:0] rd_beat_data_i,        // 64-bit SPM beat
-
-    // Write Stream Engine interface (descriptor + data)
-    // Compute Unit issues write descriptors and streams 32-bit FP32 words
-    output logic                 wr_desc_valid_o,
-    input  logic                 wr_desc_ready_i,
-    output logic [SPM_ADDR_W-1:0] wr_desc_base_addr_o,  // word address
-    output logic [15:0]              wr_desc_word_count_o,  // number of 32-bit words to write
-
-    output logic                 wr_word_valid_o,
-    input  logic                 wr_word_ready_i,
-    output logic [FP32_W-1:0]    wr_word_data_o         // 32-bit FP32 word
-
-    // Completion
-    output logic                 done_valid_o,
-    output logic [NODE_ID_W-1:0] done_node_id_o,
-    output logic                 done_is_factor_o,
-
-    // Batch completion (for batched staging mode)
-    output logic                 batch_done_o  // one batch compute complete, trigger STAGING reset
-);
+```text
+compute_unit_wrapper
+├── gbp_compute_core      (arithmetic only)
+├── writeback_packer
+└── stream framing logic
 ```
 
-Note: The compute_unit issues read/write descriptors to stream engines. The stream engines contain AGUs that translate descriptors into per-beat SPM addresses and drive the SPM Arbiter. The compute_unit does not directly access SPM.
+`gbp_compute_core` receives fully-assembled operand streams and produces `gbp_core_rsp_t` responses. It contains no SPM address-generation logic. `compute_unit_wrapper` handles descriptor issuance to the Read/Write Stream Engines, stream framing, writeback packing, and `cu_done_t` reporting.
+
+**Command translation note**: The PE-level control command (`cmd_node_id`, `cmd_is_factor`, `cmd_dof`, `cmd_adj_count`, `cmd_state_words`, `cmd_state_base`, `damping_factor`) presented at the `gbp_pe_compute_subsystem` boundary must be translated into `cu_cmd_t` for `compute_unit_wrapper`. This translation (including factor-type encoding, dimension encoding, and operand-descriptor construction from adjacency metadata) is internal to the compute subsystem and is not specified in this document. See `08_NEW_COMPUTE_UNIT.md` §8 and §24 for the `gbp_core_req_t` / `cu_cmd_t` formats.
 
 ### 2.11 Read Stream Engine
 
@@ -874,7 +822,7 @@ module gbp_pe_control_subsystem #(
 
 ### 2.16.2 Compute Subsystem (`gbp_pe_compute_subsystem`)
 
-Encapsulates: `compute_unit`, `read_stream_engine`, `write_stream_engine`, internal `agu` instances.
+Encapsulates: `compute_unit_wrapper` (see `08_NEW_COMPUTE_UNIT.md` v0.7), `read_stream_engine`, `write_stream_engine`, internal `agu` instances.
 
 ```systemverilog
 module gbp_pe_compute_subsystem #(

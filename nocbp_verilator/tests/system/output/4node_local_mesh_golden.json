@@ -1,0 +1,243 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "gbp_golden_reference",
+  "config": {
+    "schema_version": "1.0",
+    "test_name": "4node_local_mesh",
+    "description": "4 local-only variable nodes across 2x2 mesh (DOF=1)",
+    "num_pes": 4,
+    "num_rounds": 3,
+    "nodes": [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 1.0,
+          "lambda": 2.0
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": 1.5,
+          "lambda": 2.5
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 2.0,
+          "lambda": 3.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 2.5,
+          "lambda": 3.5
+        }
+      }
+    ],
+    "edges": []
+  },
+  "num_rounds": 3,
+  "final_state": [
+    {
+      "id": 0,
+      "pe": 0,
+      "dof": 1,
+      "state": {
+        "eta": 1.0,
+        "lambda": 2.0
+      }
+    },
+    {
+      "id": 1,
+      "pe": 1,
+      "dof": 1,
+      "state": {
+        "eta": 1.5,
+        "lambda": 2.5
+      }
+    },
+    {
+      "id": 2,
+      "pe": 2,
+      "dof": 1,
+      "state": {
+        "eta": 2.0,
+        "lambda": 3.0
+      }
+    },
+    {
+      "id": 3,
+      "pe": 3,
+      "dof": 1,
+      "state": {
+        "eta": 2.5,
+        "lambda": 3.5
+      }
+    }
+  ],
+  "history": [
+    [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 1.0,
+          "lambda": 2.0
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": 1.5,
+          "lambda": 2.5
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 2.0,
+          "lambda": 3.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 2.5,
+          "lambda": 3.5
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 1.0,
+          "lambda": 2.0
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": 1.5,
+          "lambda": 2.5
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 2.0,
+          "lambda": 3.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 2.5,
+          "lambda": 3.5
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 1.0,
+          "lambda": 2.0
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": 1.5,
+          "lambda": 2.5
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 2.0,
+          "lambda": 3.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 2.5,
+          "lambda": 3.5
+        }
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "pe": 0,
+        "dof": 1,
+        "state": {
+          "eta": 1.0,
+          "lambda": 2.0
+        }
+      },
+      {
+        "id": 1,
+        "pe": 1,
+        "dof": 1,
+        "state": {
+          "eta": 1.5,
+          "lambda": 2.5
+        }
+      },
+      {
+        "id": 2,
+        "pe": 2,
+        "dof": 1,
+        "state": {
+          "eta": 2.0,
+          "lambda": 3.0
+        }
+      },
+      {
+        "id": 3,
+        "pe": 3,
+        "dof": 1,
+        "state": {
+          "eta": 2.5,
+          "lambda": 3.5
+        }
+      }
+    ]
+  ]
+}

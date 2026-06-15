@@ -1,0 +1,3 @@
+top: packed_accumulator_top
+top_sv: tops/unit/packed_accumulator_top.sv
+rtl_f: tests/unit/packed_accumulator.f
